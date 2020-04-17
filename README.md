@@ -1,6 +1,9 @@
 # Skink
 Scriptable C IN C / scinc or skink
 
+_Skinks are lizards belonging to the family Scincidae and the infraorder Scincomorpha._
+_(Wikipedia)_
+
 Small and simple statically strong typed embeddable interpreted programming language.
 
 Syntactical and semantical subset of C++. Can be embedded in another applications or run by interpreter. Skink program is correct C++ program and thus can be compiled into native code without changes.
