@@ -1,6 +1,8 @@
 # Scinc
 Scriptable C IN C / scinc or skink
 
+(read it as \[s ts i n k\] )
+
 _Skinks are lizards belonging to the family Scincidae and the infraorder Scincomorpha._
 _(Wikipedia)_
 
