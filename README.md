@@ -1,4 +1,4 @@
-# Skink
+# Scinc
 Scriptable C IN C / scinc or skink
 
 _Skinks are lizards belonging to the family Scincidae and the infraorder Scincomorpha._
