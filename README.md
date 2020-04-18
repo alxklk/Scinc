@@ -12,4 +12,4 @@ Syntactical and semantical subset of C++. Can be embedded in another application
 
 Current VM realization runs on own virtual processor and virtual address space. Speed is about 10-12 host CPU tacts per VM opcode. On modern 4.5 GHz desktop CPU it is ~420 million vm opcodes per second.
 
-![Scinc picture](skink.png)
+![Scinc picture](sсinс.png)
