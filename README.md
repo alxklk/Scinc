@@ -1,5 +1,5 @@
 # Scinc
-Scriptable C IN C / scinc or skink
+Scriptable C IN C / scinc (skink)
 
 (pronounced as \[stsɪnk\])
 
