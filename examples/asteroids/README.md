@@ -5,7 +5,7 @@ _94% liked this video game_
 
 _Google users_
 
-Shoot them all
+Shoot them all (with left mouse button) and fly away with right mouse button
 
 Run whith **`../../bin/Scinc asters.cpp`** and do not forget to press **F5** 
 
