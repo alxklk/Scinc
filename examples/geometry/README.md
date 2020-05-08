@@ -6,6 +6,8 @@
 
 * **circle.cpp** - random colored circles, filled and stroked
 
+Run whith **`../../bin/Scinc file.cpp`** and do not forget to press **F5** 
+
 ![Bounce](bounce.png)
 ![Box3D](box3d.png)
 ![Circle](circle.png)
