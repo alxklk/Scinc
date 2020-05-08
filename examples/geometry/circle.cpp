@@ -48,7 +48,7 @@ int main()
 			float R=(1.+frand(seed))*25.;
 			Circle(x,y,R);
 			fin();
-			width(1.,1.);
+			width(1.5,1.);
 			float r=frand(seed);
 			float g=frand(seed);
 			float b=frand(seed);

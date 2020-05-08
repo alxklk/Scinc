@@ -21,7 +21,7 @@ void BGMENU()
 	for(int i=0;i<256;i+=16)
 	{
 		float s=i*1./256.0;
-		gradstop(2./(s+1.)-1.,
+		gradstop(s,
 			.5+.15*sin(s*3.35*3.-t*2.85+17.8)+.15*sin(-s*14.85*1.6+(t+1.8)*2.85*1.13+7.8),
 			.15+.15*sin(s*2.81*3.-t*3.58+12.2)+.15*sin(-s*16.11*1.6+(t+5.7)*3.58*1.12+2.2),
 			.15+.15*sin(s*3.37*3.-t*2.59+27.7)+.15*sin(-s*15.37*1.6+(t+8.7)*2.59*1.11+7.7),
@@ -66,7 +66,7 @@ void Aster(float x, float y, float size, int seed, int hit)
 	t_x(ax,ay);
 	t_y(ay,-ax);
 
-	
+	/*
 	clear();
 	for(int i=0;i<32;i++)
 	{
@@ -77,9 +77,10 @@ void Aster(float x, float y, float size, int seed, int hit)
 	rgb(0,.2,.5);
 	width(2,1);
 	stroke();
+	*/
+
 	float xp;
 	float yp;
-
 
 	clear();
 	for(int i=0;i<N;i++)
@@ -145,6 +146,7 @@ public:
 	}
 	void Draw()
 	{
+		/*
 		clear();
 		for(int i=0;i<32;i++)
 		{
@@ -155,7 +157,8 @@ public:
 		rgb(0,.2,.5);
 		width(2,1);
 		stroke();
-
+		*/
+	
 		clear();
 		M(x,y);
 		L(x-ax*.5*SSC,y-ay*.5*SSC);
@@ -319,7 +322,7 @@ public:
 				float d=Len(fnear(asts[i].x-hitx,640),fnear(asts[i].y-hity,480));
 				if(d<(asts[i].size)+6)
 				{
-					asts[i].size*=0.73;
+					asts[i].size*=0.6;
 					asts[i].seed=asts[i].seed+irand(eseed);
 					nHits++;
 					if(asts[i].size<6)
@@ -470,6 +473,10 @@ int main()
 			{
 				state=GAME;
 				ResetGame();
+			}
+			if(KeyPressed('q'))
+			{
+				exit(0);
 			}
 		}
 		else if(state==GAME)

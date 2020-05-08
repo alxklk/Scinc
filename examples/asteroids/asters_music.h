@@ -38,25 +38,30 @@ class CMusic
 public:
 	int sample;
 	int echoPos;
-	float echo[16384];
+	float echo[22500];
 	void Init()
 	{
 		sample=0;
 		echoPos=0;
-		for(int i=0;i<16384;i++)echo[i]=0;
+		for(int i=0;i<22500;i++)echo[i]=0;
 	}
 	void GenerateSamples(int nSamples)
 	{
 		for(int i=0;i<nSamples;i++)
 		{
-			float l=sndVal(sample*.75+sin(sample/20000.)*150);
+			float ts=sample*.75;
+			float l=sndVal(ts+sin(sample/20000.)*150);
+			float r=sndVal(ts-sin(sample/20000.)*150);
 //			float l=sndVal(sample*.375+sin(sample/5000.)*500);
 			sample++;
-			l=(l+echo[echoPos]*0.9)*.7;
-			echo[echoPos]=l;
+			int ep=echoPos*2;
+			l=(l+echo[ep  ]*0.9)*.7;
+			r=(r+echo[ep+1]*0.9)*.7;
+			echo[ep  ]=l;
+			echo[ep+1]=r;
 			echoPos++;
 			echoPos=echoPos%11150;
-			snd_out(l,l);
+			snd_out(l,r);
 		}
 	}	
 };

@@ -4,7 +4,7 @@
 float bell_curve3(float x)
 {
 	float x2=x*x;
-	return x2*16*(x2-2*x+1);
+	return x2*16.*(x2-2.*x+1.);
 }
 
 int irand(int& seed)
@@ -20,7 +20,7 @@ float frand(int& seed)
 
 float Abs(float x)
 {
-	if(x<0)
+	if(x<0.)
 		return -x;
 	return x;
 }
