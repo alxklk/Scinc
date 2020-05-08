@@ -7,6 +7,6 @@ _Google users_
 
 Shoot them all (with left mouse button) and fly away with right mouse button
 
-Run whith **`../../bin/Scinc asters.cpp`** and do not forget to press **F5** 
+Run whith **`../../bin/Scinc asters.cpp`**
 
 ![Asteroids picture](asters.png)
