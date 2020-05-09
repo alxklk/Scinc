@@ -6,43 +6,45 @@
 #include "asters_sounds.h"
 #include "asters_music.h"
 
+Graph g;
+
 void BG()
 {
-	graduse(-1);
-	gray(0);
-	clear();
-	fill1();
+	g.graduse(-1);
+	g.gray(0);
+	g.clear();
+	g.fill1();
 }
 
 void BGMENU()
 {
 	float t=-Time();
-	graddef(0);
+	g.graddef(0);
 	for(int i=0;i<256;i+=16)
 	{
 		float s=i*1./256.0;
-		gradstop(s,
+		g.gradstop(s,
 			.5+.15*sin(s*3.35*3.-t*2.85+17.8)+.15*sin(-s*14.85*1.6+(t+1.8)*2.85*1.13+7.8),
 			.15+.15*sin(s*2.81*3.-t*3.58+12.2)+.15*sin(-s*16.11*1.6+(t+5.7)*3.58*1.12+2.2),
 			.15+.15*sin(s*3.37*3.-t*2.59+27.7)+.15*sin(-s*15.37*1.6+(t+8.7)*2.59*1.11+7.7),
 			1
 		);
 	}
-	alpha(1);
-	gradend();
-	graduse(0);
-	clear();
-	M(0,0);
-	l(640,0);
-	l(0,480);
-	l(-640,0);
-	close();
-	fin();
-	g_0(320,240);
+	g.alpha(1);
+	g.gradend();
+	g.graduse(0);
+	g.clear();
+	g.M(0,0);
+	g.l(640,0);
+	g.l(0,480);
+	g.l(-640,0);
+	g.close();
+	g.fin();
+	g.g_0(320,240);
 	float r=240*1.7;
-	g_x(r,0);
-	g_y(0,r);
-	fill1();
+	g.g_x(r,0);
+	g.g_y(0,r);
+	g.fill1();
 }
 
 int eseed;
@@ -62,27 +64,27 @@ void Aster(float x, float y, float size, int seed, int hit)
 	float ax=sin(a);
 	float ay=cos(a);
 
-	t_0(x,y);
-	t_x(ax,ay);
-	t_y(ay,-ax);
+	g.t_0(x,y);
+	g.t_x(ax,ay);
+	g.t_y(ay,-ax);
 
 	/*
-	clear();
+	g.clear();
 	for(int i=0;i<32;i++)
 	{
 		float a=i/31.*2.*M_PI;
-		L(size*sin(a),size*cos(a));
+		g.L(size*sin(a),size*cos(a));
 	}
-	fin();
-	rgb(0,.2,.5);
-	width(2,1);
-	stroke();
+	g.fin();
+	g.rgb(0,.2,.5);
+	g.width(2,1);
+	g.stroke();
 	*/
 
 	float xp;
 	float yp;
 
-	clear();
+	g.clear();
 	for(int i=0;i<N;i++)
 	{
 		float isize=size*(.7+.3*frand(aseed));
@@ -91,30 +93,30 @@ void Aster(float x, float y, float size, int seed, int hit)
 		float yi=cos(a)*isize;
 		if(i==0)
 		{
-			M(xi,yi);
+			g.M(xi,yi);
 		}
 		else
 		{
-			L(xi,yi);
+			g.L(xi,yi);
 		}
 		xp=xi;
 		yp=yi;
 	}
-	close();
-	fin();
-	rgb(.7,1.,.2);
+	g.close();
+	g.fin();
+	g.rgb(.7,1.,.2);
 
-	alpha(.3);
-	width(8.,1);
-	//stroke();
-	width(1.5,1);
-	alpha(1);
-	stroke();
-	alpha(.3);
+	g.alpha(.3);
+	g.width(8.,1);
+	//g.stroke();
+	g.width(1.5,1);
+	g.alpha(1);
+	g.stroke();
+	g.alpha(.3);
 	if(hit)
-		rgb(0,0,1);
-	fill1();
-	alpha(1);
+		g.rgb(0,0,1);
+	g.fill1();
+	g.alpha(1);
 }
 
 #define SSC 10
@@ -159,48 +161,48 @@ public:
 		stroke();
 		*/
 	
-		clear();
-		M(x,y);
-		L(x-ax*.5*SSC,y-ay*.5*SSC);
-		L(x-(ax+ay)*SSC,y-(ay-ax)*SSC);
-		L(x+ax*1.5*SSC,y+ay*1.5*SSC);
-		L(x-(ax-ay)*SSC,y-(ay+ax)*SSC);
-		L(x-ax*.5*SSC,y-ay*.5*SSC);
-		fin();
-		alpha(.5);
-		rgb(1,.7,.5);
+		g.clear();
+		g.M(x,y);
+		g.L(x-ax*.5*SSC,y-ay*.5*SSC);
+		g.L(x-(ax+ay)*SSC,y-(ay-ax)*SSC);
+		g.L(x+ax*1.5*SSC,y+ay*1.5*SSC);
+		g.L(x-(ax-ay)*SSC,y-(ay+ax)*SSC);
+		g.L(x-ax*.5*SSC,y-ay*.5*SSC);
+		g.fin();
+		g.alpha(.5);
+		g.rgb(1,.7,.5);
 		if(shipHit)
 		{
-			rgb(0,0,1);
+			g.rgb(0,0,1);
 			health-=0.05*shipHit;
 			shipHit=0;
 		}
-		fill1();
-		width(2,2);
-		stroke();
-		alpha(1);
-		rgb(1,.9,.2);
-		width(1,1);
-		stroke();
+		g.fill1();
+		g.width(2,2);
+		g.stroke();
+		g.alpha(1);
+		g.rgb(1,.9,.2);
+		g.width(1,1);
+		g.stroke();
 
 		if(fire)
 		{
 			int seed=Time()*187;
-			clear();
+			g.clear();
 			for(int i=0;i<5;i++)
 			{
-				M(x-ax*.5*SSC,y-ay*.5*SSC);
-				l(-ax*SSC+frand(seed)*6,-ay*SSC+frand(seed)*6);
+				g.M(x-ax*.5*SSC,y-ay*.5*SSC);
+				g.l(-ax*SSC+frand(seed)*6,-ay*SSC+frand(seed)*6);
 			}
-			fin();
-			alpha(.5);
-			rgb(0.1,.7,1);
-			width(14,1.5);
-			stroke();
-			alpha(1);
-			rgb(.5,1,1);
-			width(3,1);
-			stroke();
+			g.fin();
+			g.alpha(.5);
+			g.rgb(0.1,.7,1);
+			g.width(14,1.5);
+			g.stroke();
+			g.alpha(1);
+			g.rgb(.5,1,1);
+			g.width(3,1);
+			g.stroke();
 		}
 	}
 };
@@ -262,27 +264,27 @@ void Explode(float x, float y, float t)
 {
 	if(t>.15)
 		return;
-	clear();
+	g.clear();
 	for(int i=0;i<18;i++)
 	{
-		M(x,y);
-		l(frand(eseed)*150*t,frand(eseed)*150*t);
+		g.M(x,y);
+		g.l(frand(eseed)*150*t,frand(eseed)*150*t);
 	}
-	fin();
-	alpha(1.-t*3.);
-	rgb(0.1,.6,1);
-	width(10.+20.*t,1.);
-	stroke();
+	g.fin();
+	g.alpha(1.-t*3.);
+	g.rgb(0.1,.6,1);
+	g.width(10.+20.*t,1.);
+	g.stroke();
 	if(t<0.1)
 	{
-		alpha(.7);
-		rgb(.5,1,1);
-		width(3,2);
-		stroke();
-		alpha(1);
-		rgb(1,.9,.7);
-		width(1,1);
-		stroke();
+		g.alpha(.7);
+		g.rgb(.5,1,1);
+		g.width(3,2);
+		g.stroke();
+		g.alpha(1);
+		g.rgb(1,.9,.7);
+		g.width(1,1);
+		g.stroke();
 	}
 }
 
@@ -357,18 +359,18 @@ public:
 	}
 	void Draw()
 	{
-		clear();
-		M(x+vx*0.015,y+vy*0.015);
-		L(x-vx*0.015,y-vy*0.015);
-		fin();
-		alpha(.6);
-		rgb(.5,0,1);
-		width(8,1);
-		stroke();
-		alpha(1);
-		rgb(0,.5,1);
-		width(2,1);
-		stroke();
+		g.clear();
+		g.M(x+vx*0.015,y+vy*0.015);
+		g.L(x-vx*0.015,y-vy*0.015);
+		g.fin();
+		g.alpha(.6);
+		g.rgb(.5,0,1);
+		g.width(8,1);
+		g.stroke();
+		g.alpha(1);
+		g.rgb(0,.5,1);
+		g.width(2,1);
+		g.stroke();
 	}
 };
 
@@ -413,18 +415,18 @@ void ResetGame()
 int main()
 {
 	BG();
-	t_0(320-7/2.*2.5*15,240);
-	t_x(15,0);
-	t_y(5,-20);
-	clear();
+	g.t_0(320-7/2.*2.5*15,240);
+	g.t_x(15,0);
+	g.t_y(5,-20);
+	g.clear();
 	gtext("LOADING");
-	fin();
-	width(5,5);
-	rgb(1.0,.5,0.0);
-	stroke();
-	width(2,2);
-	rgb(1,1,1);
-	stroke();
+	g.fin();
+	g.width(5,5);
+	g.rgb(1.0,.5,0.0);
+	g.stroke();
+	g.width(2,2);
+	g.rgb(1,1,1);
+	g.stroke();
 	Present();
 
 	gseed=341199578;
@@ -441,9 +443,9 @@ int main()
 
 	while(true)
 	{
-		t_0(0,0);
-		t_x(1,0);
-		t_y(0,1);
+		g.t_0(0,0);
+		g.t_x(1,0);
+		g.t_y(0,1);
 		if(state==MENU)
 		{
 			BGMENU();
@@ -452,21 +454,21 @@ int main()
 			if(nsndsamples>2000)nsndsamples=2000;
 			music.GenerateSamples(nsndsamples);
 
-			t_0(320-200+sin(Time()*3.)*10,240);
-			t_x(10,0);
-			t_y(0,-10);
-			clear();
+			g.t_0(320-200+sin(Time()*3.)*10,240);
+			g.t_x(10,0);
+			g.t_y(0,-10);
+			g.clear();
 			gtext("Press ENTER");
-			t_0(320-200+cos(Time()*3.)*10,280);
+			g.t_0(320-200+cos(Time()*3.)*10,280);
 			gtext("to start");
-			fin();
-			width(3,2);
-			alpha(1);
-			rgb(.6,.2,0.0);
-			stroke();
-			width(2,1);
-			rgb(1,1,1);
-			stroke();
+			g.fin();
+			g.width(3,2);
+			g.alpha(1);
+			g.rgb(.6,.2,0.0);
+			g.stroke();
+			g.width(2,1);
+			g.rgb(1,1,1);
+			g.stroke();
 			Present();
 
 			if(KeyPressed(4013))
@@ -518,14 +520,14 @@ int main()
 			{
 				float x=ship.x+ship.ax*SSC*2.;
 				float y=ship.y+ship.ay*SSC*2.;
-				clear();
-				M(x,y);
-				L(x+ship.ax,y+ship.ay);
-				fin();
-				alpha(1-(T-fireT)*20);
-				rgb(0,0,1);
-				width(18,1.);
-				stroke();
+				g.clear();
+				g.M(x,y);
+				g.L(x+ship.ax,y+ship.ay);
+				g.fin();
+				g.alpha(1-(T-fireT)*20);
+				g.rgb(0,0,1);
+				g.width(18,1.);
+				g.stroke();
 			}
 
 
@@ -538,9 +540,9 @@ int main()
 			{
 				asts[i].Draw();
 			}
-			t_0(0,0);
-			t_x(1,0);
-			t_y(0,1);
+			g.t_0(0,0);
+			g.t_x(1,0);
+			g.t_y(0,1);
 
 			for(int i=0;i<NB;i++)
 			{
@@ -592,28 +594,28 @@ int main()
 
 			char ss[64];
 			int len=snprintf(ss,64,"Hits %i of %i", nHits, nShots);
-			t_0(320-len/2.*2.5*6,20);
-			t_x(3.5,0);
-			t_y(0,-4.5);
-			clear();
+			g.t_0(320-len/2.*2.5*6,20);
+			g.t_x(3.5,0);
+			g.t_y(0,-4.5);
+			g.clear();
 			gtext(ss);
 
 			snprintf(ss,64,"%f", Time());
-			t_0(5,20);
+			g.t_0(5,20);
 			gtext(ss);
 
 			snprintf(ss,64,"%i asteroids", nl);
-			t_0(5,35);
+			g.t_0(5,35);
 			gtext(ss);
 
 			snprintf(ss,64,"ship health %5.2f %%", ship.health*100);
-			t_0(450,35);
+			g.t_0(450,35);
 			gtext(ss);
 
-			fin();
-			width(1.25,1.25);
-			rgb(.5,.8,1.0);
-			stroke();
+			g.fin();
+			g.width(1.25,1.25);
+			g.rgb(.5,.8,1.0);
+			g.stroke();
 
 			Present();
 		}
