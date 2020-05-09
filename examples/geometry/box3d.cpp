@@ -26,6 +26,8 @@ flt2 Animate(float x, float y, float z)
 	return res;
 }
 
+Graph g;
+
 int main()
 {
 	float vb[24]={
@@ -57,13 +59,13 @@ int main()
 	while(true)
 	{
 		t=Time();
-		rgb(.4,.15,.1);
-		clear();
-		fill1();
-		alpha(1);
+		g.rgb(.4,.15,.1);
+		g.clear();
+		g.fill1();
+		g.alpha(1);
 		for(int i=0;i<6;i++)
 		{
-			clear();
+			g.clear();
 			int i0=ib[i*4];
 			int i1=ib[i*4+1];
 			int i2=ib[i*4+2];
@@ -72,33 +74,33 @@ int main()
 			flt2 p1=Animate(vb[i1*3],vb[i1*3+1],vb[i1*3+2]);
 			flt2 p2=Animate(vb[i2*3],vb[i2*3+1],vb[i2*3+2]);
 			flt2 p3=Animate(vb[i3*3],vb[i3*3+1],vb[i3*3+2]);
-			M(p0.x*100+320,p0.y*100+240);
-			L(p1.x*100+320,p1.y*100+240);
-			L(p2.x*100+320,p2.y*100+240);
-			L(p3.x*100+320,p3.y*100+240);
-			fin();
-			rgb((cols[i]&0xff)/255.,((cols[i]>>8)&0xff)/255.,((cols[i]>>16)&0xff)/255.);
-			alpha(.5);
-			fill1();
+			g.M(p0.x*100+320,p0.y*100+240);
+			g.L(p1.x*100+320,p1.y*100+240);
+			g.L(p2.x*100+320,p2.y*100+240);
+			g.L(p3.x*100+320,p3.y*100+240);
+			g.fin();
+			g.rgb((cols[i]&0xff)/255.,((cols[i]>>8)&0xff)/255.,((cols[i]>>16)&0xff)/255.);
+			g.alpha(.5);
+			g.fill1();
 		}
-		clear();
+		g.clear();
 		for(int i=0;i<12;i++)
 		{
 			int i0=lb[i*2];
 			int i1=lb[i*2+1];
 			flt2 p0=Animate(vb[i0*3],vb[i0*3+1],vb[i0*3+2]);
 			flt2 p1=Animate(vb[i1*3],vb[i1*3+1],vb[i1*3+2]);
-			M(p0.x*100+320,p0.y*100+240);
-			L(p1.x*100+320,p1.y*100+240);
+			g.M(p0.x*100+320,p0.y*100+240);
+			g.L(p1.x*100+320,p1.y*100+240);
 		}
-		fin();
-		alpha(1);
-		rgb(.4,.15,.1);
-		width(30,1);
-		stroke();
-		gray(1);
-		width(1.5,1.);
-		stroke();
+		g.fin();
+		g.alpha(1);
+		g.rgb(.4,.15,.1);
+		g.width(30,1);
+		g.stroke();
+		g.gray(1);
+		g.width(1.5,1.);
+		g.stroke();
 		Present();
 	}
 	return 0;

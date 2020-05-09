@@ -11,14 +11,16 @@ float abs(float x)
 		return x;
 }
 
+Graph g;
+
 void Circle(float x, float y, float r)
 {
-	M(x+r,y);
+	g.M(x+r,y);
 	float a=0.55;
-	C(x+r,y+r*a,x+r*a,y+r,x,y+r);
-	C(x-r*a,y+r,x-r,y+r*a,x-r,y);
-	C(x-r,y-r*a,x-r*a,y-r,x,y-r);
-	C(x+r*a,y-r,x+r,y-r*a,x+r,y);
+	g.C(x+r,y+r*a,x+r*a,y+r,x,y+r);
+	g.C(x-r*a,y+r,x-r,y+r*a,x-r,y);
+	g.C(x-r,y-r*a,x-r*a,y-r,x,y-r);
+	g.C(x+r*a,y-r,x+r,y-r*a,x+r,y);
 }
 
 int irand(int& seed)
@@ -45,7 +47,7 @@ int main()
 	for(;;)
 	{
 		//alpha(.15);
-		M(0,0);l(640,0);l(0,480);l(-640,0);close();fin();rgba(0.25,0.15,0.1,1.);fill1();
+		g.M(0,0);g.l(640,0);g.l(0,480);g.l(-640,0);g.close();g.fin();g.rgba(0.25,0.15,0.1,1.);g.fill1();
 		int seed=348577;
 		t+=1./60.;
 		for(int i=0;i<100;i++)
@@ -59,32 +61,32 @@ int main()
 			x=abs(mod(x,dx*2.)-dx);
 			y=abs(mod(y,dy*2.)-dy);
 
-			float r=.5+.5*sin(t*frand(seed)*6.+15.);
-			float g=.5+.5*sin(t*frand(seed)*6.+15.);
-			float b=.5+.5*sin(t*frand(seed)*6.+15.);
+			float cr=.5+.5*sin(t*frand(seed)*6.+15.);
+			float cg=.5+.5*sin(t*frand(seed)*6.+15.);
+			float cb=.5+.5*sin(t*frand(seed)*6.+15.);
 
-			clear();
+			g.clear();
 			Circle(x+R,y+R,R-5);
-			fin();
-			width(10.,1.);
-			gray(0);
-			fill2();
+			g.fin();
+			g.width(10.,1.);
+			g.gray(0);
+			g.fill2();
 
-			clear();
+			g.clear();
 			Circle(x+R,y+R,R);
-			fin();
-			width(1.,1.);
-			rgb(r*.3,g*.3,b*.3);
-			fill2();
+			g.fin();
+			g.width(1.,1.);
+			g.rgb(cr*.3,cg*.3,cb*.3);
+			g.fill2();
 
-			clear();
+			g.clear();
 			float d=0.85;
 			Circle(x+R*d,y+R*d,R*.3);
-			fin();
-			width(R*.5,1.);
-			//stroke();
-			rgb(.5+r*.5,.5+g*.5,.5+b*.5);
-			fill2();
+			g.fin();
+			g.width(R*.5,1.);
+			//g.stroke();
+			g.rgb(.5+cr*.5,.5+cg*.5,.5+cb*.5);
+			g.fill2();
 		}
 		mode++;
 		Present();
