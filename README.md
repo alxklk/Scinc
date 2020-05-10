@@ -24,7 +24,7 @@ Language itself is intended to be reasonably limited subset of C++, moving towar
 * author knows C++ well enough
 * there are a lot of editors/IDEs that support C++
 * standard language with competing compilers allows easy and reliable tests: just compile test program with G++/Clang/MSVC and compare output stringwise
-* no version compatibility quiestions: new versions of Scinc will be more and more compatible with C++ _(hopefully)_
+* no version compatibility questions: new versions of Scinc will be more and more compatible with C++ _(hopefully)_
 
 ## Language features and description
 
