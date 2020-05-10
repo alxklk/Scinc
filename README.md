@@ -45,7 +45,7 @@ Major type conversions between base types are supported, however, they can cause
 * user defined overloaded operators don't support freestanding implementation yet
 * `operator[]` and `operator->` cannot be overloaded for now
 
-Function member can be declared as `static` and works reasonably well.
+Function member can be declared as `static` and then called with namespace resolution operator `::`.
 
 Variable declarations support only one variable at a time: `int a; int b;` is OK, `int a,b;` will cause an error.
 
@@ -53,12 +53,11 @@ Global variables can not be initialized.
 
 Local variable declarations support initialization, arrays can be initialized with initialization lists: `int x[3]={1,2,3};`, missing items are implicitly 0. Be aware of the fact, that list is stored in constant segment and event empty list will occupy space, for example, `int x[4]={};` will be compiled into 4*sizeof(int) zero bytes.
 
-
 Pointer and references are supported, but their usage in variable declarations is limited to one at a time, i.e. `int * ptrx;` is OK, `int ** ptrptrx;` is not.
 
 ## Preprocessor
 
-Preprocessor supports object-style and funstion-style macros, `__SCINC__` macro is defined, can be useful if someone needs conditional compilation
+Preprocessor supports object-style and function-style macros, `__SCINC__` macro is defined, can be useful if someone needs conditional compilation
 
 `#include <...>` is ignored, `#include "..."` works, but only in current folder. Some include directives can be handled separatedly, for example, `#include "graphics.h"` will not cause compiler to for this file in current folder, instead graphic window will be created and some bindings to native functions will be made.
 
@@ -68,7 +67,10 @@ Error messages are sometimes confusing or missing, sometimes extra. No file/line
 
 ![Error picture](error.png)
 
-## Reference runtime library
+## Runtime library
+
+Interpreter has some bindings to native functions, some kind of reuntime library. This is not a part of the language and proveded as an example. Can (and probably will) be changed in future.
+
 ```c++
 // Predefined macros
 
