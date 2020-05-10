@@ -59,10 +59,92 @@ Pointer and references are supported, but their usage in variable declarations i
 
 Preprocessor supports object-style and funstion-style macros, `__SCINC__` macro is defined, can be useful if someone needs conditional compilation
 
-`#include <...>` is ignored, `#include "..."` works, but only in current folder.
+`#include <...>` is ignored, `#include "..."` works, but only in current folder. Some include directives can be handled separatedly, for example, `#include "graphics.h"` will not cause compiler to for this file in current folder, instead graphic window will be created and some bindings to native functions will be made.
 
 ## Error messages
 
 Error messages are sometimes confusing or missing, sometimes extra. No file/line/position included in error text, but someone can run Scinc with `-gui` command line switch, and find erroneous token highlighted if he is lucky enough
 
 ![Error picture](error.png)
+
+## Runtime library
+```
+// Graphics with SVG 'path d="..."'-like semantics
+// available if "graphics.h" is included
+class Graph
+{
+	// Move to x,y
+	void M(float,float);
+	// Relative move to x,y
+	void m(float,float);
+	// Line to x,y
+	void L(float,float);
+	// Relative line to x,y
+	void l(float,float);
+	void pl(float,float);
+	void pm(float,float);
+	// Close shape
+	void close();
+	// Clear shape
+	void clear();
+	// Cubic Bezier curve
+	void C(float,float,float,float,float,float);
+	// Relative cubic Bezier curve
+	void c(float,float,float,float,float,float);
+	// Quadratic Bezier curve
+	void Q(float,float,float,float);
+	// Relative quadratic Bezier curve
+	void q(float,float,float,float);
+	// fill with nonzero rule
+	void fill1();
+	// fill with even-odd rule
+	void fill2();
+	// stroke contour
+	void stroke();
+	// finalize shape before filling or stroking
+	void fin();
+	// set color
+	void rgba(float,float,float,float);
+	void rgb(float,float,float);
+	void gray(float);
+	void alpha(float);
+	// set stroke width
+	void width(float,float);
+	void graddef(float);
+	void gradend();
+	void gradstop(float,float,float,float,float);
+	void gradient(float);
+	void graduse(float);
+	void g_0(float,float);
+	void g_x(float,float);
+	void g_y(float,float);
+	void t_0(float,float);
+	void t_x(float,float);
+	void t_y(float,float);
+	// 
+	void next();
+};
+// 
+inline void Interrupt();
+inline float Time();
+inline int printf(char*,...);
+inline int snprintf(char*,int,char*,...);
+inline int puts(char*);
+inline float sin(float);
+inline float cos(float);
+inline float sqrt(float);
+inline void Print1();
+inline void GetMouseState(int&,int&,int&);
+inline int GetKeyEvent(int&,int&);
+inline int KeyPressed(int);
+inline int snd_add(int);
+inline void snd_data(int,int,float,float);
+inline void snd_out(float,float);
+inline void snd_play(int);
+inline int glyph(int);
+inline int gtext(char*);
+inline int stext(char*,int,int,int);
+inline int GC(char*);
+inline void PutPixel(int,int,int);
+inline int GetPixel(int,int);
+```
