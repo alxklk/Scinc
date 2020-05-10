@@ -165,3 +165,4 @@ inline void snd_data(int,int,float,float);
 inline void snd_out(float,float);
 inline void snd_play(int);
 ```
+For information about VM and interpreter internals, see [Bytecode.md](Bytecode.md)
