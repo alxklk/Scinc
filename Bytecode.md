@@ -50,7 +50,7 @@ NOTME   | 0        |               | Pop `this` | `return;` from member function
 NEG     | 2        | [mem]         | Int negate | `mem[dst]=-mem[src];`
 FNEG    | 2        | [mem]         | Float negate | `mem[dst]=-mem[src];`
 AND     | 3        | [mem]         | Bitwise and | `mem[dst]=mem[src0]&mem[src1];`
-OR      | 3        | [mem]         | Bitwise or | <code>mem[dst]=mem[src0]|mem[src1];</code>
+OR      | 3        | [mem]         | Bitwise or | `mem[dst]=mem[src0]\|mem[src1];`
 XOR     | 3        | [mem]         | Bitwise xor | `mem[dst]=mem[src0]^mem[src1];`
 NOT     | 2        | [mem]         | Bitwise not | `mem[dst]=~mem[src0];`
 SHL     | 3        | [mem]         | Bitwise shift left, << | `mem[dst]=mem[src0]<<mem[src1];`
@@ -100,7 +100,7 @@ FEQ     | 3        | [mem]         | Float Equal | `mem[dst]=(mem[src0]==mem[src
 FNE     | 3        | [mem]         | Float NonEqual | `mem[dst]=(mem[src0]!=mem[src1]);`
 LNOT    | 2        | [mem]         | Logical NOT | `mem[dst]=!mem[src];`
 LAND    | 3        | [mem]         | Logical AND | `mem[dst]=(mem[src0]&&mem[src1]);`
-LOR     | 3        | [mem]         | Logical OR | `mem[dst]=(mem[src0]||mem[src1]);`
+LOR     | 3        | [mem]         | Logical OR | `mem[dst]=(mem[src0]\|\|mem[src1]);`
 LEA     | 2        | [mem]         | Load Effective Address | `mem[dst]=&mem[src0];`
 MADD    | 3        | [mem]         | Multiply-ADD | `dst=dst+src0*src1`
 INT     | 1        | int           | software INTerrupt | `int(dst)`
