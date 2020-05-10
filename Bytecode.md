@@ -38,6 +38,7 @@ Interpreter takes next bytecode from program memory at `[IP]` and executes corre
 Return stack is used by CALL and RET commands.
 
 Operands are denoted as `dst`, `src0` (=`src`) and `src1` in following table.
+Indirect memory locations are enclosed in additional [].
 
 Bytecode|# operands| types         | actions                  | rough C++ equivalent
 --------|----------|---------------|--------------------------|-----------------------
