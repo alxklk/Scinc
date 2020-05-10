@@ -20,6 +20,7 @@ Current VM realization runs on own virtual processor and virtual address space. 
 Language itself is intended to be reasonably limited subset of C++, moving towards better compatibility with standard compilers. Constantly growing set of minimal feature tests is used to check it after all changes in lexer, parser, backend or VM. There are thereasons, why C++ was choosen:
 
 * author knows C++ well enough
+* there are a lot of editors/IDEs that support C++
 * standard language with competing compilers allows easy and reliable tests: just compile test program with G++/Clang/MSVC and compare output stringwise
 * no version compatibility quiestions: new versions of Scinc will be more and more compatible with C++ _(hopefully)_
 
@@ -67,8 +68,17 @@ Error messages are sometimes confusing or missing, sometimes extra. No file/line
 
 ![Error picture](error.png)
 
-## Runtime library
+## Reference runtime library
 ```c++
+// Predefined macros
+
+#define Present() __builtin_interrupt ( 10 )
+#define __SCINC__
+#define bool int
+#define exit(x) __builtin_finish ( x )
+#define false 0
+#define true 1
+
 // Graphics with SVG 'path d="..."'-like semantics
 // available if "graphics.h" is included
 class Graph
