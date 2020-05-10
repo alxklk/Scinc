@@ -19,7 +19,7 @@ Some of these segments are considered to be extra and may be refactored out in f
 
 Special bit in memory mode codes indirect access, `mem[addr]` if 0 or `mem[mem[addr]]` otherwise.
 
-VM has these sontrol registers:
+VM has these сontrol registers:
 
  reg | description
 -----|------------
