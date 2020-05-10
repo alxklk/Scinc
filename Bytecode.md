@@ -45,7 +45,7 @@ NOP     | 0        |               | No operation, default filler with code 0 | 
 CALL    | 1        | int           | Call subroutine at addr `dst` or native function if `dst`<0 | `func();`
 RET     | 0        |               | Return from sub | `return;`
 IAM     | 1        | [mem]         | Load `this` pointer into register and push old value | `someObject.someMethod();`
-THAT    | 1        | [mem]         | Store `this` register into mem | `someVar=this;` or `return this`
+THAT    | 1        | [mem]         | Store `this` register into mem | `someVar=this;` or `return this;`
 NOTME   | 0        |               | Pop `this` | `return;` from member function
 NEG     | 2        | [mem]         | Int negate | `mem[dst]=-mem[src];`
 FNEG    | 2        | [mem]         | Float negate | `mem[dst]=-mem[src];`
