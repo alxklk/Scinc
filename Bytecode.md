@@ -50,7 +50,7 @@ NOTME   | 0        |               | Pop `this` | `return;` from member function
 NEG     | 2        | [mem]         | Int negate | `mem[dst]=-mem[src];`
 FNEG    | 2        | [mem]         | Float negate | `mem[dst]=-mem[src];`
 AND     | 3        | [mem]         | Bitwise and | `mem[dst]=mem[src0]&mem[src1];`
-OR      | 3        | [mem]         | Bitwise or | `mem[dst]=mem[src0]|mem[src1];`
+OR      | 3        | [mem]         | Bitwise or | <code>mem[dst]=mem[src0]|mem[src1];</code>
 XOR     | 3        | [mem]         | Bitwise xor | `mem[dst]=mem[src0]^mem[src1];`
 NOT     | 2        | [mem]         | Bitwise not | `mem[dst]=~mem[src0];`
 SHL     | 3        | [mem]         | Bitwise shift left, << | `mem[dst]=mem[src0]<<mem[src1];`
