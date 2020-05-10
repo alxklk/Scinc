@@ -68,7 +68,7 @@ Error messages are sometimes confusing or missing, sometimes extra. No file/line
 ![Error picture](error.png)
 
 ## Runtime library
-```
+```c++
 // Graphics with SVG 'path d="..."'-like semantics
 // available if "graphics.h" is included
 class Graph
@@ -124,27 +124,32 @@ class Graph
 	// 
 	void next();
 };
+
+inline int glyph(int);
+inline int gtext(char*);
+inline int GC(char*);
+inline void PutPixel(int,int,int);
+inline int GetPixel(int,int);
+
 // 
 inline void Interrupt();
 inline float Time();
+// IO
 inline int printf(char*,...);
 inline int snprintf(char*,int,char*,...);
 inline int puts(char*);
+inline int stext(char*,int,int,int);
+// math
 inline float sin(float);
 inline float cos(float);
 inline float sqrt(float);
-inline void Print1();
+// User interaction
 inline void GetMouseState(int&,int&,int&);
 inline int GetKeyEvent(int&,int&);
 inline int KeyPressed(int);
+// sound
 inline int snd_add(int);
 inline void snd_data(int,int,float,float);
 inline void snd_out(float,float);
 inline void snd_play(int);
-inline int glyph(int);
-inline int gtext(char*);
-inline int stext(char*,int,int,int);
-inline int GC(char*);
-inline void PutPixel(int,int,int);
-inline int GetPixel(int,int);
 ```
