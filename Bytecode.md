@@ -84,8 +84,8 @@ PUSHFC  | 1        | float         | PUSH Float Constant | function argument
 MOV     | 3        |[mem],[mem],int| MOVe (copy) scr1 bytes from src0 to dst | `var1=var0` or `memcpy(dst,src0,src1)`
 ENTR    | 2        |int            | ENTeR sub (reserve place for local and temp variables on stack)
 EXIT    | 2        |int            | EXIT from subroutine (forget about local and temp vars)
-JMPZ    | 2        | int,[mem]     | conditinao JuMP if Zero | `if(mem[src])IP+=dst;`
-JMPNZ   | 2        | int,[mem]     | conditinao JuMP if NonZero | `if(!mem[src])IP+=dst;`
+JMPZ    | 2        | int,[mem]     | conditinal JuMP if Zero | `if(mem[src])IP+=dst;`
+JMPNZ   | 2        | int,[mem]     | conditinal JuMP if NonZero | `if(!mem[src])IP+=dst;`
 JMP     | 1        | int           | JuMP | `goto label;`
 LS      | 3        | [mem]         | integer LeSs | `mem[dst]=(mem[src0]<mem[src1]);`
 GR      | 3        | [mem]         | integer GReater | `mem[dst]=(mem[src0]>mem[src1]);`
