@@ -17,7 +17,9 @@ Current VM realization runs on own virtual processor and virtual address space. 
 
 ## Motivation
 
-Language itself is intended to be reasonably limited subset of C++, moving towards better compatibility with standard compilers. Constantly growing set of minimal feature tests is used to check it after all changes in lexer, parser, backend or VM. There are thereasons, why C++ was choosen:
+Scinc is intended to be used as a script embeddable language for high level application logic and for rapid functionality prototyping, with possibility to convert it into C++ with minimal effort.
+
+Language itself is intended to be reasonably limited subset of C++, moving towards better compatibility with standard compilers. Constantly growing set of minimal feature tests is used to check it after all changes in lexer, parser, backend or VM. There are the reasons, why C++ was choosen:
 
 * author knows C++ well enough
 * there are a lot of editors/IDEs that support C++
