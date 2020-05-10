@@ -69,7 +69,7 @@ Error messages are sometimes confusing or missing, sometimes extra. No file/line
 
 ## Runtime library
 
-Interpreter has some bindings to native functions, some kind of reuntime library. This is not a part of the language and proveded as an example. Can (and probably will) be changed in future.
+Interpreter has some bindings to native functions, some kind of runtime library. This is not a part of the language and provided as an example. Can (and probably will) be changed in future.
 
 ```c++
 // Predefined macros
