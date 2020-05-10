@@ -103,6 +103,7 @@ LAND    | 3        | [mem]         | Logical AND | `mem[dst]=(mem[src0]&&mem[src
 LOR     | 3        | [mem]         | Logical OR | `mem[dst]=(mem[src0]\|\|mem[src1]);`
 LEA     | 2        | [mem]         | Load Effective Address | `mem[dst]=&mem[src0];`
 MADD    | 3        | [mem]         | Multiply-ADD | `dst=dst+src0*src1`
-INT     | 1        | int           | software INTerrupt | `int(dst)`
+INT     | 1        | int           | software INTerrupt | `__asm(int dst)`
 FIN     | 1        | int           | FINish execution with result code | `exit(code);` or `return code;` from main
 
+There is no (and probably will not be) assembler tool, that uses the language, described in this document. However, knowing the syntax can be useful for debugging and overall understanding what is going on.
