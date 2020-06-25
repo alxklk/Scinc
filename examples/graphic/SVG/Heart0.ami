@@ -1,0 +1,6 @@
+<anim>
+	<target entity="*G28" param="scale_x" interpolation="sin" timeline="mirror" pivot="local" times="2.229756,2.617177" keys="0.91751,1.135139" />
+	<target entity="*G28" param="scale_y" interpolation="sin" timeline="mirror" pivot="local" times="2.625786,3.043339" keys="0.961035,1.200427" />
+	<target entity="*G28" param="hue" interpolation="sin" timeline="mirror" pivot="local" times="1.060,2.61" keys="-1.3,0.6" />
+	<target entity="*R0" param="A+" interpolation="linear" timeline="extra" pivot="local" times="1.400372" keys="-2.037467" />
+</anim>

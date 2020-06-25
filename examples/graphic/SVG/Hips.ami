@@ -1,0 +1,23 @@
+<anim>
+	<target entity="g8006" param="rotation" interpolation="spline" timeline="repeat" pivot="local" times="0,0.413123,1" keys="1.184108,-0.439718,1.184108" />
+	<target entity="g8018" param="rotation" interpolation="sin" timeline="repeat" pivot="local" times="0,0.159515,0.5" keys="0.002123,0.192983,0.002123" />
+	<target entity="g8068" param="y" interpolation="spline" timeline="repeat" pivot="local" times="0,0.105973,0.162265,0.234976,0.5" keys="0.150,1.050,0.35,-1.25,0.05" />
+	<target entity="g8068" param="rotation" interpolation="spline" timeline="repeat" pivot="local" times="0,0.181819,0.288,0.5" keys="0.002863,0.046653,-0.050099,0.002863" />
+	<target 
+		entity="g8091" param="rotation" interpolation="spline" timeline="repeat" pivot="local" 
+		times="0.56,0.738689,0.856563,0.953923,1.106978,1.226552,1.324231,1.446463,1.56"
+		keys="-0.002871,-0.511788,-0.7,-0.511788,-0.214920,-0.384559,0,0.2,-0.002871"
+	/>
+	<target entity="g8103" param="rotation" interpolation="spline" timeline="repeat" pivot="local" times="0.025,0.285827,0.539324,0.773689,1.025" keys="0.4,0.548456,2.032797,2.117617,0.4" />
+	<target entity="g8105" param="rotation" interpolation="spline" timeline="repeat" pivot="local" times="0,0.384750,0.748255,1" keys="-1.1,1.057373,-0.766247,-1.1" />
+	<target entity="path7841" param="rotation" interpolation="sin" timeline="repeat" pivot="local" times="0,0.305,1" keys="0.572785,-0.783587,0.591889" />
+	<target entity="use8107" param="t" interpolation="linear" timeline="extra" pivot="local" times="0.5,1.5" keys="0,1" />
+	<target entity="use8107" param="R*" interpolation="linear" timeline="extra" pivot="local" times="0.656608" keys="0.699924" />
+	<target entity="use8107" param="G*" interpolation="linear" timeline="extra" pivot="local" times="0.684102" keys="0.762675" />
+	<target entity="use8107" param="B*" interpolation="linear" timeline="extra" pivot="local" times="0.673625" keys="0.803009" />
+	<target entity="use8130" param="t" interpolation="linear" timeline="extra" pivot="local" times="0.5,1.5" keys="0,1" />
+	<target entity="use8130" param="B*" interpolation="linear" timeline="extra" pivot="local" times="0.152690" keys="0.859343" />
+	<target entity="use8130" param="G*" interpolation="linear" timeline="extra" pivot="local" times="0.152690" keys="0.878446" />
+	<target entity="use8130" param="R*" interpolation="linear" timeline="extra" pivot="local" times="0.16" keys="0.909243" />
+	<target entity="g8101" param="rotation" interpolation="spline" timeline="repeat" pivot="local" times="0,0.165690,0.251512,0.463297,0.617415,1" keys="-0.5,0,0.8,0,-0.5,-0.5" />
+</anim>
