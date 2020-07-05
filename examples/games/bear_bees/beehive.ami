@@ -1,0 +1,8 @@
+<anim>
+	<target entity="wing" param="rotation" interpolation="linear" timeline="mirror" pivot="local" times="1.01,1.070000" keys="0.676271,-0.750239" />
+	<target entity="bee" param="y" interpolation="sin" timeline="mirror" pivot="local" times="1.02,1.405536" keys="-0.249032,3.529292" />
+	<target entity="bee" param="x" interpolation="sin" timeline="mirror" pivot="local" times="1.88,2.313278" keys="-1.906868,2.835314" />
+	<target entity="bee" param="t" interpolation="linear" timeline="mirror" pivot="local" times="-0.021961,1.017550,2.423085" keys="1.967841,0.001571,3.432906" />
+	<target entity="use923" param="t" interpolation="linear" timeline="mirror" pivot="local" times="0.995588,3.001405" keys="0.753380,3.028085" />
+	<target entity="use925" param="t" interpolation="linear" timeline="mirror" pivot="local" times="0.990000,2.986764" keys="-0.017706,-2.022532" />
+</anim>

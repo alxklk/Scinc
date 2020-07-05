@@ -1,0 +1,81 @@
+<html>
+	<head>
+	<meta charset="UTF-8">
+	<script lang="javascript">
+		function doAnim()
+		{
+			document.body.style.background="#6af";
+			var svg=document.getElementById("svg").getSVGDocument();
+			{
+				var anel=svg.getElementById("abdomen");
+				{
+					var anim=document.createElementNS("http://www.w3.org/2000/svg","animateTransform");
+					anim.setAttribute("attributeName","transform");
+					anim.setAttribute("dur" ," 1.743s");
+					anim.setAttribute("begin" ," 1.001s");
+					anim.setAttribute("type","rotate");
+					anim.setAttribute("keyTimes"," 0.000; 0.500; 1.000;");
+					anim.setAttribute("values","22.088;-13.180;22.088;");
+					anim.setAttribute("repeatCount","indefinite");
+					anim.setAttribute("additive","sum");
+					anim.setAttribute("calcMode","spline");
+					anim.setAttribute("keySplines","0.365,0,0.635,1;0.365,0,0.635,1;0.365,0,0.635,1;");
+					anel.appendChild(anim);
+				}
+			}
+			{
+				var anel=svg.getElementById("g907");
+				{
+					var anim=document.createElementNS("http://www.w3.org/2000/svg","animateTransform");
+					anim.setAttribute("attributeName","transform");
+					anim.setAttribute("dur" ," 0.339s");
+					anim.setAttribute("begin" ," 1.004s");
+					anim.setAttribute("type","rotate");
+					anim.setAttribute("keyTimes"," 0.000; 0.500; 1.000;");
+					anim.setAttribute("values"," 2.198;-1.099; 2.198;");
+					anim.setAttribute("repeatCount","indefinite");
+					anim.setAttribute("additive","sum");
+					anim.setAttribute("calcMode","spline");
+					anim.setAttribute("keySplines","0.365,0,0.635,1;0.365,0,0.635,1;0.365,0,0.635,1;");
+					anel.appendChild(anim);
+				}
+				{
+					var anim=document.createElementNS("http://www.w3.org/2000/svg","animateTransform");
+					anim.setAttribute("attributeName","transform");
+					anim.setAttribute("dur" ," 1.714s");
+					anim.setAttribute("begin" ," 0.999s");
+					anim.setAttribute("type","translate");
+					anim.setAttribute("keyTimes"," 0.000; 0.283; 0.500; 0.717; 1.000;");
+					anim.setAttribute("values","0  0.467;0 -0.172;0 -0.010;0 -0.172;0  0.467;");
+					anim.setAttribute("repeatCount","indefinite");
+					anim.setAttribute("additive","sum");
+					anim.setAttribute("calcMode","spline");
+					anim.setAttribute("keySplines","0.365,0,0.635,1;0.365,0,0.635,1;0.365,0,0.635,1;0.365,0,0.635,1;0.365,0,0.635,1;");
+					anel.appendChild(anim);
+				}
+			}
+			{
+				var anel=svg.getElementById("lwing");
+			}
+			{
+				var anel=svg.getElementById("wing");
+				{
+					var anim=document.createElementNS("http://www.w3.org/2000/svg","animateTransform");
+					anim.setAttribute("attributeName","transform");
+					anim.setAttribute("dur" ," 0.089s");
+					anim.setAttribute("begin" ," 1.001s");
+					anim.setAttribute("type","rotate");
+					anim.setAttribute("keyTimes"," 0.000; 0.500; 1.000;");
+					anim.setAttribute("values","102.518;-4.398;102.518;");
+					anim.setAttribute("repeatCount","indefinite");
+					anim.setAttribute("additive","sum");
+					anel.appendChild(anim);
+				}
+			}
+		}
+	</script>
+	</head>
+	<body>
+		<object id="svg" data=/home/klk/wrk/Scinc/examples/games/bear_bees/honeybee.svg type="image/svg+xml" onload="doAnim();"></object>
+	</body>
+</html>

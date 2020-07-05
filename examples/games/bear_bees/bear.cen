@@ -1,0 +1,14 @@
+<centers>
+	<center id="g1319" pivot="13.570738,10.030561,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="larm" pivot="13.649986,9.943859,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="lear" pivot="4.379189,5.815031,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="lleg" pivot="11.021969,13.01213,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="mouth_open" pivot="23.43919,8.629844,1,0,0,1" offset="-13.695831,1.823594,0.999992,0,0,0.999998"/>
+	<center id="path1264" pivot="11.37153,14.107157,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="path917" pivot="6.564478,8.256958,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="path982" pivot="6.480484,6.597186,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="rarm" pivot="13.568329,10.050608,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="rear" pivot="4.450909,5.671502,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="rleg" pivot="11.206125,13.991022,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="snout" pivot="8.596077,9.060448,1,0,0,1" offset="0,0,1,0,0,1"/>
+</centers>

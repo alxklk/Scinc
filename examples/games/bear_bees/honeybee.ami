@@ -1,0 +1,7 @@
+<anim>
+	<target entity="abdomen" param="rotation" interpolation="sin" timeline="mirror" pivot="local" times="1.000991,1.872409" keys="0.385515,-0.23003" />
+	<target entity="g907" param="rotation" interpolation="sin" timeline="mirror" pivot="local" times="1.003507,1.1732" keys="0.038354,-0.019184" />
+	<target entity="g907" param="y" interpolation="sin" timeline="mirror" pivot="local" times="0.999156,1.484305,1.856326" keys="0.467093,-0.172271,-0.010179" />
+	<target entity="lwing" param="t" interpolation="linear" timeline="extra" pivot="local" times="1.003975,2.000734" keys="-0.948166,0.009349" />
+	<target entity="wing" param="rotation" interpolation="linear" timeline="mirror" pivot="local" times="1.000635,1.04495" keys="1.789277,-0.076753" />
+</anim>

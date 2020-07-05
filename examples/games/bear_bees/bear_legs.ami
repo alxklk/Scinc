@@ -1,0 +1,6 @@
+<anim>
+	<target entity="rleg" param="rotation" interpolation="sin" timeline="repeat" pivot="local" times="0.035737,0.195874,0.374313,0.42693" keys="0.05,-0.55,0.45,0.150" />
+	<target entity="rleg" param="y" interpolation="sin" timeline="mirror" pivot="local" times="0.394621,0.611832" keys="0,-1.332677" />
+	<target entity="lleg" param="rotation" interpolation="sin" timeline="repeat" pivot="local" times="-0.204263,-0.044126,0.134313,0.18693" keys="0.05,-0.55,0.45,0.150" />
+	<target entity="lleg" param="y" interpolation="sin" timeline="mirror" pivot="local" times="0.164621,0.381832" keys="0,-1.332677" />
+</anim>

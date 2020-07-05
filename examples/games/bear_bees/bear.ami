@@ -1,0 +1,38 @@
+<anim>
+	<target entity="circle937" param="scale_y" interpolation="linear" timeline="mirror" pivot="local" times="0.006076,0.280738,0.345021,0.397616,0.456055,0.514494,0.578777,0.993693" keys="0.990614,0.982264,0.347673,0.990614,0.990614,0.314273,0.982264,0.982264" />
+	<target entity="ellipse1292" param="y" interpolation="sin" timeline="mirror" pivot="local" times="-0.020379" keys="0" />
+	<target entity="face" param="y" interpolation="sin" timeline="mirror" pivot="local" times="0.2,0.92" keys="-0.769377,-0.35885" />
+	<target entity="face" param="x" interpolation="sin" timeline="mirror" pivot="local" times="0.51,1.43" keys="0.308255,-0.35885" />
+	<target entity="fur" param="x" interpolation="sin" timeline="mirror" pivot="local" times="0.51,1.43" keys="0.308255,-0.35885" />
+	<target entity="g1326" param="rotation" interpolation="sin" timeline="repeat" pivot="local" times="0.000737,0.160874,0.339313,0.39193" keys="0.05,-0.55,0.45,0.150" />
+	<target entity="larm" param="rotation" interpolation="sin" timeline="repeat" pivot="local" times="0.000737,0.160874,0.339313,0.39193" keys="0.05,-0.55,0.45,0.150" />
+	<target entity="layer1" param="t" interpolation="linear" timeline="repeat" pivot="local" times="0.003403,3.997406" keys="0,1.566818" />
+	<target entity="lear" param="rotation" interpolation="sin" timeline="mirror" pivot="local" times="-0.192468,0.089727" keys="0.167328,-0.209236" />
+	<target entity="lleg" param="rotation" interpolation="sin" timeline="repeat" pivot="local" times="-0.204263,-0.044126,0.134313,0.18693" keys="0.05,-0.55,0.45,0.150" />
+	<target entity="lleg" param="y" interpolation="sin" timeline="mirror" pivot="local" times="0.164621,0.381832" keys="0,-1.332677" />
+	<target entity="mouth_closed" param="visibility" interpolation="linear" timeline="repeat" pivot="local" times="0.004268,0.621719,0.626242,0.991293,1.011968" keys="1.016244,0.97769,0.052386,-0.005445,0.996967" />
+	<target entity="mouth_open" param="visibility" interpolation="linear" timeline="repeat" pivot="local" times="0.002185,0.604815,0.659204,0.956488,1.022809" keys="0.092061,0.051522,1.308236,1.295045,0.086405" />
+	<target 
+		entity="mouth_open" param="scale_y" interpolation="linear" timeline="repeat" pivot="local" 
+		times="0.007585,0.642738,0.753377,0.834263,0.883428,0.911976,0.927836,0.950039,0.957969,1.010055"
+		keys="0.02026,0.044313,0.863676,0.917071,1.039115,0.894187,1.016232,0.894187,0.734004,0.02026"
+	/>
+	<target entity="path1057" param="visibility" interpolation="linear" timeline="repeat" pivot="local" times="0.99,2.01,2.31,2.66" keys="0.924045,0.975361,-0.307535,0.924045" />
+	<target entity="path1288" param="rotation" interpolation="sin" timeline="repeat" pivot="local" times="0.238371,0.395874,0.574313,0.62693" keys="0.108679,-0.55,0.45,0.150" />
+	<target entity="path1288" param="y" interpolation="sin" timeline="mirror" pivot="local" times="-0.020379,0.196832" keys="0,-1.332677" />
+	<target entity="path917" param="scale_y" interpolation="linear" timeline="mirror" pivot="local" times="0.006076,0.280738,0.345021,0.397616,0.456055,0.514494,0.578777,0.993693" keys="0.990614,0.982264,0.347673,0.990614,0.990614,0.314273,0.982264,0.982264" />
+	<target entity="path982" param="rotation" interpolation="linear" timeline="repeat" pivot="local" times="0.000391,0.576229,0.75547,1.008329,1.149162" keys="0.170682,0.164223,0.745519,0.706766,0.170682" />
+	<target entity="path982" param="x" interpolation="linear" timeline="repeat" pivot="local" times="-0.005631,0.582630,0.707459,1.033935,1.152363" keys="-0.191014,-0.15872,0.706766,0.732601,-0.197473" />
+	<target entity="path982" param="y" interpolation="linear" timeline="repeat" pivot="local" times="0.000094,0.576229,0.733065,0.976322,1.145962" keys="-0.623756,0.00921,-0.262061,-0.223308,-0.623756" />
+	<target entity="rarm" param="rotation" interpolation="sin" timeline="repeat" pivot="local" times="0.259017,0.419155,0.597594,0.650211" keys="0.05,-0.55,0.45,0.150" />
+	<target entity="rear" param="rotation" interpolation="sin" timeline="mirror" pivot="local" times="-0.38857,-0.106375" keys="0.167328,-0.209236" />
+	<target entity="rect955" param="scale_y" interpolation="linear" timeline="repeat" pivot="local" times="0.24,1.180,1.41,1.72" keys="1.026676,1.026676,1.847729,1.026676" />
+	<target entity="rleg" param="rotation" interpolation="sin" timeline="repeat" pivot="local" times="0.035737,0.195874,0.374313,0.42693" keys="0.05,-0.55,0.45,0.150" />
+	<target entity="rleg" param="y" interpolation="sin" timeline="mirror" pivot="local" times="0.394621,0.611832" keys="0,-1.332677" />
+	<target 
+		entity="snout" param="scale_y" interpolation="linear" timeline="repeat" pivot="local" 
+		times="0.002922,0.679654,0.760625,0.828409,0.883937,0.912333,0.931027,0.949722,0.999929"
+		keys="0.975191,1.007355,1.684007,1.700358,1.840895,1.641693,1.767771,1.6543,0.978388"
+	/>
+	<target entity="g1621" param="y" interpolation="sin" timeline="mirror" pivot="local" times="-0.020379,0.196832" keys="0,0.472989" />
+</anim>

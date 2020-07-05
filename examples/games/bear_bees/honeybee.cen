@@ -1,0 +1,6 @@
+<centers>
+	<center id="abdomen" pivot="5.605362,8.376369,1.000001,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="g907" pivot="-0.328274,-4.705006,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="layer1" pivot="-0.593094,-5.396051,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="wing" pivot="-2.430278,-6.699739,1,0.000001,0,1" offset="0,0,1,0,0,1"/>
+</centers>
