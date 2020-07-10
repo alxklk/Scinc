@@ -14,6 +14,12 @@ float frand(int& seed)
 	return (irand(seed))/134217727.0;
 }
 
+float Fabs(float x)
+{
+	if(x<0.)return -x;
+	else return x;
+}
+
 float X(float x, float y)
 {
 	return 320+(x-4)*48.*3./(2.+1.-y/8.);
@@ -33,6 +39,15 @@ void Draw(int svg, float x, float y)
 	SVGDraw(svg);
 }
 
+void Draw0(int svg, float x, float y)
+{
+	x+=.5;
+	y+=.75;
+	float s=(X(x+.5,y)-X(x-.5,y))*.025;
+	SVGSetTransform(X(x,y),Y(x,y),s,0,0,s);
+	SVGDraw(svg);
+}
+
 void DrawAnimated(int svg, int anim, float x, float y, float t)
 {
 	x+=.5;
@@ -41,6 +56,21 @@ void DrawAnimated(int svg, int anim, float x, float y, float t)
 	SVGSetTransform(X(x,y),Y(x,y),s,0,0,s);
 	SVGDrawAnimated(svg,anim,t);
 }
+
+struct float2
+{
+	float x;
+	float y;
+	void Zero(){x=0;y=0;}
+	void Set(float newX, float newY){x=newX;y=newY;}
+	void WalkToZero(float delta)
+	{
+		if(x<0)x+=1./32.;
+		else if(x>0)x-=1./32.;
+		else if(y<0)y+=1./32.;
+		else if(y>0)y-=1./32.;
+	}
+};
 
 int main()
 {
@@ -56,6 +86,12 @@ int main()
 	int bush=SVGLoad("bush.svg");
 
 	int field[64]={};
+	float2 offs[64];
+	for(int i=0;i<64;i++)
+	{
+		offs[i].Zero();
+	}
+
 	int prevmb=0;
 	int seed=1734934523;
 	int next=irand(seed)%5+1;
@@ -112,6 +148,10 @@ int main()
 		int iy=0;
 		bool hover=false;
 		bool canplace=false;
+		bool move=false;
+		int placex;
+		int placey;
+		int placeItem;
 		if((ox>0)&&(oy>0)&&(ox<8)&&(oy<8))
 		{
 			ix=ox;
@@ -136,27 +176,118 @@ int main()
 			{
 				if(field[ix+iy*8]==0)
 				{
-					field[ix+iy*8]=next;
-					next=irand(seed)%5+1;
+					field[ix+iy*8]=-100;
+					placex=ix;
+					placey=iy;
+					placeItem=next;
+					next=(irand(seed)/7)%5+1;
+					canplace=false;
+					move=true;
 				}
 			}
+		}
+
+		if(0)
+		{
+			move=false;
+			field[placex+placey*8]=placeItem;
+		}
+
+
+		if(move)
+		{
+			move=false;
+			for(int i=0;i<64;i++)
+				offs[i].Zero();
+			for(int i=0;i<8;i++)
+			{
+				for(int j=0;j<8;j++)
+				{
+					if(field[i+j*8]==5)
+					{
+						int newIndex[4];
+						float2 newOffset[4];
+						int newIndexCnt=0;
+						if((i>0)&&(field[i-1+j*8]==0))
+						{
+							newIndex[newIndexCnt]=i-1+j*8;
+							newOffset[newIndexCnt].Set(1.,0.);
+							newIndexCnt++;
+						}
+						if((i<7)&&(field[i+1+j*8]==0))
+						{
+							newIndex[newIndexCnt]=i+1+j*8;
+							newOffset[newIndexCnt].Set(-1.,0.);
+							newIndexCnt++;
+						}
+						if((j>0)&&(field[i+(j-1)*8]==0))
+						{
+							newIndex[newIndexCnt]=i+(j-1)*8;
+							newOffset[newIndexCnt].Set(0.,1.);
+							newIndexCnt++;
+						}
+						if((j<7)&&(field[i+(j+1)*8]==0))
+						{
+							newIndex[newIndexCnt]=i+(j+1)*8;
+							newOffset[newIndexCnt].Set(0.,-1.);
+							newIndexCnt++;
+						}
+						if(newIndexCnt)
+						{
+							field[i+j*8]=0;
+							int idx=(irand(seed)/21)%newIndexCnt;
+							int newPos=newIndex[idx];
+							field[newPos]=-5;
+							offs[newPos].Set(newOffset[idx].x,newOffset[idx].y);
+						}
+					}
+				}
+			}
+			field[placex+placey*8]=placeItem;
+			for(int i=0;i<64;i++)
+				if(field[i]==-5)field[i]=5;
+		}
+
+		if(false)
+		{
+		for(int i=0;i<8;i++)
+		{
+			for(int j=0;j<8;j++)
+			{
+				int index=i+j*8;
+				int obj=field[index];
+				float x=i;
+				float y=j;
+				if(obj==1)     Draw0(hive, x, y);
+				else if(obj==2)Draw0(bush, x, y);
+				else if(obj==3)Draw0(grass, x, y);
+				else if(obj==4)Draw0(bee, x, y);
+				else if(obj==5)Draw0(bear, x, y);
+			}
+		}
 		}
 
 		for(int i=0;i<8;i++)
 		{
 			for(int j=0;j<8;j++)
 			{
-				int obj=field[i+j*8];
+				int index=i+j*8;
+				int obj=field[index];
+				float x=i+offs[index].x;
+				float y=j+offs[index].y;
 				if(obj==1)
-					DrawAnimated(hive, hiveAnim, i, j, t+j+i*.3);
+					DrawAnimated(hive, hiveAnim, x, y, t+j+i*.3);
 				else if(obj==2)
-					Draw(bush, i, j);
+					Draw(bush, x, y);
 				else if(obj==3)
-					Draw(grass, i, j);
+					Draw(grass, x, y);
 				else if(obj==4)
-					DrawAnimated(bee, beeAnim, i, j, t+j+i*.3);
+					DrawAnimated(bee, beeAnim, x, y, t+j+i*.3);
 				else if(obj==5)
-					DrawAnimated(bear, bearAnim, i, j, t+j+i*.3);
+				{
+					DrawAnimated(bear, bearAnim, x, y, t+j+i*.3);
+				}
+				offs[index].WalkToZero(1./32.);
 			}
 		}
 
