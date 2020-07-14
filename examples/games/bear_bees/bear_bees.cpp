@@ -20,6 +20,14 @@ float Fabs(float x)
 	else return x;
 }
 
+float S_Curve(float x)
+{
+	int ix=x+100;
+	ix-=100;
+	float fx=x-ix;
+	return (3.-2.*fx)*fx*fx+ix;
+}
+
 float X(float x, float y)
 {
 	return 320+(x-4)*48.*3./(2.+1.-y/8.);
@@ -93,12 +101,15 @@ int main()
 	}
 
 	int prevmb=0;
-	int seed=1734934523;
+	int seed=1734934523*Time()+32157907;
 	int next=irand(seed)%5+1;
 
+	float t=Time();
 	while(true)
 	{
-		float t=Time();
+		float t1=Time();
+		float dt=t1-t;
+		t=t1;
 		SVGSetTransform(0,0,1,0,0,1);
 		SVGDraw(bg);
 
@@ -187,13 +198,6 @@ int main()
 			}
 		}
 
-		if(0)
-		{
-			move=false;
-			field[placex+placey*8]=placeItem;
-		}
-
-
 		if(move)
 		{
 			move=false;
@@ -248,33 +252,14 @@ int main()
 				if(field[i]==-5)field[i]=5;
 		}
 
-		if(false)
-		{
 		for(int i=0;i<8;i++)
 		{
 			for(int j=0;j<8;j++)
 			{
 				int index=i+j*8;
 				int obj=field[index];
-				float x=i;
-				float y=j;
-				if(obj==1)     Draw0(hive, x, y);
-				else if(obj==2)Draw0(bush, x, y);
-				else if(obj==3)Draw0(grass, x, y);
-				else if(obj==4)Draw0(bee, x, y);
-				else if(obj==5)Draw0(bear, x, y);
-			}
-		}
-		}
-
-		for(int i=0;i<8;i++)
-		{
-			for(int j=0;j<8;j++)
-			{
-				int index=i+j*8;
-				int obj=field[index];
-				float x=i+offs[index].x;
-				float y=j+offs[index].y;
+				float x=i+S_Curve(offs[index].x);
+				float y=j+S_Curve(offs[index].y);
 				if(obj==1)
 					DrawAnimated(hive, hiveAnim, x, y, t+j+i*.3);
 				else if(obj==2)
@@ -287,14 +272,14 @@ int main()
 				{
 					DrawAnimated(bear, bearAnim, x, y, t+j+i*.3);
 				}
-				offs[index].WalkToZero(1./32.);
+				offs[index].WalkToZero(dt);
 			}
 		}
 
-		float s=(X(ox+.5,oy)-X(ox-.5,oy))*.05;
-		SVGSetTransform(mx,my,s,0,0,s);
 		if(hover)
 		{
+			float s=(X(ox+.5,oy)-X(ox-.5,oy))*.05;
+			SVGSetTransform(mx,my,s,0,0,s);
 			if(canplace)
 			{
 				if(next==1)
@@ -306,13 +291,30 @@ int main()
 				else if(next==4)
 					SVGDraw(bee);
 				else if(next==5)
-					SVGDraw(bear);
+					SVGDrawAnimated(bear,bearAnim,0);
 			}
 			else
 			{
 				SVGDraw(No);
 			}
 		}
+		else
+		{
+			float s=(X(ox+.5,oy)-X(ox-.5,oy))*.03;
+			float a=sin(t*7.)*.2;
+			SVGSetTransform(mx-20*s*sin(a),my+s*15+5*s*cos(a),s*cos(a),s*sin(a),-s*sin(a),s*cos(a));
+			if(next==1)
+				SVGDraw(hive);
+			else if(next==2)
+				SVGDraw(bush);
+			else if(next==3)
+				SVGDraw(grass);
+			else if(next==4)
+				SVGDraw(bee);
+			else if(next==5)
+				SVGDrawAnimated(bear,bearAnim,0);
+		}
+
 		Present();
 	}
 	return 0;
