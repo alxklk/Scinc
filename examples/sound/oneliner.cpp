@@ -10,14 +10,14 @@ float sndVal(int t)
 
 Graph g;
 
-int sample;
+int sndSample;
 
 void GenerateSamples(int nSamples)
 {
 	for(int i=0;i<nSamples;i++)
 	{
-		float l=sndVal(sample);
-		sample++;
+		float l=sndVal(sndSample);
+		sndSample++;
 		snd_out(l,l);
 	}
 }	
@@ -27,7 +27,7 @@ int main()
 	float t0=Time();
 	float tframe;
 	tframe=Time();
-	sample=0;
+	sndSample=0;
 	while(true)
 	{
 		g.rgb(.01,.15,.05);
@@ -42,10 +42,10 @@ int main()
 		tframe=Time();
 		if(nSamples>2000)nSamples=2000;
 		GenerateSamples(nSamples);
-		g.M(0.,480.*sndVal(sample-640));
+		g.M(0.,480.*sndVal(sndSample-640));
 		for(int i=1;i<640;i++)
 		{
-			g.L(i,sndVal(sample+i-640)*480.);
+			g.L(i,sndVal(sndSample+i-640)*480.);
 		}
 		g.fin();
 		g.width(8.,1.);

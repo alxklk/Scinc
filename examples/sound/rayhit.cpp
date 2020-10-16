@@ -74,7 +74,7 @@ public:
 	}
 };
 
-#define NB 2
+#define NB 3
 
 Bullet bullets[NB];
 
@@ -100,7 +100,7 @@ struct Hit
 };
 
 #define NH 20
-#define hitl .5
+#define hitl .2
 class Hits
 {
 public:
@@ -147,9 +147,12 @@ public:
 				g.clear();
 				Circle(h[i].x,h[i].y,r*20);
 				g.fin();
-				g.width(2,2);
-				g.rgb(0,1,1);
 				g.alpha(1-r);
+				g.width(8,2);
+				g.rgb(1,.5,0);
+				g.stroke();
+				g.width(2,1);
+				g.rgb(1,1,0);
 				g.stroke();
 			}
 		}
@@ -202,20 +205,20 @@ void print(flt2& p)
 
 Hits hits;
 
-#define EL 11150
+#define EL 15150
 
 class CHitSound
 {
 public:
 	int sample;
 	int echoPos;
-	float echo[25000];
+	float echo[EL*3];
 	void Init()
 	{
 		printf("Init echo\n");
 		sample=0;
 		echoPos=0;
-		for(int i=0;i<25000;i++)echo[i]=0;
+		for(int i=0;i<EL*3;i++)echo[i]=0;
 	}
 	void GenerateSamples(int nSamples)
 	{
@@ -224,8 +227,8 @@ public:
 			int ep=((echoPos+i)%EL)*2;
 			float l=echo[ep  ];
 			float r=echo[ep+1];
-			echo[ep  ]=echo[ep  ]*0.25+r*.1;
-			echo[ep+1]=echo[ep+1]*0.25+l*.1;
+			echo[ep  ]=r*.45;
+			echo[ep+1]=l*.45;
 		}
 		for(int j=0;j<NH;j++)
 		{
@@ -234,11 +237,14 @@ public:
 			float l=(sample-hits.h[j].s)/44100.;
 			if(((l> -nSamples/44100.))&&(l<(hitl+nSamples/44100.)))
 			{
+				float f=(40+x*10+y*5)*2;
 				for(int i=0;i<nSamples;i++)
 				{
 					if((l>0)&&(l<hitl))
 					{
-						float s=sin(l*(40+j*20+x*10+y*5))*(1.-l/hitl)*.2;
+						float v=(1.-l/hitl);
+						float s=sin(l*f)*v*.2;
+
 						float b=(x-30)/300.;
 						int ep=(echoPos+i)%EL*2;
 						echo[ep  ]+=s*(1.-b);
@@ -274,13 +280,13 @@ int main()
 	walls[3].Set(50,250,60,60);
 	walls[4].Set(100,105,200,80);
 	walls[5].Set(100,105,80,200);
-	walls[6].Set(200,80,230,240);
-	walls[7].Set(230,240,80,200);
+	walls[6].Set(200,80,240,260);
+	walls[7].Set(240,260,80,200);
 
-	float bs=3;
+	float bs=1.5;
 	bullets[0].Set(170,60,55*bs,21*bs);
 	bullets[1].Set(120,60,36*bs,38*bs);
-	//bullets[2].Set(60,120,21*bs,56*bs);
+	bullets[2].Set(60,120,21*bs,56*bs);
 
 	hits.Init();
 	CHitSound hs;
@@ -295,7 +301,7 @@ int main()
 		hits.ns=hs.sample;
 
 		g.clear();
-		g.M(0,0);g.l(640,0);g.l(0,480);g.l(-640,0);g.close();g.fin();g.rgb(0.25,0.15,0.1);g.alpha(1);g.fill1();
+		g.M(0,0);g.l(640,0);g.l(0,480);g.l(-640,0);g.close();g.fin();g.rgb(0.35,0.1,0.0);g.alpha(1);g.fill1();
 		g.clear();
 		g.alpha(1);
 
@@ -328,7 +334,7 @@ int main()
 					bt+=nearestT*bdt;
 					bdt-=nearestT*bdt;
 					b.v=reflect(b.v,(w.p0-w.p1).norm());
-					b.p+=b.v*0.001;
+					b.p+=b.v*0.00001;
 					hits.AddHit(b.p.x,b.p.y);
 				}
 				else
@@ -376,8 +382,8 @@ int main()
 			g.L(w.p1.x,w.p1.y);
 		}
 		g.fin();
-		g.width(2,1);
-		g.rgb(1,1,0);
+		g.width(1.5,1);
+		g.rgb(1,1,1);
 		g.stroke();
 
 		hits.Render();
@@ -391,7 +397,10 @@ int main()
 			g.l(0-b.v.x/l,0-b.v.y/l);
 		}
 		g.fin();
-		g.width(3,3);
+		g.width(5,1);
+		g.rgb(0,0,1);
+		g.stroke();
+		g.width(3,1);
 		g.rgb(0,1,1);
 		g.stroke();
 
@@ -399,11 +408,18 @@ int main()
 		for(int i=0;i<NB;i++)
 		{
 			Bullet& b=bullets[i];
-			Circle(b.p.x,b.p.y,4);
+			g.M(b.p.x,b.p.y);
+			g.l(0,0);
+			//Circle(b.p.x,b.p.y,4);
 		}
 		g.fin();
 		g.rgb(0,0,1);
-		g.fill1();
+		g.width(10,1);
+		g.stroke();
+		g.rgb(0,1,1);
+		g.width(5,1);
+		g.stroke();
+		//g.fill1();
 
 		Present();
 	}
