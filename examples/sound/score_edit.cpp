@@ -1,5 +1,7 @@
 #include "graphics.h"
 
+#pragma STACK_SIZE 4096
+
 #define M_PI 3.141592654
 
 int rseed;
@@ -29,10 +31,6 @@ void MusicInit()
 		baz1[i]="2300230340320300"[i]-'0';
 	}
 }
-
-
-
-
 
 float s0(float t)
 {
@@ -66,8 +64,12 @@ float sndVal(float t)
 class Echo
 {
 public:
-	float data[16384];
+	float* data;
 	int pos;
+	void Init()
+	{
+		data=(float*)malloc(16384*sizeof(float));
+	}
 	void Clear()
 	{
 		for(int i=0;i<16384;i++)data[i]=0;
@@ -90,6 +92,18 @@ void Rect(float x, float y ,float w, float h)
 	g.M(x,y);g.l(w,0);g.l(0,h);g.l(-w,0);g.close();
 }
 
+void Circle(float x, float y, float r)
+{
+	g.M(x+r,y);
+	float a=0.55;
+	g.C(x+r,y+r*a,x+r*a,y+r,x,y+r);
+	g.C(x-r*a,y+r,x-r,y+r*a,x-r,y);
+	g.C(x-r,y-r*a,x-r*a,y-r,x,y-r);
+	g.C(x+r*a,y-r,x+r,y-r*a,x+r,y);
+	g.close();
+}
+
+
 int mx;
 int my;
 int mb;
@@ -99,6 +113,7 @@ int prevmy;
 
 int cursnd;
 
+#define NOTESIZE 14
 
 class Editor
 {
@@ -112,8 +127,8 @@ public:
 	void Update()
 	{
 		hoverx=hovery=-1;
-		int sx=(mx-x)/10;
-		int sy=(my-y)/10;
+		int sx=(mx-x)/NOTESIZE;
+		int sy=(my-y)/NOTESIZE;
 		if((sx>=0)&&(sx<16)&&(sy>=0)&&(sy<10))
 		{
 			hoverx=sx;
@@ -131,51 +146,71 @@ public:
 	{
 		g.clear();
 		g.M(x,y);
-		g.l(160,0);
-		g.l(0,100);
-		g.l(-160,0);
+		g.l(16*NOTESIZE,0);
+		g.l(0,10*NOTESIZE);
+		g.l(-16*NOTESIZE,0);
 		g.close();
 		g.fin();
-		g.rgb(.5,.5,.5);
+		g.rgb(1,1,1);
 		g.alpha(.5);
 		g.fill1();
 		g.width(1,1);
 		g.rgb(.5,.8,1.0);
 		g.stroke();
 
+		g.alpha(1);
 		g.clear();
 		for(int i=0;i<16;i++)
 		{
-			Rect(i*10+x+1,mel[i]*10+y+1,8,8);
-			g.fin();
-			g.rgb(0,0,1);
-			if(mel[i]!=0)
-				g.alpha(1);
-			else
-				g.alpha(1);
-			g.fill1();
+			//Rect(i*NOTESIZE+x+2,mel[i]*NOTESIZE+y+2,NOTESIZE-4,NOTESIZE-4);
+			Circle(i*NOTESIZE+NOTESIZE/2+x,mel[i]*NOTESIZE+NOTESIZE/2+y,NOTESIZE/2-1);
 		}
+		g.fin();
+		g.rgb(.4,.1,0);
+		g.fill1();
+
+		g.clear();
+		for(int i=0;i<16;i++)
+		{
+			g.M(i*NOTESIZE+NOTESIZE/2+x-1,mel[i]*NOTESIZE+NOTESIZE/2+y-1);
+			g.l(0,0);
+		}
+		g.fin();
+		g.rgb(1.,.5,.3);
+		g.width(NOTESIZE/2-1,1);
+		g.stroke();
+
+		g.clear();
+		for(int i=0;i<16;i++)
+		{
+			g.M(i*NOTESIZE+NOTESIZE/2+x-2,mel[i]*NOTESIZE+NOTESIZE/2+y-2);
+			g.l(0,0);
+		}
+		g.fin();
+		g.rgb(1,1,1);
+		g.width(2,1);
+		g.stroke();
 
 		g.clear();
 		for(int i=1;i<10;i++)
 		{
-			g.M(x,y+i*10);
-			g.l(160,0);
+			g.M(x,y+i*NOTESIZE);
+			g.l(16*NOTESIZE,0);
 		}
 		for(int i=1;i<16;i++)
 		{
-			g.M(x+i*10,y);
-			g.l(0,100);
+			g.M(x+i*NOTESIZE,y);
+			g.l(0,10*NOTESIZE);
 		}
 		g.fin();
 		g.width(1.,1.);
-		g.rgba(.0,.0,1.0,.5);
+		g.rgb(.8,.0,0.3);
 		g.stroke();
 
 		g.clear();
 		float tpos=mod(cursnd,cycle)/cycle;
-		g.M(x+160*tpos,y);
-		g.l(0,100);
+		g.M(x+16*NOTESIZE*tpos,y);
+		g.l(0,10*NOTESIZE);
 		g.fin();
 		g.width(2.,2.);
 		g.rgba(1,1,1,1);
@@ -185,7 +220,7 @@ public:
 		if((hoverx>=0)&&(hovery>=0))
 		{
 			g.clear();
-			Rect(hoverx*10+x,hovery*10+y,10,10);
+			Rect(hoverx*NOTESIZE+x,hovery*NOTESIZE+y,NOTESIZE,NOTESIZE);
 			g.fin();
 			g.width(1.,1.);
 			g.rgba(1,1,1,1);
@@ -201,11 +236,12 @@ class CMusic
 public:
 	int sample;
 	int echoPos;
-	float echo[22500];
+	float* echo;
 	void Init()
 	{
 		sample=0;
 		echoPos=0;
+		echo=(float*)malloc(22500*sizeof(float));
 		for(int i=0;i<22500;i++)echo[i]=0;
 	}
 	void GenerateSamples(int nSamples)
@@ -243,6 +279,7 @@ int main()
 	MusicInit();
 
 	Echo echo;
+	echo.Init();
 	echo.Clear();
 	music.Init();
 	Editor ed1;
@@ -250,9 +287,9 @@ int main()
 	Editor ed3;
 	Editor ed4;
 	ed1.mel=&mel0[0];ed1.x=100;ed1.y=100;ed1.cycle=4096.*16./.75;
-	ed2.mel=&mel1[0];ed2.x=300;ed2.y=100;ed2.cycle=4096.*16./.75;
-	ed3.mel=&baz0[0];ed3.x=100;ed3.y=220;ed3.cycle=65536.*16./.75;
-	ed4.mel=&baz1[0];ed4.x=300;ed4.y=220;ed4.cycle=65536.*16.*2./.75;
+	ed2.mel=&mel1[0];ed2.x=350;ed2.y=100;ed2.cycle=4096.*16./.75;
+	ed3.mel=&baz0[0];ed3.x=100;ed3.y=260;ed3.cycle=65536.*16./.75;
+	ed4.mel=&baz1[0];ed4.x=350;ed4.y=260;ed4.cycle=65536.*16.*2./.75;
 
 	while(true)
 	{
@@ -272,8 +309,9 @@ int main()
 		g.stroke();
 		g.clear();
 
-		int nSamples=Time()*44100-tframe*44100+.5;
-		tframe=Time();
+		float t1=Time();
+		int nSamples=t1*44100-tframe*44100+.5;
+		tframe=t1;
 		if(nSamples>2000)nSamples=2000;
 
 		g.M(-1,240);
