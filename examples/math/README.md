@@ -76,6 +76,7 @@ Rational approximation 355/113:
 ##  ####  ####  ####  ####  ####  ####  ####  ####  ##
 ######################################################
 ```
-# `dragon.cpp` draws colorfull dragon curve into image file in PNM graphic format (use output redirection: `Scinc dragon.cpp > dragon.pnm`):
+# `dragon.cpp` draws colorfull dragon curve into image file in PNM graphic format
+(use output redirection: `Scinc dragon.cpp > dragon.pnm`):
 ![Dragon](dragon.png)
 
