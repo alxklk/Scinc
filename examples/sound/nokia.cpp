@@ -34,7 +34,7 @@ struct Note
 	int t1; // end
 };
 
-#define NN 6
+#define NN 8
 class Polyphony
 {
 public:
@@ -73,7 +73,7 @@ Graph g;
 
 Polyphony notes;
 
-#define EL 8150
+#define EL 6150
 
 class CSnd
 {
@@ -95,8 +95,8 @@ public:
 			int ep=((echoPos+i)%EL)*2;
 			float l=echo[ep  ];
 			float r=echo[ep+1];
-			echo[ep  ]=r*.4;
-			echo[ep+1]=l*.4;
+			echo[ep  ]=r*.6;
+			echo[ep+1]=l*.6;
 			//echo[ep  ]=0;
 			//echo[ep+1]=0;
 		}
@@ -113,14 +113,15 @@ public:
 				if(cs>n.t0)
 				{
 					float t=(cs-n.t0)/44100.;
-					float s=sin((t+sin(t*24)*0.0005)*n.f*M_PI*2);
+					float s=sin((t+sin(cs*.0005)*0.0005)*n.f*M_PI*2);
 					if(s>0.3)s=0.3;else if(s<-0.3)s=-.3;
-					s*=(1.-(cs-n.t0)/float(n.t1-n.t0));
+					s*=(1. -(cs-n.t0)/float(n.t1-n.t0));
 					float tb=(cs-n.t0)/44100.;if(tb<0.01)s*=tb*100.;
 					//float te=(n.t1-cs)/44100.;if(te<0.1)s*=te*10.;
+					float b=.5+sin(cs*.0001)*.25;
 					int ep=(echoPos+i)%EL*2;
-					echo[ep  ]+=s;
-					echo[ep+1]+=s;
+					echo[ep  ]+=s*b;
+					echo[ep+1]+=s*(1.-b);
 				}
 				cs++;
 			}
@@ -153,6 +154,7 @@ int StartsWith(const char*s, const char* p)
 
 class MelodyProcessor
 {
+	const char* name;
 	const char* melody;
 	int position;
 	int wait;
@@ -160,9 +162,11 @@ class MelodyProcessor
 	float deflen;
 	int defoct;
 	float mul;
+	float tempo;
 public:
 	void Render()
 	{
+		stext(name,100,5,0xffffffff);
 		char s[2];
 		s[1]=0;
 		int x=10;
@@ -187,10 +191,14 @@ public:
 
 	void Init()
 	{
-		//mul=8;deflen=1./4.; defoct=1;melody="2p 16e2 16d2 8#f 8#g 16#c2 16b 8d 8e 16b 16a 8#c 8e 2a 2p";
-		//mul=8.;deflen=1./4.; defoct=5; melody="16#f1 16e1 16#d1 16e1 4g1 16a1 16g1 16#f1 16g1 4b1 16c2 16b1 16#a1 16b1 16#f2 16e2 16#d2 16e2 16#f2 16e2 16#d2 16e2 4g2 8e2 8g2 32d2 32e2 16#f2 8e2 8d2 8e2 32d2 32e2 16#f2 8e2 8d2 8e2 32d2 32e2 16#f2 8e2 8d2 8#c2 4b1 2p";
-		//Godfather:d=4,o=5,b=160:
-		mul=1.;deflen=1./8.; defoct=5; melody="8g,8c6,8d#6,8d6,8c6,8d#6,8c6,8d6,c6,8g#,8a#,2g,8p,8g,8c6,8d#6,8d6,8c6,8d#6,8c6,8d6,c6,8g,8f#,2f,8p,8f,8g#,8b,2d6,8p,8f,8g#,8b,2c6,8p,8c,8d#,8a#,8g#,g,8a#,8g#,8g#,8g,8g,8b4,2c";
+		tempo=2;
+		//name="Gamma";tempo=3.;mul=1.; deflen=1./4.;defoct=5;melody="c c# p";
+		//name="Greensleaves";tempo=1.5; mul=.5; deflen=1./4.;defoct=5;melody="p, g, 2a#, c6, d.6, 8d#6, d6, 2c6, a, f., 8g, a, 2a#, g, g., 8f, g, 2a, f, 2d, g, 2a#, c6, d.6, 8e6, d6, 2c6, a, f., 8g, a, a#., 8a, g, f#., 8e, f#, 2g";		//name="CANON";tempo=1.;mul=.5;deflen=1./4.;defoct=5;melody="8d, 8f#, 8a, 8d6, 8c#, 8e, 8a, 8c#6, 8d, 8f#, 8b, 8d6, 8a, 8c#, 8f#, 8a, 8b, 8d, 8g, 8b, 8a, 8d, 8f#, 8a, 8b, 8f#, 8g, 8b, 8c#, 8e, 8a, 8c#6, f#6, 8f#, 8a, e6, 8e, 8a, d6, 8f#, 8a, c#6, 8c#, 8e, b, 8d, 8g, a, 8f#, 8d, b, 8d, 8g, c#.6";
+		//name="Bolero";tempo=3.;mul=.125; deflen=1./2.;defoct=5;melody="c6, 8c6, 16b, 16c6, 16d6, 16c6, 16b, 16a, 8c6, 16c6, 16a, c6, 8c6, 16b, 16c6, 16a, 16g, 16e, 16f, 2g, 16g, 16f, 16e, 16d, 16e, 16f, 16g, 16a, g, g, 16g, 16a, 16b, 16a, 16g, 16f, 16e, 16d, 16e, 16d, 8c, 8c, 16c, 16d, 8e, 8f, d, 2g";
+		//name="Children"; tempo=1.5; mul=1; deflen=1./4; defoct=5;melody="8p, f.6, 1p, g#6, 8g6, d#.6, 1p, g#6, 8g6, c.6, 1p, g#6, 8g6, g#., 1p, 16f, 16g, 16g#, 16c6, f.6, 1p, g#6, 8g6, d#.6, 1p, 16c#6, 16c6, c#6, 8c6, g#, 2p, g., g#, 8c6, f.";
+		//name="Nokia tune"; mul=8;deflen=1./4.; defoct=1;melody="2p 16e2 16d2 8#f 8#g 16#c2 16b 8d 8e 16b 16a 8#c 8e 2a 2p";
+		//name="Rondo alla turka";mul=8.;deflen=1./4.; defoct=5; melody="16#f1 16e1 16#d1 16e1 4g1 16a1 16g1 16#f1 16g1 4b1 16c2 16b1 16#a1 16b1 16#f2 16e2 16#d2 16e2 16#f2 16e2 16#d2 16e2 4g2 8e2 8g2 32d2 32e2 16#f2 8e2 8d2 8e2 32d2 32e2 16#f2 8e2 8d2 8e2 32d2 32e2 16#f2 8e2 8d2 8#c2 4b1 2p";
+		name="Godfather theme";tempo=3;mul=.5;deflen=1./8.; defoct=5; melody="8g,8c6,8d#6,8d6,8c6,8d#6,8c6,8d6,c6,8g#,8a#,2g,8p,8g,8c6,8d#6,8d6,8c6,8d#6,8c6,8d6,c6,8g,8f#,2f,8p,8f,8g#,8b,2d6,8p,8f,8g#,8b,2c6,8p,8c,8d#,8a#,8g#,g,8a#,8g#,8g#,8g,8g,8b4,2c";
 		position=0;
 		wait=0;
 		error=false;
@@ -282,7 +290,7 @@ public:
 				f*=.5;
 		}
 		f*=mul;
-		len*=2.;
+		len*=tempo;
 		if(!pause)
 		{
 			notes.AddNote(f,len<.25?.25:len);
@@ -325,7 +333,7 @@ int main()
 		snd.GenerateSamples(nSamples);
 		g.clear();
 		g.M(-1,240);
-		for(int i=0;i<640;i++)
+		for(int i=0;i<640;i+=2)
 		{
 			float lvl=snd.echo[(snd.echoPos+(i-640)+EL)%EL];
 			g.L(i,lvl*120+240);
