@@ -34,7 +34,7 @@ struct Note
 	int t1; // end
 };
 
-#define NN 30
+#define NN 6
 class Polyphony
 {
 public:
@@ -59,8 +59,8 @@ public:
 			if(ns>n[i].t1)
 			{
 				n[i].f=f;
-				n[i].t0=ns+1000;
-				n[i].t1=ns+1000+len*44100;
+				n[i].t0=ns+4410;
+				n[i].t1=ns+4410+len*44100;
 				break;
 			}
 		}
@@ -95,8 +95,10 @@ public:
 			int ep=((echoPos+i)%EL)*2;
 			float l=echo[ep  ];
 			float r=echo[ep+1];
-			echo[ep  ]=r*.45;
-			echo[ep+1]=l*.45;
+			echo[ep  ]=r*.4;
+			echo[ep+1]=l*.4;
+			//echo[ep  ]=0;
+			//echo[ep+1]=0;
 		}
 		for(int j=0;j<NN;j++)
 		{
@@ -110,12 +112,12 @@ public:
 					break;
 				if(cs>n.t0)
 				{
-					float s=sin((cs-n.t0)/44100.*n.f*M_PI*2);
-					s=s>0?.2:-.2;
-					float tb=(cs-n.t0)/44100.;
-					if(tb<0.05)s*=tb*20.;
-					float te=(n.t1-cs)/44100.;
-					if(te<0.05)s*=te*20.;
+					float t=(cs-n.t0)/44100.;
+					float s=sin((t+sin(t*24)*0.0005)*n.f*M_PI*2);
+					if(s>0.3)s=0.3;else if(s<-0.3)s=-.3;
+					s*=(1.-(cs-n.t0)/float(n.t1-n.t0));
+					float tb=(cs-n.t0)/44100.;if(tb<0.01)s*=tb*100.;
+					//float te=(n.t1-cs)/44100.;if(te<0.1)s*=te*10.;
 					int ep=(echoPos+i)%EL*2;
 					echo[ep  ]+=s;
 					echo[ep+1]+=s;
@@ -157,6 +159,7 @@ class MelodyProcessor
 	bool error;
 	float deflen;
 	int defoct;
+	float mul;
 public:
 	void Render()
 	{
@@ -174,7 +177,7 @@ public:
 			i++;
 			stext(s,x,y,i<=position?0xffffff80:0xff808080);
 			x+=6;
-			if((x>300)&&(c==' '))
+			if((x>400)&&((c==' ')||(c==',')))
 			{
 				x=10;
 				y+=10;
@@ -184,8 +187,10 @@ public:
 
 	void Init()
 	{
-		//deflen=1./4.; defoct=1;melody="2p 16e2 16d2 8#f 8#g 16#c2 16b 8d 8e 16b 16a 8#c 8e 2a 2p";
-		deflen=1./4.; defoct=5; melody="16#f1 16e1 16#d1 16e1 4g1 16a1 16g1 16#f1 16g1 4b1 16c2 16b1 16#a1 16b1 16#f2 16e2 16#d2 16e2 16#f2 16e2 16#d2 16e2 4g2 8e2 8g2 32d2 32e2 16#f2 8e2 8d2 8e2 32d2 32e2 16#f2 8e2 8d2 8e2 32d2 32e2 16#f2 8e2 8d2 8#c2 4b1 2p";
+		//mul=8;deflen=1./4.; defoct=1;melody="2p 16e2 16d2 8#f 8#g 16#c2 16b 8d 8e 16b 16a 8#c 8e 2a 2p";
+		//mul=8.;deflen=1./4.; defoct=5; melody="16#f1 16e1 16#d1 16e1 4g1 16a1 16g1 16#f1 16g1 4b1 16c2 16b1 16#a1 16b1 16#f2 16e2 16#d2 16e2 16#f2 16e2 16#d2 16e2 4g2 8e2 8g2 32d2 32e2 16#f2 8e2 8d2 8e2 32d2 32e2 16#f2 8e2 8d2 8e2 32d2 32e2 16#f2 8e2 8d2 8#c2 4b1 2p";
+		//Godfather:d=4,o=5,b=160:
+		mul=1.;deflen=1./8.; defoct=5; melody="8g,8c6,8d#6,8d6,8c6,8d#6,8c6,8d6,c6,8g#,8a#,2g,8p,8g,8c6,8d#6,8d6,8c6,8d#6,8c6,8d6,c6,8g,8f#,2f,8p,8f,8g#,8b,2d6,8p,8f,8g#,8b,2c6,8p,8c,8d#,8a#,8g#,g,8a#,8g#,8g#,8g,8g,8b4,2c";
 		position=0;
 		wait=0;
 		error=false;
@@ -276,11 +281,11 @@ public:
 			for(int i=0;i<4-octave;i++)
 				f*=.5;
 		}
-		f*=8.;
+		f*=mul;
 		len*=2.;
 		if(!pause)
 		{
-			notes.AddNote(f,len);
+			notes.AddNote(f,len<.25?.25:len);
 		}
 		return len*44100;
 	}
@@ -310,17 +315,19 @@ int main()
 		g.clear();
 		g.fill1();
 		float t1=Time();
-		int nSamples=t1*44100-t0*44100+.5;
-		melody.Update(nSamples);
-		notes.Update(snd.sample);
+		int nSamples=t1*44100-t0*44100+1;
+		if(t1<1)
+			nSamples+=100;
 		t0=t1;
 		if(nSamples>2000)nSamples=2000;
+		melody.Update(nSamples);
+		notes.Update(snd.sample);
 		snd.GenerateSamples(nSamples);
 		g.clear();
 		g.M(-1,240);
 		for(int i=0;i<640;i++)
 		{
-			float lvl=snd.echo[((snd.echoPos+(i-640)+EL)%EL)*2];
+			float lvl=snd.echo[(snd.echoPos+(i-640)+EL)%EL];
 			g.L(i,lvl*120+240);
 		}
 		g.L(641,240);
