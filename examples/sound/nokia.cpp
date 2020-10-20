@@ -114,8 +114,8 @@ public:
 				{
 					float t=(cs-n.t0)/44100.;
 					float s=sin((t+sin(cs*.0005)*0.0005)*n.f*M_PI*2);
-					if(s>0.3)s=0.3;else if(s<-0.3)s=-.3;
-					
+					if(s>0.4)s=0.4;else if(s<-0.4)s=-.4;
+
 					s*=(1. -(cs-n.t0)/float(n.t1-n.t0));
 					float tb=(cs-n.t0)/44100.;if(tb<0.01)s*=tb*100.;
 					//float te=(n.t1-cs)/44100.;if(te<0.1)s*=te*10.;
@@ -167,11 +167,12 @@ class MelodyProcessor
 public:
 	void Render()
 	{
-		stext(name,100,5,0xffffffff);
+		stext(name,200,20,0xffffffff);
+		stext("Press 1-9 for other melodies",160,30,0xff808080);
 		char s[2];
 		s[1]=0;
-		int x=10;
-		int y=20;
+		int x=16;
+		int y=50;
 		int i=0;
 		while(true)
 		{
@@ -180,9 +181,9 @@ public:
 				break;
 			s[0]=c;
 			i++;
-			stext(s,x,y,i<=position?0xffffff80:0xff808080);
+			stext(s,x,y,i<=position?0xffffff80:0xff80c0d0);
 			x+=6;
-			if((x>400)&&((c==' ')||(c==',')))
+			if((x>500)&&((c==' ')||(c==',')))
 			{
 				x=10;
 				y+=10;
@@ -190,19 +191,20 @@ public:
 		}
 	}
 
-	void Init()
+	void Init(int n)
 	{
 		tempo=2;
 		mul=1;
-		//name="Gamma";tempo=.25;mul=1.; deflen=1./2.;defoct=5;melody="c c# d d# e f f# g g# a a# b p b a# a g# g f# f e d# d c# c p";
-		//name="Greensleaves";tempo=1.5; mul=.5; deflen=1./4.;defoct=5;melody="p, g, 2a#, c6, d.6, 8d#6, d6, 2c6, a, f., 8g, a, 2a#, g, g., 8f, g, 2a, f, 2d, g, 2a#, c6, d.6, 8e6, d6, 2c6, a, f., 8g, a, a#., 8a, g, f#., 8e, f#, 2g";		//name="CANON";tempo=1.;mul=.5;deflen=1./4.;defoct=5;melody="8d, 8f#, 8a, 8d6, 8c#, 8e, 8a, 8c#6, 8d, 8f#, 8b, 8d6, 8a, 8c#, 8f#, 8a, 8b, 8d, 8g, 8b, 8a, 8d, 8f#, 8a, 8b, 8f#, 8g, 8b, 8c#, 8e, 8a, 8c#6, f#6, 8f#, 8a, e6, 8e, 8a, d6, 8f#, 8a, c#6, 8c#, 8e, b, 8d, 8g, a, 8f#, 8d, b, 8d, 8g, c#.6";
-		//name="Bolero";tempo=2.7;mul=.25; deflen=1./2.;defoct=5;melody="c6, 8c6, 16b, 16c6, 16d6, 16c6, 16b, 16a, 8c6, 16c6, 16a, c6, 8c6, 16b, 16c6, 16a, 16g, 16e, 16f, 2g, 16g, 16f, 16e, 16d, 16e, 16f, 16g, 16a, g, g, 16g, 16a, 16b, 16a, 16g, 16f, 16e, 16d, 16e, 16d, 8c, 8c, 16c, 16d, 8e, 8f, d, 2g";
-		//name="Children"; tempo=1.5; mul=1; deflen=1./4; defoct=5;melody="8p, f.6, 1p, g#6, 8g6, d#.6, 1p, g#6, 8g6, c.6, 1p, g#6, 8g6, g#., 1p, 16f, 16g, 16g#, 16c6, f.6, 1p, g#6, 8g6, d#.6, 1p, 16c#6, 16c6, c#6, 8c6, g#, 2p, g., g#, 8c6, f.";
-		//name="Nokia tune"; mul=8;deflen=1./4.; defoct=1;melody="2p 16e2 16d2 8#f 8#g 16#c2 16b 8d 8e 16b 16a 8#c 8e 2a 2p";
-		//name="Rondo alla turka";mul=8.;deflen=1./4.; defoct=5; melody="16#f1 16e1 16#d1 16e1 4g1 16a1 16g1 16#f1 16g1 4b1 16c2 16b1 16#a1 16b1 16#f2 16e2 16#d2 16e2 16#f2 16e2 16#d2 16e2 4g2 8e2 8g2 32d2 32e2 16#f2 8e2 8d2 8e2 32d2 32e2 16#f2 8e2 8d2 8e2 32d2 32e2 16#f2 8e2 8d2 8#c2 4b1 2p";
-		name="Godfather theme";tempo=2.5;mul=.5;deflen=1./8.; defoct=5; melody="8g,8c6,8d#6,8d6,8c6,8d#6,8c6,8d6,c6,8g#,8a#,2g,8p,8g,8c6,8d#6,8d6,8c6,8d#6,8c6,8d6,c6,8g,8f#,2f,8p,8f,8g#,8b,2d6,8p,8f,8g#,8b,2c6,8p,8c,8d#,8a#,8g#,g,8a#,8g#,8g#,8g,8g,8b4,2c,1p";
-		//name="Imperial"; tempo=2.; mul=.25; deflen=1./4, defoct=5; melody="e, e, e, 8c, 16p, 16g, e, 8c, 16p, 16g, e, p, b, b, b, 8c6, 16p, 16g, d#, 8c, 16p, 16g, e, 8p";
-		//name="JingleBell";mul=.5;tempo=2.5; deflen=1./8; defoct=5; melody="32p,a,a,4a,a,a,4a,a,c6,f.,16g,2a,a#,a#,a#.,16a#,a#,a,a.,16a,a,g,g,a,4g,4c6";
+		if     (n==0){name="     Gamma";tempo=.5;mul=.25; deflen=1./2.;defoct=5;melody="c c# d d# e f f# g g# a a# b p b a# a g# g f# f e d# d c# c p";}
+		else if(n==1){name="   Nokia tune"; mul=8;deflen=1./4.; defoct=1;melody="2p 16e2 16d2 8#f 8#g 16#c2 16b 8d 8e 16b 16a 8#c 8e 2a 2p";}
+		else if(n==2){name="     Bolero";tempo=2.7;mul=.25; deflen=1./2.;defoct=5;melody="c6, 8c6, 16b, 16c6, 16d6, 16c6, 16b, 16a, 8c6, 16c6, 16a, c6, 8c6, 16b, 16c6, 16a, 16g, 16e, 16f, 2g, 16g, 16f, 16e, 16d, 16e, 16f, 16g, 16a, g, g, 16g, 16a, 16b, 16a, 16g, 16f, 16e, 16d, 16e, 16d, 8c, 8c, 16c, 16d, 8e, 8f, d, 2g";}
+		else if(n==3){name="    Children"; tempo=1.5; mul=1; deflen=1./4; defoct=5;melody="8p, f.6, 1p, g#6, 8g6, d#.6, 1p, g#6, 8g6, c.6, 1p, g#6, 8g6, g#., 1p, 16f, 16g, 16g#, 16c6, f.6, 1p, g#6, 8g6, d#.6, 1p, 16c#6, 16c6, c#6, 8c6, g#, 2p, g., g#, 8c6, f.";}
+		else if(n==4){name="  Greensleaves";tempo=1.5; mul=.5; deflen=1./4.;defoct=5;melody="p, g, 2a#, c6, d.6, 8d#6, d6, 2c6, a, f., 8g, a, 2a#, g, g., 8f, g, 2a, f, 2d, g, 2a#, c6, d.6, 8e6, d6, 2c6, a, f., 8g, a, a#., 8a, g, f#., 8e, f#, 2g";}
+		else if(n==5){name="Rondo alla turka";mul=8.;deflen=1./4.; defoct=5; melody="16#f1 16e1 16#d1 16e1 4g1 16a1 16g1 16#f1 16g1 4b1 16c2 16b1 16#a1 16b1 16#f2 16e2 16#d2 16e2 16#f2 16e2 16#d2 16e2 4g2 8e2 8g2 32d2 32e2 16#f2 8e2 8d2 8e2 32d2 32e2 16#f2 8e2 8d2 8e2 32d2 32e2 16#f2 8e2 8d2 8#c2 4b1 2p";}
+		else if(n==6){name="Godfather theme";tempo=2.5;mul=.5;deflen=1./8.; defoct=5; melody="8g,8c6,8d#6,8d6,8c6,8d#6,8c6,8d6,c6,8g#,8a#,2g,8p,8g,8c6,8d#6,8d6,8c6,8d#6,8c6,8d6,c6,8g,8f#,2f,8p,8f,8g#,8b,2d6,8p,8f,8g#,8b,2c6,8p,8c,8d#,8a#,8g#,g,8a#,8g#,8g#,8g,8g,8b4,2c,1p";}
+		else if(n==7){name="   Imperial"; tempo=2.; mul=.25; deflen=1./4, defoct=5; melody="e, e, e, 8c, 16p, 16g, e, 8c, 16p, 16g, e, p, b, b, b, 8c6, 16p, 16g, d#, 8c, 16p, 16g, e, 8p";}
+		else if(n==8){name="  JingleBell";mul=.5;tempo=2.5; deflen=1./8; defoct=5; melody="32p,a,a,4a,a,a,4a,a,c6,f.,16g,2a,a#,a#,a#.,16a#,a#,a,a.,16a,a,g,g,a,4g,4c6";}
+		else if(n==9){name="  Canon in D";tempo=2.;mul=.5;deflen=1./4.;defoct=5;melody="8d, 8f#, 8a, 8d6, 8c#, 8e, 8a, 8c#6, 8d, 8f#, 8b, 8d6, 8a, 8c#, 8f#, 8a, 8b, 8d, 8g, 8b, 8a, 8d, 8f#, 8a, 8b, 8f#, 8g, 8b, 8c#, 8e, 8a, 8c#6, f#6, 8f#, 8a, e6, 8e, 8a, d6, 8f#, 8a, c#6, 8c#, 8e, b, 8d, 8g, a, 8f#, 8d, b, 8d, 8g, c#.6";}
 		position=0;
 		wait=0;
 		error=false;
@@ -316,7 +318,7 @@ MelodyProcessor melody;
 int main()
 {
 	StdFreqs();
-	melody.Init();
+	melody.Init(1);
 	notes.Init();
 	snd.Init();
 	float t0=Time();
@@ -327,11 +329,13 @@ int main()
 		g.clear();
 		g.fill1();
 		float t1=Time();
-		int nSamples=t1*44100-t0*44100+1;
-		if(t1<1)
-			nSamples+=100;
+		int nSamples=t1*44100-t0*44100+5;
 		t0=t1;
 		if(nSamples>2000)nSamples=2000;
+		if(snd_bufhealth()>2748)
+		{
+			nSamples-=10;
+		}
 		melody.Update(nSamples);
 		notes.Update(snd.sample);
 		snd.GenerateSamples(nSamples);
@@ -339,7 +343,7 @@ int main()
 		g.M(-1,240);
 		for(int i=0;i<640;i+=2)
 		{
-			float lvl=snd.echo[(snd.echoPos+(i-640)*2+EL)%EL];
+			float lvl=snd.echo[(snd.echoPos+(640-i)*2+EL)%EL];
 			g.L(i,lvl*200+240);
 		}
 		g.L(641,240);
@@ -352,6 +356,26 @@ int main()
 		g.stroke();
 		g.clear();
 		melody.Render();
+		char ss[64];
+		snprintf(ss,64,"% 5i % 5i % 5i", nSamples, snd.echoPos, snd_bufhealth());
+		stext(ss,10,470,0xff004000);
+		int key;
+		int press;
+		if(GetKeyEvent(key,press))
+		{
+			if(press)
+			{
+				if     (key==49)melody.Init(1);
+				else if(key==50)melody.Init(2);
+				else if(key==51)melody.Init(3);
+				else if(key==52)melody.Init(4);
+				else if(key==53)melody.Init(5);
+				else if(key==54)melody.Init(6);
+				else if(key==55)melody.Init(7);
+				else if(key==56)melody.Init(8);
+				else if(key==57)melody.Init(9);
+			}
+		}
 		Present();
 	}
 	return 0;
