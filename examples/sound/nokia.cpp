@@ -117,7 +117,7 @@ public:
 					//float s=sin((t+sin(cs*.0005)*0.0005)*n.f*M_PI*2);
 					float s=sin((t+sin(t*28.)*0.0005)*n.f*M_PI*2);
 					if(s>0.4)s=0.4;else if(s<-0.4)s=-.4;
-					//s*=.3;
+					//float s=sin(t*n.f*M_PI*2)*.3;
 
 					s*=(1. -(cs-n.t0)/float(n.t1-n.t0));
 					float tb=(cs-n.t0)/44100.;if(tb<0.01)s*=tb*100.;
@@ -328,24 +328,25 @@ void FFT(float* in, float* o, int j)
 	I.re=0;
 	I.im=1;
 
-	cplx buf[256];
-	cplx out[256];
-	for(int i=0;i<256;i++)
+	cplx buf[512];
+	cplx out[512];
+	for(int i=0;i<512;i++)
 	{
 		buf[i].im=0;
-		buf[i].re=in[(((256-i)*5+j)*2)%EL];
+		int idx=((i*6+j)*2+EL)%EL;
+		buf[i].re=in[idx]+in[idx+1];
 	}
 
-	fft(buf, out, 256);
+	fft(buf, out, 512);
 
-	for(int i=0;i<256;i++)
+	for(int i=0;i<512;i++)
 	{
 		o[i]=sqrt(out[i].im*out[i].im+out[i].re*out[i].re);
 	}
 
 }
 
-float fftout[256];
+float fftout[512];
 
 bool graph;
 int frame;
@@ -357,7 +358,7 @@ int main()
 	notes.Init();
 	snd.Init();
 	float t0=Time();
-	for(int i=0;i<256;i++)
+	for(int i=0;i<512;i++)
 		fftout[i]=0;
 	frame=0;
 	graph=false;
@@ -421,18 +422,17 @@ int main()
 			g.fill2();
 
 			g.clear();
-			for(int i=0;i<128;i+=2)
+			for(int i=0;i<256;i++)
 			{
 				g.clear();
-				float lvl=
-				(fftout[i]+fftout[i+1]+fftout[255-i]+fftout[254-i])
-				*.25;
-				g.M((frame*2)%640,112+i*2);
+				float lvl=(fftout[i])
+				/16.;
+				g.M((frame)%640,112+i);
 				g.l(0,0);
 				g.fin();
 				lvl=lvl>1?1.:lvl;
 				g.rgb(lvl,lvl*lvl,lvl*lvl*lvl);
-				g.width(5.,1.);
+				g.width(1.,2.);
 				g.stroke();
 				g.clear();
 			}
@@ -463,16 +463,16 @@ int main()
 
 
 		g.clear();
-		for(int i=0;i<128;i+=2)
+		for(int i=0;i<256;i+=2)
 		{
-			g.M(i*5,480);
-			float lvl=(fftout[i]+fftout[i+1])*5.;
+			g.M(i*2+.5,480);
+			float lvl=(fftout[i])*5.;
 			if(lvl>240)lvl=240;
 			g.l(0,-lvl);
 		}
 		g.fin();
 		g.rgb(.8,.6,.0);
-		g.width(5.,5.);
+		g.width(2.,2.);
 		g.stroke();
 		g.clear();
 
