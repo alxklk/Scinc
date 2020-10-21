@@ -1,4 +1,5 @@
 #include "graphics.h"
+#include "FFT.h"
 
 #pragma STACK_SIZE 25600000
 
@@ -115,6 +116,7 @@ public:
 					float t=(cs-n.t0)/44100.;
 					float s=sin((t+sin(cs*.0005)*0.0005)*n.f*M_PI*2);
 					if(s>0.4)s=0.4;else if(s<-0.4)s=-.4;
+					//s*=.3;
 
 					s*=(1. -(cs-n.t0)/float(n.t1-n.t0));
 					float tb=(cs-n.t0)/44100.;if(tb<0.01)s*=tb*100.;
@@ -195,7 +197,7 @@ public:
 	{
 		tempo=2;
 		mul=1;
-		if     (n==0){name="     Gamma";tempo=.5;mul=.25; deflen=1./2.;defoct=5;melody="c c# d d# e f f# g g# a a# b p b a# a g# g f# f e d# d c# c p";}
+		if     (n==0){name="     Gamma";tempo=.5;mul=.25; deflen=1./2.;defoct=7;melody="c c# d d# e f f# g g# a a# b p b a# a g# g f# f e d# d c# c p";}
 		else if(n==1){name="   Nokia tune"; mul=8;deflen=1./4.; defoct=1;melody="2p 16e2 16d2 8#f 8#g 16#c2 16b 8d 8e 16b 16a 8#c 8e 2a 2p";}
 		else if(n==2){name="     Bolero";tempo=2.7;mul=.25; deflen=1./2.;defoct=5;melody="c6, 8c6, 16b, 16c6, 16d6, 16c6, 16b, 16a, 8c6, 16c6, 16a, c6, 8c6, 16b, 16c6, 16a, 16g, 16e, 16f, 2g, 16g, 16f, 16e, 16d, 16e, 16f, 16g, 16a, g, g, 16g, 16a, 16b, 16a, 16g, 16f, 16e, 16d, 16e, 16d, 8c, 8c, 16c, 16d, 8e, 8f, d, 2g";}
 		else if(n==3){name="    Children"; tempo=1.5; mul=1; deflen=1./4; defoct=5;melody="8p, f.6, 1p, g#6, 8g6, d#.6, 1p, g#6, 8g6, c.6, 1p, g#6, 8g6, g#., 1p, 16f, 16g, 16g#, 16c6, f.6, 1p, g#6, 8g6, d#.6, 1p, 16c#6, 16c6, c#6, 8c6, g#, 2p, g., g#, 8c6, f.";}
@@ -315,6 +317,38 @@ public:
 
 MelodyProcessor melody;
 
+float Fabs(float x)
+{
+	return x<0?-x:x;
+}
+
+void FFT(float* in, float* o, int j)
+{
+	I.re=0;
+	I.im=1;
+
+	cplx buf[256];
+	cplx out[256];
+	for(int i=0;i<256;i++)
+	{
+		buf[i].im=0;
+		buf[i].re=in[(((256-i)*5+j)*2)%EL];
+	}
+
+	fft(buf, out, 256);
+
+	for(int i=0;i<256;i++)
+	{
+		o[i]=sqrt(out[i].im*out[i].im+out[i].re*out[i].re);
+	}
+
+}
+
+float fftout[256];
+
+bool graph;
+int frame;
+
 int main()
 {
 	StdFreqs();
@@ -322,12 +356,34 @@ int main()
 	notes.Init();
 	snd.Init();
 	float t0=Time();
+	for(int i=0;i<256;i++)
+		fftout[i]=0;
+	frame=0;
+	graph=false;
 
 	while(true)
 	{
-		g.gray(0);
-		g.clear();
-		g.fill1();
+		int key;
+		int press;
+		if(GetKeyEvent(key,press))
+		{
+			if(press>0)
+			{
+				if     (key==49)melody.Init(1);
+				else if(key==50)melody.Init(2);
+				else if(key==51)melody.Init(3);
+				else if(key==52)melody.Init(4);
+				else if(key==53)melody.Init(5);
+				else if(key==54)melody.Init(6);
+				else if(key==55)melody.Init(7);
+				else if(key==56)melody.Init(8);
+				else if(key==57)melody.Init(9);
+				else if(key==48)melody.Init(0);
+				else if(key==4010)graph=!graph;
+				else printf("Key pressed %i %i\n", key, press);
+			}
+		}
+
 		float t1=Time();
 		int nSamples=t1*44100-t0*44100+5;
 		t0=t1;
@@ -339,11 +395,52 @@ int main()
 		melody.Update(nSamples);
 		notes.Update(snd.sample);
 		snd.GenerateSamples(nSamples);
+		FFT(snd.echo,fftout,snd.echoPos);
+		if(graph)
+		{
+			g.M(0,0);
+			g.l(640,0);
+			g.l(0,106);
+			g.l(-640,0);
+			g.close();
+			g.M(0,480);
+			g.l(640,0);
+			g.l(0,-108);
+			g.l(-640,0);
+			g.close();
+			g.fin();
+			g.rgba(.2,0,0,1);
+			g.fill2();
+
+			g.clear();
+			for(int i=0;i<128;i+=2)
+			{
+				g.clear();
+				float lvl=
+				(fftout[i]+fftout[i+1]+fftout[255-i]+fftout[254-i])
+				*.25;
+				g.M((frame*2)%640,112+i*2);
+				g.l(0,0);
+				g.fin();
+				lvl=lvl>1?1.:lvl;
+				g.rgb(lvl,lvl*lvl,lvl*lvl*lvl);
+				g.width(5.,1.);
+				g.stroke();
+				g.clear();
+			}
+			Present();
+			frame++;
+			continue;
+		}
+
+		g.gray(0);
+		g.clear();
+		g.fill1();
 		g.clear();
 		g.M(-1,240);
 		for(int i=0;i<640;i+=2)
 		{
-			float lvl=snd.echo[(snd.echoPos+(640-i)*2+EL)%EL];
+			float lvl=snd.echo[(snd.echoPos+(640-i)*2)%EL];
 			g.L(i,lvl*200+240);
 		}
 		g.L(641,240);
@@ -355,27 +452,26 @@ int main()
 		g.rgb(0.5,1.0,0.0);
 		g.stroke();
 		g.clear();
+
+
+		g.clear();
+		for(int i=0;i<128;i+=2)
+		{
+			g.M(i*5,480);
+			float lvl=(fftout[i]+fftout[i+1])*5.;
+			if(lvl>240)lvl=240;
+			g.l(0,-lvl);
+		}
+		g.fin();
+		g.rgb(.8,.6,.0);
+		g.width(5.,5.);
+		g.stroke();
+		g.clear();
+
 		melody.Render();
 		char ss[64];
-		snprintf(ss,64,"% 5i % 5i % 5i", nSamples, snd.echoPos, snd_bufhealth());
+		//snprintf(ss,64,"% 5i % 5i % 5i", nSamples, snd.echoPos, snd_bufhealth());
 		stext(ss,10,470,0xff004000);
-		int key;
-		int press;
-		if(GetKeyEvent(key,press))
-		{
-			if(press)
-			{
-				if     (key==49)melody.Init(1);
-				else if(key==50)melody.Init(2);
-				else if(key==51)melody.Init(3);
-				else if(key==52)melody.Init(4);
-				else if(key==53)melody.Init(5);
-				else if(key==54)melody.Init(6);
-				else if(key==55)melody.Init(7);
-				else if(key==56)melody.Init(8);
-				else if(key==57)melody.Init(9);
-			}
-		}
 		Present();
 	}
 	return 0;
