@@ -65,7 +65,7 @@ void DrawAnimated(int svg, int anim, float x, float y, float t)
 	SVGDrawAnimated(svg,anim,t);
 }
 
-struct float2
+struct flt2
 {
 	float x;
 	float y;
@@ -94,7 +94,7 @@ int main()
 	int bush=SVGLoad("bush.svg");
 
 	int field[64]={};
-	float2 offs[64];
+	flt2 offs[64];
 	for(int i=0;i<64;i++)
 	{
 		offs[i].Zero();
@@ -210,7 +210,7 @@ int main()
 					if(field[i+j*8]==5)
 					{
 						int newIndex[4];
-						float2 newOffset[4];
+						flt2 newOffset[4];
 						int newIndexCnt=0;
 						if((i>0)&&(field[i-1+j*8]==0))
 						{

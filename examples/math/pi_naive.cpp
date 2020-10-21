@@ -3,10 +3,10 @@
 float calcPI(float N)
 {
 	float sum=2.;
-	float nx=2;
+	float nx=2.;
 	for(float n=1.;n<N;n++)
 	{
-		nx=nx*n/(2.0*n+1.);
+		nx=nx*n/(2.*n+1.);
 		sum=sum+nx;
 	}
 	return sum;

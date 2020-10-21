@@ -310,7 +310,7 @@ int main()
 		g.clear();
 
 		float t1=Time();
-		int nSamples=t1*44100-tframe*44100+.5;
+		int nSamples=t1*44100-tframe*44100+1;
 		tframe=t1;
 		if(nSamples>2000)nSamples=2000;
 

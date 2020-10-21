@@ -114,7 +114,8 @@ public:
 				if(cs>n.t0)
 				{
 					float t=(cs-n.t0)/44100.;
-					float s=sin((t+sin(cs*.0005)*0.0005)*n.f*M_PI*2);
+					//float s=sin((t+sin(cs*.0005)*0.0005)*n.f*M_PI*2);
+					float s=sin((t+sin(t*28.)*0.0005)*n.f*M_PI*2);
 					if(s>0.4)s=0.4;else if(s<-0.4)s=-.4;
 					//s*=.3;
 
@@ -157,7 +158,6 @@ int StartsWith(const char*s, const char* p)
 
 class MelodyProcessor
 {
-	const char* name;
 	const char* melody;
 	int position;
 	int wait;
@@ -167,6 +167,7 @@ class MelodyProcessor
 	float mul;
 	float tempo;
 public:
+	const char* name;
 	void Render()
 	{
 		stext(name,200,20,0xffffffff);
@@ -369,18 +370,25 @@ int main()
 		{
 			if(press>0)
 			{
-				if     (key==49)melody.Init(1);
-				else if(key==50)melody.Init(2);
-				else if(key==51)melody.Init(3);
-				else if(key==52)melody.Init(4);
-				else if(key==53)melody.Init(5);
-				else if(key==54)melody.Init(6);
-				else if(key==55)melody.Init(7);
-				else if(key==56)melody.Init(8);
-				else if(key==57)melody.Init(9);
-				else if(key==48)melody.Init(0);
-				else if(key==4010)graph=!graph;
-				else printf("Key pressed %i %i\n", key, press);
+				if     (key==49){melody.Init(1);printf("%s\n",melody.name);}
+				else if(key==50){melody.Init(2);printf("%s\n",melody.name);}
+				else if(key==51){melody.Init(3);printf("%s\n",melody.name);}
+				else if(key==52){melody.Init(4);printf("%s\n",melody.name);}
+				else if(key==53){melody.Init(5);printf("%s\n",melody.name);}
+				else if(key==54){melody.Init(6);printf("%s\n",melody.name);}
+				else if(key==55){melody.Init(7);printf("%s\n",melody.name);}
+				else if(key==56){melody.Init(8);printf("%s\n",melody.name);}
+				else if(key==57){melody.Init(9);printf("%s\n",melody.name);}
+				else if(key==48){melody.Init(0);printf("%s\n",melody.name);}
+				else if(key==4010)
+				{
+					graph=!graph;
+					if(graph)
+						printf("Enable waterfall graph\n");
+					else
+						printf("Waterfall graph OFF\n");
+				}
+				printf("Key pressed %i %i\n", key, press);
 			}
 		}
 
@@ -471,7 +479,7 @@ int main()
 		melody.Render();
 		char ss[64];
 		//snprintf(ss,64,"% 5i % 5i % 5i", nSamples, snd.echoPos, snd_bufhealth());
-		stext(ss,10,470,0xff004000);
+		//stext(ss,10,470,0xff004000);
 		Present();
 	}
 	return 0;
