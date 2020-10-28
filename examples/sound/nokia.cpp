@@ -81,13 +81,22 @@ class CSnd
 public:
 	int sample;
 	int echoPos;
-	float echo[EL*3];
+	bool vibratto;
+	bool cut;
+	bool fade;
+	float echoVal;
+	float* echo;
 	void Init()
 	{
 		printf("Init echo\n");
 		sample=0;
 		echoPos=0;
-		for(int i=0;i<EL*3;i++)echo[i]=0;
+		echoVal=.5;
+		vibratto=true;
+		cut=true;
+		fade=true;
+		echo=(float*)malloc(sizeof(float)*4*EL);
+		for(int i=0;i<EL*4;i++)echo[i]=0;
 	}
 	void GenerateSamples(int nSamples)
 	{
@@ -96,10 +105,8 @@ public:
 			int ep=((echoPos+i)%EL)*2;
 			float l=echo[ep  ];
 			float r=echo[ep+1];
-			echo[ep  ]=r*.5;
-			echo[ep+1]=l*.5;
-			//echo[ep  ]=0;
-			//echo[ep+1]=0;
+			echo[ep  ]=r*echoVal;
+			echo[ep+1]=l*echoVal;
 		}
 		for(int j=0;j<NN;j++)
 		{
@@ -115,18 +122,35 @@ public:
 				{
 					float t=(cs-n.t0)/44100.;
 					//float s=sin((t+sin(cs*.0005)*0.0005)*n.f*M_PI*2);
-					float s=sin((t+sin(t*M_PI*5.)*0.0005)*n.f*M_PI*2);
-					if(s>0.4)s=0.4;else if(s<-0.4)s=-.4;
-					//if(s>0.)s=0.3;else s=-.3;
-					//float s=sin(t*n.f*M_PI*2)*.3;
+					if(vibratto)
+						t+=sin(t*M_PI*5.)*0.0007*t;
+					float s=sin(t*n.f*M_PI*2);
+					if(cut)
+					{
+						if(s>0.4)s=0.4;else if(s<-0.4)s=-.4;
+					}
+					else
+					{
+						s*=0.35;
+					}
 
-					s*=(1. -(cs-n.t0)/float(n.t1-n.t0));
-					float tb=(cs-n.t0)/44100.;if(tb<0.01)s*=tb*100.;
-					//float te=(n.t1-cs)/44100.;if(te<0.1)s*=te*10.;
+					if(t<0.1)s*=t*10.;
+					if(fade)
+					{
+						s*=(1. -(cs-n.t0)/float(n.t1-n.t0));
+					}
+					else
+					{
+						float te=(n.t1-cs)/44100.;if(te<0.1)s*=te*10.;
+					}
 					float b=.5+sin(cs*.0001)*.25;
 					int ep=(echoPos+i)%EL*2;
-					echo[ep  ]+=s*b;
-					echo[ep+1]+=s*(1.-b);
+					float l=s*b     +echo[ep  ];
+					float r=s*(1.-b)+echo[ep+1];
+					if(l>.9)l=0.9;else if(l<-0.9)l=-.9;
+					if(r>.9)r=0.9;else if(r<-0.9)r=-.9;
+					echo[ep  ]=l;
+					echo[ep+1]=r;
 				}
 				cs++;
 			}
@@ -336,7 +360,7 @@ void FFT(float* in, float* o, int j)
 	cplx out[NFFT];
 	for(int i=0;i<NFFT;i++)
 	{
-		int idx=((-i*4+j)*2+EL*4)%EL;
+		int idx=((-i*6+j)*2+EL*4)%EL;
 		buf[i].re=in[idx];
 		buf[i].im=in[idx+1];
 	}
@@ -385,6 +409,10 @@ int main()
 				else if(key==56){melody.Init(8);printf("%s\n",melody.name);}
 				else if(key==57){melody.Init(9);printf("%s\n",melody.name);}
 				else if(key==48){melody.Init(0);printf("%s\n",melody.name);}
+				else if(key==101){snd.echoVal=Fabs(snd.echoVal-.5);}
+				else if(key==118){snd.vibratto=!snd.vibratto;}
+				else if(key==99){snd.cut=!snd.cut;}
+				else if(key==102){snd.fade=!snd.fade;}
 				else if(key==4010)
 				{
 					graph=!graph;
@@ -413,12 +441,12 @@ int main()
 		{
 			g.M(0,0);
 			g.l(640,0);
-			g.l(0,106);
+			g.l(0,110);
 			g.l(-640,0);
 			g.close();
 			g.M(0,480);
 			g.l(640,0);
-			g.l(0,-108);
+			g.l(0,-110);
 			g.l(-640,0);
 			g.close();
 			g.fin();
@@ -436,7 +464,7 @@ int main()
 				g.fin();
 				lvl=lvl>1?1.:lvl;
 				g.rgb(lvl,lvl*lvl,lvl*lvl*lvl);
-				g.width(2.,1.);
+				g.width(1.5,1.);
 				g.stroke();
 				g.clear();
 			}

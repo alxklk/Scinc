@@ -66,6 +66,8 @@ public:
 	}
 	void Init()
 	{
+		x=0;
+		y=0;
 		put=false;
 		field=(int*)malloc(sizeof(int)*FW*FH);
 		for(int j=0;j<FW;j++)
