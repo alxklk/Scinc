@@ -1,16 +1,23 @@
 #include "graphics.h"
-#include "FFT.h"
-
-#pragma STACK_SIZE 25600000
-
-#define M_PI 3.141592654
 
 #ifdef __SCINC__
 #define const
 #endif
 
+#include "FFT.h"
 
-float freqs[12];
+#pragma STACK_SIZE 655360
+
+#define M_PI 3.141592654
+
+int mx;
+int my;
+int mb;
+int prevmx;
+int prevmy;
+int prevmb;
+
+double freqs[12];
 
 void StdFreqs()
 {
@@ -30,7 +37,7 @@ void StdFreqs()
 
 struct Note
 {
-	float f;  // freq
+	double f;  // freq
 	int t0; // starh
 	int t1; // end
 };
@@ -53,7 +60,7 @@ public:
 			n[i].t1=-100;
 		}
 	}
-	void AddNote(float f, float len)
+	void AddNote(double f, double len)
 	{
 		for(int i=0;i<NN;i++)
 		{
@@ -74,7 +81,50 @@ Graph g;
 
 Polyphony notes;
 
-#define EL 8820
+#define EL 8192
+
+#define ALMOST_ONE 0.9999999999999
+
+double mod(double a, double b)
+{
+	int r=a/b;
+	return a-b*r;
+}
+
+double lega(double globalTime, double time, double t0, double t1, double f0, double f1)
+{
+	if(time<t0)
+		time=t0;
+	else if(time>t1)
+		time=t1;
+	double dt=t1-t0;
+
+	double t=(time-t0)/dt;
+
+
+	double gt0=(globalTime-time+t0);
+	double gt1=(globalTime+t1-time);
+
+	double p0=mod(gt0*f0,1.);
+	double p1=mod(gt1*f1,1.);
+
+	double y0=t0*f0;
+	y0+=-mod(y0,1.)+p0;
+	double y1=y0+(f1+f0)/2.*dt;
+	y1+=-mod(y1,1.)+p1;
+
+	double invt=1.-t;
+
+	double y=y0*invt*invt*invt
+			+3.*(y0+dt/3.*f0)*invt*invt*t
+			+3.*(y1-dt/3.*f1)*invt*t*t
+			+y1*t*t*t;
+
+	double v=sin(y*2*M_PI);
+
+	return v;
+}
+
 
 class CSnd
 {
@@ -84,47 +134,92 @@ public:
 	bool vibratto;
 	bool cut;
 	bool fade;
-	float echoVal;
-	float* echo;
+	double echoVal;
+	double* echo;
 	void Init()
 	{
 		printf("Init echo\n");
 		sample=0;
 		echoPos=0;
-		echoVal=.5;
+		echoVal=0.5;
 		vibratto=true;
 		cut=true;
 		fade=true;
-		echo=(float*)malloc(sizeof(float)*4*EL);
-		for(int i=0;i<EL*4;i++)echo[i]=0;
+		echo=(double*)malloc(sizeof(double)*2*EL);
+		for(int i=0;i<EL*2;i++)echo[i]=0;
 	}
 	void GenerateSamples(int nSamples)
 	{
+		if(!mb)
 		for(int i=0;i<nSamples;i++)
 		{
 			int ep=((echoPos+i)%EL)*2;
-			float l=echo[ep  ];
-			float r=echo[ep+1];
+			double l=echo[ep  ];
+			double r=echo[ep+1];
 			echo[ep  ]=r*echoVal;
 			echo[ep+1]=l*echoVal;
 		}
 		for(int j=0;j<NN;j++)
 		{
+			if(mb)
+			{
+				for(int i=0;i<nSamples;i++)
+				{
+					int ep=(echoPos+i)%EL*2;
+					echo[ep  ]=0;
+					echo[ep+1]=0;
+				}
+
+				if(mb&1)
+				{
+					for(int i=0;i<nSamples;i++)
+					{
+						int s=sample+i;
+						double l=lega(s/44100.,s/44100.,sample/44100.,(sample+nSamples)/44100.,prevmx*10,mx*10)*.3;
+						int ep=((echoPos+i)%EL)*2;
+						echo[ep  ]+=l;
+						echo[ep+1]+=l;
+					}
+				}
+				if(mb&4)
+				{
+					double f=mx*4;
+					for(int i=0;i<nSamples;i++)
+					{
+						int s=sample+i;
+						int ep=(echoPos+i)%EL*2;
+						double t=s/44100.;
+						double l=sin(t*2*3*440.*4+2000*sin(t*3))*.3;
+						echo[ep  ]+=l;
+						echo[ep+1]+=l;
+					}
+				}
+				for(int i=0;i<nSamples;i++)
+				{
+					int ep=(echoPos+i)%EL*2;
+					snd_out(echo[ep],echo[ep+1]);
+				}
+				echoPos=(echoPos+nSamples-1)%EL;
+				sample+=nSamples;
+				return;
+			}
+
 			Note& n=notes.n[j];
 			if(sample>n.t1)
 				continue;
 			int cs=sample;
 			for(int i=0;i<nSamples;i++)
 			{
+
 				if(cs>n.t1)
 					break;
 				if(cs>n.t0)
 				{
-					float t=(cs-n.t0)/44100.;
-					//float s=sin((t+sin(cs*.0005)*0.0005)*n.f*M_PI*2);
+					double t=(cs-n.t0)/44100.;
+					//double s=sin((t+sin(cs*.0005)*0.0005)*n.f*M_PI*2);
 					if(vibratto)
 						t+=sin(t*M_PI*5.)*0.0007*t;
-					float s=sin(t*n.f*M_PI*2);
+					double s=sin(t*n.f*M_PI*2);
 					if(cut)
 					{
 						if(s>0.4)s=0.4;else if(s<-0.4)s=-.4;
@@ -137,16 +232,16 @@ public:
 					if(t<0.1)s*=t*10.;
 					if(fade)
 					{
-						s*=(1. -(cs-n.t0)/float(n.t1-n.t0));
+						s*=(1. -(cs-n.t0)/double(n.t1-n.t0));
 					}
 					else
 					{
-						float te=(n.t1-cs)/44100.;if(te<0.1)s*=te*10.;
+						double te=(n.t1-cs)/44100.;if(te<0.1)s*=te*10.;
 					}
-					float b=.5+sin(cs*.0001)*.25;
-					int ep=(echoPos+i)%EL*2;
-					float l=s*b     +echo[ep  ];
-					float r=s*(1.-b)+echo[ep+1];
+					double b=.5+sin(cs*.0001)*.25;
+					int ep=((echoPos+i)%EL)*2;
+					double l=s*b     +echo[ep  ];
+					double r=s*(1.-b)+echo[ep+1];
 					if(l>.9)l=0.9;else if(l<-0.9)l=-.9;
 					if(r>.9)r=0.9;else if(r<-0.9)r=-.9;
 					echo[ep  ]=l;
@@ -187,10 +282,10 @@ class MelodyProcessor
 	int position;
 	int wait;
 	bool error;
-	float deflen;
+	double deflen;
 	int defoct;
-	float mul;
-	float tempo;
+	double mul;
+	double tempo;
 public:
 	const char* name;
 	void Render()
@@ -230,7 +325,7 @@ public:
 		else if(n==4){name="  Greensleaves";tempo=1.5; mul=.5; deflen=1./4.;defoct=5;melody="p, g, 2a#, c6, d.6, 8d#6, d6, 2c6, a, f., 8g, a, 2a#, g, g., 8f, g, 2a, f, 2d, g, 2a#, c6, d.6, 8e6, d6, 2c6, a, f., 8g, a, a#., 8a, g, f#., 8e, f#, 2g";}
 		else if(n==5){name="Rondo alla turka";mul=8.;deflen=1./4.; defoct=5; melody="16#f1 16e1 16#d1 16e1 4g1 16a1 16g1 16#f1 16g1 4b1 16c2 16b1 16#a1 16b1 16#f2 16e2 16#d2 16e2 16#f2 16e2 16#d2 16e2 4g2 8e2 8g2 32d2 32e2 16#f2 8e2 8d2 8e2 32d2 32e2 16#f2 8e2 8d2 8e2 32d2 32e2 16#f2 8e2 8d2 8#c2 4b1 2p";}
 		else if(n==6){name="Godfather theme";tempo=2.5;mul=.5;deflen=1./8.; defoct=5; melody="8g,8c6,8d#6,8d6,8c6,8d#6,8c6,8d6,c6,8g#,8a#,2g,8p,8g,8c6,8d#6,8d6,8c6,8d#6,8c6,8d6,c6,8g,8f#,2f,8p,8f,8g#,8b,2d6,8p,8f,8g#,8b,2c6,8p,8c,8d#,8a#,8g#,g,8a#,8g#,8g#,8g,8g,8b4,2c,1p";}
-		else if(n==7){name="    Bouree";tempo=1.25;mul=.5;deflen=1./4.; defoct=5;melody="1p,8e,8f#,g,8f#,8e,d#,8e,8f#,b4,8c#,8d#,e,8d,8c,b4,8a4,8g4,f#4,8g4,8a4,8b4,8a4,8g4,8f#4,e4,8e,8f#,g,8f#,8e,d#,8e,8f#,b4,8c#,8d#,e,8d,8c,b4,8a4,8g4,f#.4,8g4,2g.4,8e,8f#,g,8f#,8e,d#,8e,8f#,b4,8c#,8d#,e,8d,8c,b4,8a4,8g4,f#4,8g4,8a4,8b4,8a4,8g4,8f#4,e4,8e,8f#,g,8f#,8e,d#,8e,8f#,b4,8c#,8d#,e,8d,8c,b4,8a4,8g4,f#.4,8g4,2g.4,8b4,8g4,d,8a4,8c,b4,8g,8d,e,8b4,8d,c,8b4,8a4,g#4,8a4,8b4,c,8b4,8a4,2a.4,8d,8a4,b4,8g,8d,e,8b4,8d,c,8a,8e,f#,8c#,8e,d,8c#,8b4,a#.4,8b4,2b.4,8b,8f#,g#,8f#,8e,a,8e,8g,f#,8e,8d,g,8d,8f,e,8a,8e,f#,8c#,8e,d#,2b4,8e,8b4,c,8d,8a4,b4,8c,8g4,a4,8b4,8f#4,g4,8f#4,8e4,d#4,8e4,8f#4,g4,8f#4,8e4,2e.4,8b4,8g4,d,8a4,8c,b4,8g,8d,e,8b4,8d,c,8b4,8a4,g#4,8a4,8b4,c,8b4,8a4,2a.4,8d,8a4,b4,8g,8d,e,8b4,8d,c,8a,8e,f#,8c#,8e,d,8c#,8b4,a#.4,8b4,2b.4,8b,8f#,g#,8f#,8e,a,8e,8g,f#,8e,8d,g,8d,8f,e,8a,8e,f#,8c#,8e,d#,2b4,8e,8b4,c,8d,8a4,b4,8c,8g4,a4,8b4,8f#4,g4,8f#4,8e4,d#4,8e4,8f#4,g4,8f#4,8e4,2e.4";}
+		else if(n==7){name="    Bouree";tempo=1.5;mul=1.;deflen=1./4.; defoct=5;melody="1p,8e,8f#,g,8f#,8e,d#,8e,8f#,b4,8c#,8d#,e,8d,8c,b4,8a4,8g4,f#4,8g4,8a4,8b4,8a4,8g4,8f#4,e4,8e,8f#,g,8f#,8e,d#,8e,8f#,b4,8c#,8d#,e,8d,8c,b4,8a4,8g4,f#.4,8g4,2g.4,8e,8f#,g,8f#,8e,d#,8e,8f#,b4,8c#,8d#,e,8d,8c,b4,8a4,8g4,f#4,8g4,8a4,8b4,8a4,8g4,8f#4,e4,8e,8f#,g,8f#,8e,d#,8e,8f#,b4,8c#,8d#,e,8d,8c,b4,8a4,8g4,f#.4,8g4,2g.4,8b4,8g4,d,8a4,8c,b4,8g,8d,e,8b4,8d,c,8b4,8a4,g#4,8a4,8b4,c,8b4,8a4,2a.4,8d,8a4,b4,8g,8d,e,8b4,8d,c,8a,8e,f#,8c#,8e,d,8c#,8b4,a#.4,8b4,2b.4,8b,8f#,g#,8f#,8e,a,8e,8g,f#,8e,8d,g,8d,8f,e,8a,8e,f#,8c#,8e,d#,2b4,8e,8b4,c,8d,8a4,b4,8c,8g4,a4,8b4,8f#4,g4,8f#4,8e4,d#4,8e4,8f#4,g4,8f#4,8e4,2e.4,8b4,8g4,d,8a4,8c,b4,8g,8d,e,8b4,8d,c,8b4,8a4,g#4,8a4,8b4,c,8b4,8a4,2a.4,8d,8a4,b4,8g,8d,e,8b4,8d,c,8a,8e,f#,8c#,8e,d,8c#,8b4,a#.4,8b4,2b.4,8b,8f#,g#,8f#,8e,a,8e,8g,f#,8e,8d,g,8d,8f,e,8a,8e,f#,8c#,8e,d#,2b4,8e,8b4,c,8d,8a4,b4,8c,8g4,a4,8b4,8f#4,g4,8f#4,8e4,d#4,8e4,8f#4,g4,8f#4,8e4,2e.4";}
 		else if(n==8){name="  JingleBell";mul=.5;tempo=2.5; deflen=1./8; defoct=5; melody="32p,a,a,4a,a,a,4a,a,c6,f.,16g,2a,a#,a#,a#.,16a#,a#,a,a.,16a,a,g,g,a,4g,4c6";}
 		else if(n==9){name="  Canon in D";tempo=2.;mul=.5;deflen=1./4.;defoct=5;melody="8d, 8f#, 8a, 8d6, 8c#, 8e, 8a, 8c#6, 8d, 8f#, 8b, 8d6, 8a, 8c#, 8f#, 8a, 8b, 8d, 8g, 8b, 8a, 8d, 8f#, 8a, 8b, 8f#, 8g, 8b, 8c#, 8e, 8a, 8c#6, f#6, 8f#, 8a, e6, 8e, 8a, d6, 8f#, 8a, c#6, 8c#, 8e, b, 8d, 8g, a, 8f#, 8d, b, 8d, 8g, c#.6";}
 		position=0;
@@ -243,7 +338,7 @@ public:
 			return 10000;
 		if(melody[position]==0)
 			position=0;
-		float len=deflen;
+		double len=deflen;
 		int note=-1;
 		int octave=defoct;
 		bool sharp=false;
@@ -312,7 +407,7 @@ public:
 			printf("Error\n");
 			return 10000;
 		}
-		float f=freqs[note];
+		double f=freqs[note];
 
 		if(octave>4)
 		{
@@ -344,14 +439,14 @@ public:
 
 MelodyProcessor melody;
 
-float Fabs(float x)
+double Fabs(double x)
 {
 	return x<0?-x:x;
 }
 
 #define NFFT 1024
 
-void FFT(float* in, float* o, int j)
+void FFT(double* in, double* o, int j)
 {
 	I.re=0;
 	I.im=1;
@@ -360,9 +455,9 @@ void FFT(float* in, float* o, int j)
 	cplx out[NFFT];
 	for(int i=0;i<NFFT;i++)
 	{
-		int idx=((-i*6+j)*2+EL*4)%EL;
+		int idx=((-i*2+j)+EL)%EL*2;
 		buf[i].re=in[idx];
-		buf[i].im=in[idx+1];
+		buf[i].im=0;
 	}
 
 	fft(buf, out, NFFT);
@@ -374,7 +469,7 @@ void FFT(float* in, float* o, int j)
 
 }
 
-float fftout[NFFT];
+double fftout[NFFT];
 
 bool graph;
 int frame;
@@ -385,8 +480,8 @@ int main()
 	melody.Init(1);
 	notes.Init();
 	snd.Init();
-	float t0=Time();
-	for(int i=0;i<512;i++)
+	double t0=Time();
+	for(int i=0;i<NFFT;i++)
 		fftout[i]=0;
 	frame=0;
 	graph=false;
@@ -395,6 +490,10 @@ int main()
 	{
 		int key;
 		int press;
+		prevmx=mx;
+		prevmy=my;
+		prevmb=mb;
+		GetMouseState(mx, my, mb);
 		if(GetKeyEvent(key,press))
 		{
 			if(press>0)
@@ -425,7 +524,7 @@ int main()
 			}
 		}
 
-		float t1=Time();
+		double t1=Time();
 		int nSamples=t1*44100-t0*44100+5;
 		t0=t1;
 		if(nSamples>2000)nSamples=2000;
@@ -457,7 +556,7 @@ int main()
 			for(int i=0;i<NFFT/2;i++)
 			{
 				g.clear();
-				float lvl=(fftout[i])
+				double lvl=(fftout[i])
 				/16.;
 				g.M((frame)%640,480-112-i*.5);
 				g.l(0,0);
@@ -480,7 +579,7 @@ int main()
 		g.M(-1,240);
 		for(int i=0;i<640;i+=2)
 		{
-			float lvl=snd.echo[(snd.echoPos+(640-i)*2)%EL];
+			double lvl=snd.echo[(snd.echoPos+(640-i))%EL*2];
 			g.L(i,lvl*200+240);
 		}
 		g.L(641,240);
@@ -493,11 +592,10 @@ int main()
 		g.stroke();
 		g.clear();
 
-
 		g.clear();
 		for(int i=0;i<NFFT/2;i+=4)
 		{
-			float lvl=0;
+			double lvl=0;
 			for(int j=0;j<4;j++)lvl+=fftout[i+j];
 			lvl*=2.;
 			if(lvl>240)lvl=240;

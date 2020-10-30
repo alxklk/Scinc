@@ -2,10 +2,10 @@
 
 struct cplx
 {
-	float re;
-	float im;
+	double re;
+	double im;
 
-	cplx operator +(cplx r)
+	cplx operator +(const cplx& r)
 	{
 		cplx res;
 		res.re=re+r.re;
@@ -13,7 +13,7 @@ struct cplx
 		return res;
 	}
 
-	cplx operator -(cplx r)
+	cplx operator -(const cplx& r)
 	{
 		cplx res;
 		res.re=re-r.re;
@@ -21,7 +21,7 @@ struct cplx
 		return res;
 	}
 
-	cplx operator *(float r)
+	cplx operator *(double r)
 	{
 		cplx res;
 		res.re=re*r;
@@ -29,7 +29,7 @@ struct cplx
 		return res;
 	}
 
-	cplx operator *(cplx r)
+	cplx operator *(const cplx& r)
 	{
 		cplx res;
 		res.re=re*r.re-im*r.im;
@@ -37,7 +37,7 @@ struct cplx
 		return res;
 	}
 
-	cplx operator /(float r)
+	cplx operator /(double r)
 	{
 		cplx res;
 		res.re=re/r;
@@ -60,7 +60,7 @@ cplx I;
 cplx cexp(cplx val)
 {
 	cplx res;
-	float u=exp(val.re);
+	double u=exp(val.re);
 	res.re=cos(val.im)*u;
 	res.im=sin(val.im)*u;
 	return res;
