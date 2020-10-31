@@ -8,9 +8,9 @@ int argc, char** argv
 #endif
 )
 {
-	printf("Sqrt 2\n");
+	printf("Sqrt(200)\n");
 	fixed two;
-	two.Seti(2);
+	two.Seti(200);
     fixed stwo=two.Sqrt();
 	stwo.Print();printf("\n");
 	printf("Check:");(stwo*stwo).Print();printf("\n");

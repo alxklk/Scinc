@@ -314,7 +314,7 @@ public:
 
 		int iter=0;
 
-		for(int i=0;i<2;i++)
+		for(int i=0;i<3;i++)
 		{
 			int topdigit=d.digits[FIXED_FRACTS-1];
 			if(topdigit==9)
@@ -326,8 +326,7 @@ public:
 				return inf;
 			}
 			fixed mul;
-			/* */if(topdigit==0){mul.Sets("10.0"   );}
-			else if(topdigit==1){mul.Sets("5.0"    );}
+			/* */if(topdigit==1){mul.Sets("5.0"    );}
 			else if(topdigit==2){mul.Sets("3.33333");}
 			else if(topdigit==3){mul.Sets("2.5"    );}
 			else if(topdigit==4){mul.Sets("2.0"    );}
@@ -335,16 +334,16 @@ public:
 			else if(topdigit==6){mul.Sets("1.42857");}
 			else if(topdigit==7){mul.Sets("1.25"   );}
 			else if(topdigit==8){mul.Sets("1.11111");}
-			else if(topdigit==9){mul.Sets("1.0"    );}
 
 			d=d*mul;
 			n=n*mul;
 			iter++;
 		}
 
+		fixed two;
+		two.Seti(2);
 		while(true)
 		{
-			fixed two; two.Seti(2);
 			fixed mul=two-d;
 			d=d*mul;
 			n=n*mul;
