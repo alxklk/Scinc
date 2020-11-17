@@ -42,10 +42,10 @@ int main()
 		tframe=Time();
 		if(nSamples>2000)nSamples=2000;
 		GenerateSamples(nSamples);
-		g.M(0.,480.*sndVal(sndSample-640));
+		g.M(0.,120+240.*sndVal(sndSample-640));
 		for(int i=1;i<640;i++)
 		{
-			g.L(i,sndVal(sndSample+i-640)*480.);
+			g.L(i,120+sndVal(sndSample+i-640)*240.);
 		}
 		g.fin();
 		g.width(8.,1.);

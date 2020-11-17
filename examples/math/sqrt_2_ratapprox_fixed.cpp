@@ -8,13 +8,13 @@ int argc, char** argv
 #endif
 )
 {
-	printf("Sqrt 2 rational approximation without divisions:\n");
+	printf("Sqrt(2) rational approximation without divisions:\n");
 	fixed x0;x0.Seti(1);
-    fixed x1;x1.Seti(1);
-	for(int i=0;i<160;i++)
+	fixed x1;x1.Seti(1);
+	for(int i=0;i<170;i++)
 	{
 		x1.Print();printf("\n---------------\n");x0.Print();printf("\n\n");
-		fixed s=x1/x0;
+		fixed s=x1/x0; // division for check only!
 		printf("=\n");s.Print();printf("\n\n");
 		printf("Check #%i:",i+1);(s*s).Print();printf("\n\n");
 		fixed oldx0=x0;

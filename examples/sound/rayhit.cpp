@@ -96,11 +96,12 @@ struct Hit
 	float x;
 	float y;
 	float t;
+	float f;
 	int s;
 };
 
 #define NH 20
-#define hitl .2
+#define hitl 1.
 class Hits
 {
 public:
@@ -133,12 +134,14 @@ public:
 				h[i].y=y;
 				h[i].t=t;
 				h[i].s=ns;
+				h[i].f=(40+x*4+y*5)*4;
 				break;
 			}
 		}
 	}
 	void Render()
 	{
+		int nh=0;
 		for(int i=0;i<NH;i++)
 		{
 			float r=(t-h[i].t)/hitl;
@@ -148,15 +151,22 @@ public:
 				Circle(h[i].x,h[i].y,r*20);
 				g.fin();
 				g.alpha(1-r);
-				g.width(8,2);
+				g.width(8,1);
 				g.rgb(1,.5,0);
 				g.stroke();
 				g.width(2,1);
-				g.rgb(1,1,0);
+				g.rgb(1,1,.5);
 				g.stroke();
+				nh++;
+				//char s[128];
+				//snprintf(s,128,"%.2f Hz",h[i].f/M_PI);
+				//stext(s,h[i].x,h[i].y,0x8000ffff);
 			}
 		}
 		g.alpha(1.);
+		char s[128];
+		snprintf(s,128,"%i sounds",nh);
+		stext(s,320,10,0xffffffff);
 	}
 };
 
@@ -227,8 +237,8 @@ public:
 			int ep=((echoPos+i)%EL)*2;
 			float l=echo[ep  ];
 			float r=echo[ep+1];
-			echo[ep  ]=r*.45;
-			echo[ep+1]=l*.45;
+			echo[ep  ]=r*.65;
+			echo[ep+1]=l*.65;
 		}
 		for(int j=0;j<NH;j++)
 		{
@@ -237,13 +247,16 @@ public:
 			float l=(sample-hits.h[j].s)/44100.;
 			if(((l> -nSamples/44100.))&&(l<(hitl+nSamples/44100.)))
 			{
-				float f=(40+x*10+y*5)*2;
+				float f=hits.h[j].f;
 				for(int i=0;i<nSamples;i++)
 				{
 					if((l>0)&&(l<hitl))
 					{
 						float v=(1.-l/hitl);
-						float s=sin(l*f)*v*.2;
+						v*=v*v;
+						float s=sin(l*f+sin(l*42.)*6*(1-v))*v;
+						s=s<-0.6?-0.6:s>0.6?0.6:s;
+						s*=.3;
 
 						float b=(x-30)/300.;
 						int ep=(echoPos+i)%EL*2;
@@ -280,10 +293,10 @@ int main()
 	walls[3].Set(50,250,60,60);
 	walls[4].Set(100,105,200,80);
 	walls[5].Set(100,105,80,200);
-	walls[6].Set(200,80,240,260);
-	walls[7].Set(240,260,80,200);
+	walls[6].Set(200,80,245,265);
+	walls[7].Set(245,265,80,200);
 
-	float bs=1.5;
+	float bs=.8;
 	bullets[0].Set(170,60,55*bs,21*bs);
 	bullets[1].Set(120,60,36*bs,38*bs);
 	bullets[2].Set(60,120,21*bs,56*bs);

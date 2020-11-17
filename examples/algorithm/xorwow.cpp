@@ -41,11 +41,11 @@ int main()
 {
 	puts("xorwow");
 	xorwow_state state;
-	state.a = 1*11273;
-	state.b = 2*11273;
-	state.c = 3*11273;
-	state.d = 4*11273;
-	state.e = 5*11273;
+	state.a = 15*11273;
+	state.b = 24*12731;
+	state.c = 33*27311;
+	state.d = 42*73112;
+	state.e = 51*37112;
 	state.counter = 0;
 	for (int i = 0; i < 1000000; i++)
 	{
