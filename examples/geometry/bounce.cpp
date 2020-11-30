@@ -3,7 +3,7 @@
 
 #define M_PI 3.141592654
 
-float abs(float x)
+float Fabs(float x)
 {
 	if(x<0)
 		return -x;
@@ -58,8 +58,8 @@ int main()
 			float R=(1.+frand(seed))*10.;
 			float dx=640.-R*2.;
 			float dy=480.-R*2.;
-			x=abs(mod(x,dx*2.)-dx);
-			y=abs(mod(y,dy*2.)-dy);
+			x=Fabs(mod(x,dx*2.)-dx);
+			y=Fabs(mod(y,dy*2.)-dy);
 
 			float cr=.5+.5*sin(t*frand(seed)*6.+15.);
 			float cg=.5+.5*sin(t*frand(seed)*6.+15.);

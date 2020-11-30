@@ -3,7 +3,7 @@
 
 #define M_PI 3.141592654
 
-float abs(float x)
+float Fabs(float x)
 {
 	if(x<0)
 		return -x;

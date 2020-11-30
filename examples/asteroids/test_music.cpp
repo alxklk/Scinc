@@ -14,9 +14,9 @@ void FFT(float* in, float* o, int j)
 	cplx out[NFFT];
 	for(int i=0;i<NFFT;i++)
 	{
-		int idx=((-i*4+j)*2+22500)%22500;
+		int idx=((-i*8+j)*2+22500)%22500;
 		buf[i].re=in[idx];
-		buf[i].im=in[idx+1];
+		buf[i].im=0;
 	}
 
 	fft(buf, out, NFFT);
