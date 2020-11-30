@@ -11,19 +11,23 @@ int main()
 	{
 		double T=Time();
 		g.clear();
-		g.gray(.5);
+		g.gray(.95);
 		g.fill1();
 
+		stext("Fix eyes on the black cross", 10,10,0x40000000);
+		stext("See moving green dot", 10,20,0x40000000);
+
 		g.clear();
-		for(int i=0;i<24;i++)
+		int N=12;
+		for(int i=0;i<N;i++)
 		{
-			if(i==int(T*8)%24)
+			if(i==int(T*8)%N)
 				continue;
-			float a=i/24.;
+			float a=i/float(N);
 			g.M(320+cos(a*M_PI*2)*180,240+sin(a*M_PI*2)*180);
 		}
 		g.fin();
-		g.rgb(0,1,0);
+		g.rgb(1,0,1);
 		g.width(20,2);
 		g.stroke();
 

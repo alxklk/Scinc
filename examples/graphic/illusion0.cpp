@@ -85,11 +85,14 @@ int main()
 	int i=320;
 	while(true)
 	{
-		double T=Time()*.5;
+		double T=Time()*7.5;
 		//T=0.5;
 		g.clear();
 		g.gray(.5);
 		g.fill1();
+
+		stext("Left ring is growing bigger", 10,10,0x40000000);
+		stext("Right ring is shrinking smaller", 10,20,0x40000000);
 
 		float d=.75;
 

@@ -5,7 +5,7 @@ Graph g;
 
 #define M_PI 3.141592654
 
-void Dot(float x, float y, float r, float w, float a, float T)
+void Dot(float x, float y, float r, float w, float a, float T, float alpha)
 {
 	int n=r/w;
 	float ca=cos(a);
@@ -24,7 +24,7 @@ void Dot(float x, float y, float r, float w, float a, float T)
 			g.rgb(1,1,1);
 		else
 			g.rgb(0,0,0);
-		g.alpha(s/r*.25);
+		g.alpha(s/r*alpha);
 		g.stroke();
 	}
 }
@@ -38,31 +38,40 @@ int main()
 		g.gray(.5);
 		g.fill1();
 
-		int scene=int(T/5)%3;
-		scene=2;
+		int scene=int(T/10)%3;
+		//scene=2;
 		if(scene==0)
-		for(int i=0;i<12;i++)
 		{
-			float a=i/12.*M_PI*2;
-			Dot(320+cos(a)*180,240+sin(a)*180,8,4,a+T*2,T*2+a*8);
-		}
-		else if(scene==1)
-		for(int i=-5;i<6;i++)
-		{
-			Dot(320-i*20,240-120,4,4,     0,+sin(T/2.)*i/6.*8);
-			Dot(320+i*20,240+120,4,4,     0,-sin(T/2.)*i/6.*8);
-			Dot(320-120,240+i*20,4,4,M_PI/2,+sin(T/2.)*i/6.*8);
-			Dot(320+120,240-i*20,4,4,M_PI/2,-sin(T/2.)*i/6.*8);
-		}
-		else if(scene==2)
-		for(int i=-14;i<15;i++)
-		{
-			for(int j=-14;j<15;j++)
+			stext("Watch the form of the ring", 10,10,0x40000000);
+			int N=48;
+			for(int i=0;i<N;i++)
 			{
-				Dot(320-j*12,240-i*12,6,3,(sin(i*.3+T*.8)+sin(j*.4-T)),T*2);
+				float a=i/float(N)*M_PI*2;
+				Dot(320+cos(a)*180,240+sin(a)*180,6,6,a*2+T*2,T*2+a*8,.5);
 			}
 		}
-
+		else if(scene==1)
+		{
+			stext("Is the square rotating?", 10,10,0x40000000);
+			for(int i=-5;i<6;i++)
+			{
+				Dot(320-i*20,240-120,4,4,     0,+sin(T/2.)*i/6.*8,.5);
+				Dot(320+i*20,240+120,4,4,     0,-sin(T/2.)*i/6.*8,.5);
+				Dot(320-120,240+i*20,4,4,M_PI/2,+sin(T/2.)*i/6.*8,.5);
+				Dot(320+120,240-i*20,4,4,M_PI/2,-sin(T/2.)*i/6.*8,.5);
+			}
+		}
+		else if(scene==2)
+		{
+			stext("Some movements", 10,10,0x40000000);
+			for(int i=-14;i<15;i++)
+			{
+				for(int j=-14;j<15;j++)
+				{
+					Dot(320-j*12,240-i*12,8,2,(sin(i*.3+T*.8)+sin(j*.4-T))+T,T*.5,1.);
+				}
+			}
+		}
 		Present();
 	}
 	return 0;
