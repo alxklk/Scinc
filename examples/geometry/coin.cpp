@@ -3,7 +3,7 @@
 #define G_SCREEN_SCALE 5
 #define G_SCREEN_MODE 2
 
-#define C G_SCREEN_WIDTH/2
+#define CENTER G_SCREEN_WIDTH/2
 
 //#define WRITE_MPG
 
@@ -49,7 +49,7 @@ int main()
 
 		{
 			g.clear();
-			g.M(C-s/2,20+coinr*coinb);
+			g.M(CENTER-s/2,20+coinr*coinb);
 			g.a(sin(a),1,0,0,1,0,coinr*(1.-coinb*2));
 			g.a(sin(a),1,0,0,1,0,-coinr*(1.-coinb*2));
 			g.close();
@@ -63,7 +63,7 @@ int main()
 			g.gradend();
 			g.graduse(0);
 			g.g_0(0,19);
-			g.g_y(C,0);
+			g.g_y(CENTER,0);
 			g.g_x(0,coinr+1);
 			g.fill1();
 			g.graduse(-1);
@@ -72,7 +72,7 @@ int main()
 		{
 			g.clear();
 			float r=coinr*(1.-coinb*2);
-			g.M(C-s/2+s/4,20+coinr*coinb);
+			g.M(CENTER-s/2+s/4,20+coinr*coinb);
 			g.a(sin(a),1,0,0,0,0, r);
 			g.a(sin(a),1,0,0,0,0,-r);
 			g.fin();
@@ -85,11 +85,11 @@ int main()
 
 		{
 			g.clear();
-			g.M(C-s/2,20);
+			g.M(CENTER-s/2,20);
 			g.a(sin(a),1,0,0,0,0,coinr);
 			g.a(sin(a),1,0,0,0,0,-coinr);
 			g.close();
-			g.M(C-s/2,20+coinr*coinb);
+			g.M(CENTER-s/2,20+coinr*coinb);
 			g.a(sin(a),1,0,0,1,0,coinr*(1.-coinb*2));
 			g.a(sin(a),1,0,0,1,0,-coinr*(1.-coinb*2));
 			g.close();
@@ -103,7 +103,7 @@ int main()
 
 		{
 			g.clear();
-			g.M(C-s/2,20);
+			g.M(CENTER-s/2,20);
 			g.l(s,0);
 			if(s<0)
 				g.a(Fabs(sin(a)),1,0,0,0,0,coinr);
@@ -125,7 +125,7 @@ int main()
 			g.gradend();
 			g.graduse(0);
 			g.g_0(0,19);
-			g.g_y(C,0);
+			g.g_y(CENTER,0);
 			g.g_x(0,coinr+1);
 			g.fill1();
 			g.graduse(-1);
