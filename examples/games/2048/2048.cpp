@@ -211,6 +211,7 @@ int Left()
 				if(cur==prevn)
 				{
 					field[previ+i*5]++;
+					result++;
 					deltax[previ+i*5]=j-previ;
 					previ=-1;
 					prevn=-1;
@@ -247,6 +248,7 @@ int Right()
 				if(cur==prevn)
 				{
 					field[previ+i*5]++;
+					result++;
 					deltax[previ+i*5]=j-previ;
 					previ=-1;
 					prevn=-1;
@@ -283,6 +285,7 @@ int Up()
 				if(cur==prevn)
 				{
 					field[j+previ*5]++;
+					result++;
 					deltay[j+previ*5]=i-previ;
 					previ=-1;
 					prevn=-1;
@@ -319,6 +322,7 @@ int Down()
 				if(cur==prevn)
 				{
 					field[j+previ*5]++;
+					result++;
 					deltay[j+previ*5]=i-previ;
 					previ=-1;
 					prevn=-1;
