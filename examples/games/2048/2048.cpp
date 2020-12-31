@@ -1,9 +1,13 @@
 #include <stdio.h>
 
-#define G_SCREEN_WIDTH 600
-#define G_SCREEN_HEIGHT 800
+#define G_SCREEN_WIDTH 320
+#define G_SCREEN_HEIGHT 480
 #define G_SCREEN_SCALE 1
 #define G_SCREEN_MODE 1
+
+float CELL=51;
+float X0=25;
+float Y0=180;
 
 #include "graphics.h"
 
@@ -39,8 +43,6 @@ int hoverX=-1;
 int hoverY=-1;
 int font=-1;
 
-float cellSize=100;
-
 void DrawField()
 {
 	g.t_0(0,0);
@@ -55,8 +57,11 @@ void DrawField()
 	g.fill1();
 	
 	g.clear();
-	RoundRect(45.5,245.5,512.,512.,5);
+	RoundRect(X0,Y0,CELL*5+12.,CELL*5+12.,5);
 	g.fin();
+	g.rgb(.4,.45,.5);
+	g.width(2,1);
+	g.stroke();
 	g.rgb(.5,.6,.7);
 	g.fill1();
 
@@ -65,22 +70,25 @@ void DrawField()
 	{
 		for(int j=0;j<5;j++)
 		{
-			RoundRect(55.5+j*100,255.5+i*100,92.,92.,5);
+			RoundRect(X0+6+3+j*CELL,Y0+6+3+i*CELL,(CELL-6),(CELL-6),5);
 		}
 	}
 	g.fin();
+	g.rgb(.4,.45,.5);
+	g.width(2,1);
+	g.stroke();
 	g.rgb(.7,.74,.78);
 	g.fill1();
 	
-	if((hoverX>=0)&&(hoverX<5)&&(hoverY>=0)&&(hoverY<5))
-	{
-		g.clear();
-		RoundRect(55.5+hoverX*cellSize,255.5+hoverY*cellSize,92.,92.,5);
-		g.fin();
-		g.rgb(1,1,0);
-		g.width(2,2);
-		g.stroke();
-	}
+	//if((hoverX>=0)&&(hoverX<5)&&(hoverY>=0)&&(hoverY<5))
+	//{
+	//	g.clear();
+	//	RoundRect(X0+6+3+hoverX*CELL,Y0+6+3+hoverY*CELL,(CELL-6),(CELL-6),5);
+	//	g.fin();
+	//	g.rgb(1,1,0);
+	//	g.width(2,2);
+	//	g.stroke();
+	//}
 
 	g.VSetFont(font);
 
@@ -96,9 +104,9 @@ void DrawField()
 				g.t_x(1,0);
 				g.t_y(0,1);
 				float size=sizes[j+i*5];
-				float dx=deltax[j+i*5]*100.;
-				float dy=deltay[j+i*5]*100.;
-				RoundRect(55.5+j*100+dx+50*(1-size),255.5+i*100+dy+50*(1-size),92.*size,92.*size,5);
+				float dx=deltax[j+i*5]*CELL;
+				float dy=deltay[j+i*5]*CELL;
+				RoundRect(X0+6+3+j*CELL+dx+CELL/2*(1-size),Y0+6+3+i*CELL+dy+CELL/2*(1-size),(CELL-6)*size,(CELL-6)*size,5);
 				g.fin();
 				if     (n==   1)g.rgb(.95,.95,.95);
 				else if(n==   2)g.rgb(.9,.97,1.);
@@ -140,23 +148,27 @@ void DrawField()
 			{
 				float scx=1.;
 				float scy=1.;
-				float dx=0.;
-				float dy=0.;
-				if(n>1000)    {scx=.4 ;dx=-15;scy=.5;dy=-10.;}
-				else if(n>100){scx=.45;dx= -8;scy=.6;dy= -8.;}
-				else if(n>10) {scx=.6 ;dx= -5;scy=.8;dy= -5.;}
+				float dx=CELL*.3;
+				float dy=CELL*.75;
+				if(n>10000)    {scx=.4 ;dx=CELL*.10;scy=.5;dy=CELL*.64;}
+				else if(n>1000){scx=.47;dx=CELL*.11;scy=.55;dy=CELL*.65;}
+				else if(n>100) {scx=.65;dx=CELL*.12;scy=.75;dy=CELL*.7;}
+				else if(n>10)  {scx=.8 ;dx=CELL*.18;scy=.9;dy=CELL*.72;}
 				g.fill1();
 				g.clear();
 				float size=sizes[j+i*5];
 				scx*=size;
 				scy*=size;
-				dx+=deltax[j+i*5]*100.;
-				dy+=deltay[j+i*5]*100.;
-				g.t_0(83+j*100+dx+25*(1-size),325+i*100+dy-25*(1-size));
-				g.t_x(.07*scx,0);
-				g.t_y(0,-.07*scy);
+				dx+=deltax[j+i*5]*CELL;
+				dy+=deltay[j+i*5]*CELL;
+				dx+=CELL/4*(1.-size);
+				dy-=CELL/4*(1.-size);
+				g.t_0(X0+6+j*CELL+dx,Y0+6+i*CELL+dy);
+				g.t_x(.035*scx,0);
+				g.t_y(0,-.035*scy);
 				char s[16];
 				snprintf(s,15,"%i",n);
+				//g.M(0,0);g.l(1000,0);g.l(0,20);g.l(-980,0);g.l(0,980);g.l(-20,0);g.close();
 				g.VText(s);
 				g.rgb(.15,.15,.15);
 				g.fin();
@@ -170,11 +182,11 @@ void DrawField()
 	// {
 	// 	for(int j=0;j<5;j++)
 	// 	{
-	// 		int dx=deltax[j+i*5]*100.;
-	// 		int dy=deltay[j+i*5]*100.;
+	// 		int dx=deltax[j+i*5]*CELL.;
+	// 		int dy=deltay[j+i*5]*CELL.;
 	// 		char s[16];
 	// 		snprintf(s,15,"%i,%i",dx,dy);
-	// 		stext(s,83+j*100,325+i*100,0xff00ff00);
+	// 		stext(s,83+j*CELL,325+i*CELL,0xff00ff00);
 	// 	}
 	// }
 
@@ -511,14 +523,20 @@ int main()
 
 	int prevMB=0;
 	AddRand();
+	//for(int i=0;i<15;i++)field[i]=i+1;
 	while(true)
 	{
 		int mb;
 		int mx;
 		int my;
 		GetMouseState(mx,my,mb);
-		hoverX=(mx-55.5)/100;
-		hoverY=(my-255.5)/100;
+		//if(my<50)
+		//{
+		//	CELL=mx/5;
+		//	printf("%f\n", CELL);
+		//}
+		hoverX=(mx-X0-6)/CELL;
+		hoverY=(my-Y0-6)/CELL;
 		if((hoverX>=0)&&(hoverX<5)&&(hoverY>=0)&&(hoverY<5))
 		{
 			if(((prevMB&1)==0)&&((mb&1)==1))
