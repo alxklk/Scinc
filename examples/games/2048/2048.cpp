@@ -1,11 +1,11 @@
 #include <stdio.h>
 
-#define G_SCREEN_WIDTH 320
-#define G_SCREEN_HEIGHT 480
+#define G_SCREEN_WIDTH 480
+#define G_SCREEN_HEIGHT 640
 #define G_SCREEN_SCALE 1
 #define G_SCREEN_MODE 1
 
-float CELL=51;
+float CELL=84;
 float X0=25;
 float Y0=180;
 
@@ -157,8 +157,8 @@ void DrawField()
 				g.fill1();
 				g.clear();
 				float size=sizes[j+i*5];
-				scx*=size;
-				scy*=size;
+				scx*=size*CELL/51;
+				scy*=size*CELL/51;
 				dx+=deltax[j+i*5]*CELL;
 				dy+=deltay[j+i*5]*CELL;
 				dx+=CELL/4*(1.-size);
@@ -170,8 +170,11 @@ void DrawField()
 				snprintf(s,15,"%i",n);
 				//g.M(0,0);g.l(1000,0);g.l(0,20);g.l(-980,0);g.l(0,980);g.l(-20,0);g.close();
 				g.VText(s);
-				g.rgb(.15,.15,.15);
 				g.fin();
+				g.rgb(1,1,1);
+				g.width(3,1);
+				g.stroke();
+				g.rgb(.15,.15,.15);
 				g.fill1();
 				g.clear();
 			}
@@ -530,7 +533,7 @@ int main()
 		int mx;
 		int my;
 		GetMouseState(mx,my,mb);
-		//if(my<50)
+		//if((my<50)&&mb)
 		//{
 		//	CELL=mx/5;
 		//	printf("%f\n", CELL);
