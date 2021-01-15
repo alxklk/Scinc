@@ -2,7 +2,7 @@
 
 #define G_SCREEN_WIDTH 512
 #define G_SCREEN_HEIGHT 512
-#define G_SCREEN_SCALE 1
+#define G_SCREEN_SCALE 2
 #define G_SCREEN_MODE 1
 
 #include "graphics.h"
@@ -28,11 +28,13 @@ void Wave(float x, float y, int col, float t, float w)
 	g.M(x,y-cos(t)*3.);
 	for(int i=0;i<50;i++)
 	{
-		float dy=sin(i*.25-t)*(1.2+i*0.02);
-		g.l(-5,dy*Fabs(dy));
+		float dy=sin(i*.25-t);
+		//dy*=Fabs(dy);
+		dy*=(1.2+i*0.05);
+		g.l(-5,dy);
 	}
 	g.fin();
-	g.width(w*2,1);
+	g.width(w,w);
 	g.rgba32(col);
 	g.stroke();
 }
@@ -122,8 +124,8 @@ int main()
 		Wave(200,226+y,0xffff8000,T*12,11);y+=14;
 		Wave(200,226+y,0xffffff00,T*12,11);y+=14;
 		Wave(200,226+y,0xff00ff00,T*12,11);y+=14;
-		Wave(200,226+y,0xff20a0ff,T*12,11);y+=14;
-		Wave(200,226+y,0xff6000ff,T*12,11);y+=14;
+		Wave(200,226+y,0xff20a0ff,T*12,11);y+=12;
+		Wave(200,226+y,0xff6000ff,T*12,8);
 		g.clear();
 		float bdx=-sin(T*12)*5;
 		float bdy=cos(T*12)*3;
