@@ -17,8 +17,11 @@ int prevmx;
 int prevmy;
 int prevmb;
 
-double freqs[12];
+double freqs[12]={
+	261.626, 277.183, 293.665, 311.127, 329.628, 349.228, 369.994, 391.995, 415.305, 440.000, 466.164, 493.883
+};
 
+/*
 void StdFreqs()
 {
 	freqs[ 0]=261.626;
@@ -34,6 +37,7 @@ void StdFreqs()
 	freqs[10]=466.164;
 	freqs[11]=493.883;
 }
+*/
 
 struct Note
 {
@@ -181,6 +185,20 @@ public:
 						echo[ep+1]+=l;
 					}
 				}
+
+				if(mb&2)
+				{
+					for(int i=0;i<nSamples;i++)
+					{
+						int t=(sample+i);
+						int il=((t*("16164289"[(t>>13)&7]&15))/12&128)+(((((t>>12)^(t>>12)-2)%11*t)/4|t>>13)&127);
+						double l=((il&255)/255.-.5);
+						int ep=((echoPos+i)%EL)*2;
+						echo[ep  ]+=l;
+						echo[ep+1]+=l;
+					}
+				}
+
 				if(mb&4)
 				{
 					double f=mx*4;
@@ -229,7 +247,7 @@ public:
 						s*=0.35;
 					}
 
-					if(t<0.1)s*=t*10.;
+					if(t<0.01)s*=t*100.;
 					if(fade)
 					{
 						s*=(1. -(cs-n.t0)/double(n.t1-n.t0));
@@ -320,14 +338,15 @@ public:
 		mul=1;
 		if     (n==0){name="     Gamma";tempo=.5;mul=.25; deflen=1./2.;defoct=7;melody="c c# d d# e f f# g g# a a# b p b a# a g# g f# f e d# d c# c p";}
 		else if(n==1){name="   Nokia tune"; mul=8;deflen=1./4.; defoct=1;melody="2p 16e2 16d2 8#f 8#g 16#c2 16b 8d 8e 16b 16a 8#c 8e 2a 2p";}
-		else if(n==2){name="     Bolero";tempo=2.7;mul=.25; deflen=1./2.;defoct=5;melody="c6, 8c6, 16b, 16c6, 16d6, 16c6, 16b, 16a, 8c6, 16c6, 16a, c6, 8c6, 16b, 16c6, 16a, 16g, 16e, 16f, 2g, 16g, 16f, 16e, 16d, 16e, 16f, 16g, 16a, g, g, 16g, 16a, 16b, 16a, 16g, 16f, 16e, 16d, 16e, 16d, 8c, 8c, 16c, 16d, 8e, 8f, d, 2g";}
-		else if(n==3){name="    Children"; tempo=1.5; mul=1; deflen=1./4; defoct=5;melody="8p, f.6, 1p, g#6, 8g6, d#.6, 1p, g#6, 8g6, c.6, 1p, g#6, 8g6, g#., 1p, 16f, 16g, 16g#, 16c6, f.6, 1p, g#6, 8g6, d#.6, 1p, 16c#6, 16c6, c#6, 8c6, g#, 2p, g., g#, 8c6, f.";}
+		else if(n==2){name="     Nyan Cat";tempo=3.0;mul=1.; deflen=1./16.;defoct=5;melody="8p,16d#6,16e6,8f#6,8b6,16d#6,16e6,16f#6,16b6,16c#7,16d#7,16c#7,16a#6,8b6,8f#6,16d#6,16e6,8f#6,8b6,16c#7,16a#6,16b6,16c#7,16e7,16d#7,16e7,16c#7,8f#6,8g#6,16d#6,16d#6,16p,16b,16d6,16c#6,16b,16p,8b,8c#6,8d6,16d6,16c#6,16b,16c#6,16d#6,16f#6,16g#6,16d#6,16f#6,16c#6,16d#6,16b,16c#6,16b,8d#6,8f#6,16g#6,16d#6,16f#6,16c#6,16d#6,16b,16d6,16d#6,16d6,16c#6,16b,16c#6,8d6,16b,16c#6,16d#6,16f#6,16c#6,16d#6,16c#6,16b,8c#6,8b,8c#6,8f#6,8g#6,16d#6,16d#6,16p,16b,16d6,16c#6,16b,16p,8b,8c#6,8d6,16d6,16c#6,16b,16c#6,16d#6,16f#6,16g#6,16d#6,16f#6,16c#6,16d#6,16b,16c#6,16b,8d#6,8f#6,16g#6,16d#6,16f#6,16c#6,16d#6,16b,16d6,16d#6,16d6,16c#6,16b,16c#6,8d6,16b,16c#6,16d#6,16f#6,16c#6,16d#6,16c#6,16b,8c#6,8b,8c#6,8b,16f#,16g#,8b,16f#,16g#,16b,16c#6,16d#6,16b,16e6,16d#6,16e6,16f#6,8b,8b,16f#,16g#,16b,16f#,16e6,16d#6,16c#6,16b,16f#,16d#,16e,16f#,8b,16f#,16g#,8b,16f#,16g#,16b,16b,16c#6,16d#6,16b,16f#,16g#,16f#,8b,16b,16a#,16b,16f#,16g#,16b,16e6,16d#6,16e6,16f#6,8b,8a#,8b,16f#,16g#,8b,16f#,16g#,16b,16c#6,16d#6,16b,16e6,16d#6,16e6,16f#6,8b,8b,16f#,16g#,16b,16f#,16e6,16d#6,16c#6,16b,16f#,16d#,16e,16f#,8b,16f#,16g#,8b,16f#,16g#,16b,16b,16c#6,16d#6,16b,16f#,16g#,16f#,8b,16b,16a#,16b,16f#,16g#,16b,16e6,16d#6,16e6,16f#6,8b,8c#6";}
+		else if(n==3){name="    Children"; tempo=1.5; mul=1; deflen=1./4; defoct=5;melody="8p, f.6, 1p, g#6, 8g6, d#.6, 1p, g#6, 8g6, c.6, 1p,"" g#6, 8g6, g#., 1p, 16f, 16g, 16g#, 16c6, f.6, 1p, g#6, 8g6, d#.6, 1p, 16c#6, 16c6, c#6, 8c6, g#, 2p, g., g#, 8c6, f.";}
 		else if(n==4){name="  Greensleaves";tempo=1.5; mul=.5; deflen=1./4.;defoct=5;melody="p, g, 2a#, c6, d.6, 8d#6, d6, 2c6, a, f., 8g, a, 2a#, g, g., 8f, g, 2a, f, 2d, g, 2a#, c6, d.6, 8e6, d6, 2c6, a, f., 8g, a, a#., 8a, g, f#., 8e, f#, 2g";}
 		else if(n==5){name="Rondo alla turka";mul=8.;deflen=1./4.; defoct=5; melody="16#f1 16e1 16#d1 16e1 4g1 16a1 16g1 16#f1 16g1 4b1 16c2 16b1 16#a1 16b1 16#f2 16e2 16#d2 16e2 16#f2 16e2 16#d2 16e2 4g2 8e2 8g2 32d2 32e2 16#f2 8e2 8d2 8e2 32d2 32e2 16#f2 8e2 8d2 8e2 32d2 32e2 16#f2 8e2 8d2 8#c2 4b1 2p";}
 		else if(n==6){name="Godfather theme";tempo=2.5;mul=.5;deflen=1./8.; defoct=5; melody="8g,8c6,8d#6,8d6,8c6,8d#6,8c6,8d6,c6,8g#,8a#,2g,8p,8g,8c6,8d#6,8d6,8c6,8d#6,8c6,8d6,c6,8g,8f#,2f,8p,8f,8g#,8b,2d6,8p,8f,8g#,8b,2c6,8p,8c,8d#,8a#,8g#,g,8a#,8g#,8g#,8g,8g,8b4,2c,1p";}
 		else if(n==7){name="    Bouree";tempo=1.5;mul=1.;deflen=1./4.; defoct=5;melody="1p,8e,8f#,g,8f#,8e,d#,8e,8f#,b4,8c#,8d#,e,8d,8c,b4,8a4,8g4,f#4,8g4,8a4,8b4,8a4,8g4,8f#4,e4,8e,8f#,g,8f#,8e,d#,8e,8f#,b4,8c#,8d#,e,8d,8c,b4,8a4,8g4,f#.4,8g4,2g.4,8e,8f#,g,8f#,8e,d#,8e,8f#,b4,8c#,8d#,e,8d,8c,b4,8a4,8g4,f#4,8g4,8a4,8b4,8a4,8g4,8f#4,e4,8e,8f#,g,8f#,8e,d#,8e,8f#,b4,8c#,8d#,e,8d,8c,b4,8a4,8g4,f#.4,8g4,2g.4,8b4,8g4,d,8a4,8c,b4,8g,8d,e,8b4,8d,c,8b4,8a4,g#4,8a4,8b4,c,8b4,8a4,2a.4,8d,8a4,b4,8g,8d,e,8b4,8d,c,8a,8e,f#,8c#,8e,d,8c#,8b4,a#.4,8b4,2b.4,8b,8f#,g#,8f#,8e,a,8e,8g,f#,8e,8d,g,8d,8f,e,8a,8e,f#,8c#,8e,d#,2b4,8e,8b4,c,8d,8a4,b4,8c,8g4,a4,8b4,8f#4,g4,8f#4,8e4,d#4,8e4,8f#4,g4,8f#4,8e4,2e.4,8b4,8g4,d,8a4,8c,b4,8g,8d,e,8b4,8d,c,8b4,8a4,g#4,8a4,8b4,c,8b4,8a4,2a.4,8d,8a4,b4,8g,8d,e,8b4,8d,c,8a,8e,f#,8c#,8e,d,8c#,8b4,a#.4,8b4,2b.4,8b,8f#,g#,8f#,8e,a,8e,8g,f#,8e,8d,g,8d,8f,e,8a,8e,f#,8c#,8e,d#,2b4,8e,8b4,c,8d,8a4,b4,8c,8g4,a4,8b4,8f#4,g4,8f#4,8e4,d#4,8e4,8f#4,g4,8f#4,8e4,2e.4";}
 		else if(n==8){name="  JingleBell";mul=.5;tempo=2.5; deflen=1./8; defoct=5; melody="32p,a,a,4a,a,a,4a,a,c6,f.,16g,2a,a#,a#,a#.,16a#,a#,a,a.,16a,a,g,g,a,4g,4c6";}
 		else if(n==9){name="  Canon in D";tempo=2.;mul=.5;deflen=1./4.;defoct=5;melody="8d, 8f#, 8a, 8d6, 8c#, 8e, 8a, 8c#6, 8d, 8f#, 8b, 8d6, 8a, 8c#, 8f#, 8a, 8b, 8d, 8g, 8b, 8a, 8d, 8f#, 8a, 8b, 8f#, 8g, 8b, 8c#, 8e, 8a, 8c#6, f#6, 8f#, 8a, e6, 8e, 8a, d6, 8f#, 8a, c#6, 8c#, 8e, b, 8d, 8g, a, 8f#, 8d, b, 8d, 8g, c#.6";}
+		else if(n==10){name="     Bolero";tempo=2.7;mul=.25; deflen=1./2.;defoct=5;melody="c6, 8c6, 16b, 16c6, 16d6, 16c6, 16b, 16a, 8c6, 16c6, 16a, c6, 8c6, 16b, 16c6, 16a, 16g, 16e, 16f, 2g, 16g, 16f, 16e, 16d, 16e, 16f, 16g, 16a, g, g, 16g, 16a, 16b, 16a, 16g, 16f, 16e, 16d, 16e, 16d, 8c, 8c, 16c, 16d, 8e, 8f, d, 2g";}
 		position=0;
 		wait=0;
 		error=false;
@@ -354,7 +373,7 @@ public:
 			else break;
 		}
 
-		if   (StartsWith(&melody[position],"32")==2){len=1./32;position+=2;}
+		if     (StartsWith(&melody[position],"32")==2){len=1./32;position+=2;}
 		else if(StartsWith(&melody[position],"16")==2){len=1./16;position+=2;}
 		else if(StartsWith(&melody[position], "8")   ){len=1./ 8;position+=1;}
 		else if(StartsWith(&melody[position], "4")   ){len=1./ 4;position+=1;}
@@ -476,7 +495,7 @@ int frame;
 
 int main()
 {
-	StdFreqs();
+//	StdFreqs();
 	melody.Init(1);
 	notes.Init();
 	snd.Init();
@@ -574,10 +593,11 @@ int main()
 
 		g.gray(0);
 		g.clear();
+		g.M(0,0);g.l(640,0);g.l(0,480);g.l(-640,0);g.close();g.fin();
 		g.fill1();
 		g.clear();
 		g.M(-1,240);
-		for(int i=0;i<640;i+=2)
+		for(int i=0;i<640;i++)
 		{
 			double lvl=snd.echo[(snd.echoPos+(640-i))%EL*2];
 			g.L(i,lvl*200+240);
@@ -613,8 +633,8 @@ int main()
 
 		melody.Render();
 		char ss[64];
-		//snprintf(ss,64,"% 5i % 5i % 5i", nSamples, snd.echoPos, snd_bufhealth());
-		//stext(ss,10,470,0xff004000);
+		snprintf(ss,64,"% 5i % 5i % 5i", nSamples, snd.echoPos, snd_bufhealth());
+		stext(ss,10,470,0xffffff00);
 		Present();
 	}
 	return 0;

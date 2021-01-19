@@ -16,7 +16,7 @@ void BG()
 	g.rgba32(0xff102050);
 	g.clear();
 	g.M(0,0);g.l(640,0);g.l(0,480);g.l(-640,0);g.close();g.fin();
-	g.alpha(.5);
+	g.alpha(1);
 	g.fill1();
 
 	for(int i=0;i<200;i++)
@@ -56,23 +56,14 @@ void BG()
 
 void BGMENU()
 {
-	//BG();return;
-	float t=-Time();
-	g.graddef(0);
-	for(int i=0;i<256;i+=4)
-	{
-		float s=i*1./256.0;
-		g.gradstop(s,
-			.5+.15*sin(s*3.35*3.-t*2.85+17.8)+.15*sin(-s*14.85*1.6+(t+1.8)*2.85*1.13+7.8),
-			.15+.15*sin(s*2.81*3.-t*3.58+12.2)+.15*sin(-s*16.11*1.6+(t+5.7)*3.58*1.12+2.2),
-			.15+.15*sin(s*3.37*3.-t*2.59+27.7)+.15*sin(-s*15.37*1.6+(t+8.7)*2.59*1.11+7.7),
-			1
-		);
-	}
+	BG();
+	g.graddef(1);
+	g.gradstop(0,0,0,0,0);
+	g.gradstop(1,0,0,0,1);
 	g.alpha(1);
-	g.gradtype(1);
+	g.gradtype(2);
 	g.gradend();
-	g.graduse(0);
+	g.graduse(1);
 	g.clear();
 	g.M(0,0);
 	g.l(640,0);
@@ -80,32 +71,10 @@ void BGMENU()
 	g.l(-640,0);
 	g.close();
 	g.fin();
-	g.g_0(0,0);
-	float r=240*1.7;
-	g.g_x(640,0);
-	g.g_y(0,480);
+	g.g_0(320,240);
+	g.g_x(320*1.4,0);
+	g.g_y(0,240*1.4);
 	g.fill1();
-	BG();
-	{
-		g.graddef(1);
-		g.gradstop(0,0,0,0,0);
-		g.gradstop(1,0,0,0,1);
-		g.alpha(1);
-		g.gradtype(2);
-		g.gradend();
-		g.graduse(1);
-		g.clear();
-		g.M(0,0);
-		g.l(640,0);
-		g.l(0,480);
-		g.l(-640,0);
-		g.close();
-		g.fin();
-		g.g_0(320,240);
-		g.g_x(320*1.4,0);
-		g.g_y(0,240*1.4);
-		g.fill1();
-	}
 }
 
 int eseed;
@@ -169,12 +138,13 @@ void Aster(float x, float y, float size, int seed, int hit, bool collis, int col
 	g.close();
 	g.fin();
 
+	g.graduse(-1);
+
 	if(collis)
 	{
-	
 		g.rgba32(0xff800000|(collisI+1));
 		g.alpha(1);
-		g.width(0,0);
+		g.width(5,1000000);
 		g.fill2();
 		return;
 	}
@@ -209,7 +179,7 @@ void Aster(float x, float y, float size, int seed, int hit, bool collis, int col
 	g.fin();
 
 	g.rgb(.3,.15,.1);
-	g.width(size/2,2);
+	g.width(size/2,.65);
 	g.fill2();
 
 	//g.rgba32(col);
@@ -558,6 +528,7 @@ int main()
 			tframe=Time();
 			if(nsndsamples>2000)nsndsamples=2000;
 			music.GenerateSamples(nsndsamples);
+			g.graduse(-1);
 
 			g.t_0(320-200+sin(Time()*3.)*10,240);
 			g.t_x(10,0);

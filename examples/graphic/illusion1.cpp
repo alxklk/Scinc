@@ -12,7 +12,7 @@ int main()
 		double T=Time();
 		g.clear();
 		g.gray(.95);
-		g.fill1();
+		g.FillRT();
 
 		stext("Fix eyes on the black cross", 10,10,0x40000000);
 		stext("See moving green dot", 10,20,0x40000000);

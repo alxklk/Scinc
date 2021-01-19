@@ -30,12 +30,13 @@ int main()
 	sndSample=0;
 	while(true)
 	{
-		g.rgb(.01,.15,.05);
-		g.clear();
-		g.fill1();
 		g.t_0(0,0);
 		g.t_x(1,0);
 		g.t_y(0,1);
+		g.rgb(.01,.15,.05);
+		g.clear();
+		g.M(0,0);g.l(640,0);g.l(0,480);g.l(-640,0);g.close();g.fin();
+		g.fill1();
 		g.clear();
 
 		int nSamples=Time()*44100-tframe*44100+1;
@@ -49,10 +50,10 @@ int main()
 		}
 		g.fin();
 		g.width(8.,1.);
-		g.rgb(1,.8,0);
+		g.rgb(.5,.8,0);
 		g.stroke();
 		g.width(2.,1.);
-		g.rgb(1,1,1);
+		g.rgb(.9,1,.8);
 		g.stroke();
 
 		char ss[64];

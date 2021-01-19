@@ -89,7 +89,7 @@ int main()
 		//T=0.5;
 		g.clear();
 		g.gray(.5);
-		g.fill1();
+		g.FillRT();
 
 		stext("Left ring is growing bigger", 10,10,0x40000000);
 		stext("Right ring is shrinking smaller", 10,20,0x40000000);

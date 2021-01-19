@@ -36,7 +36,7 @@ int main()
 		double T=Time();
 		g.clear();
 		g.gray(.5);
-		g.fill1();
+		g.FillRT();
 
 		int scene=int(T/10)%3;
 		//scene=2;

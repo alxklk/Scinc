@@ -16,7 +16,7 @@ Graph g;
 void Circle(float x, float y, float r)
 {
 	g.M(x+r,y);
-	float a=0.55;
+	float a=0.5522;
 	g.C(x+r,y+r*a,x+r*a,y+r,x,y+r);
 	g.C(x-r*a,y+r,x-r,y+r*a,x-r,y);
 	g.C(x-r,y-r*a,x-r*a,y-r,x,y-r);
@@ -42,8 +42,11 @@ int main()
 	{
 		//g.M(0,0);g.l(640,0);g.l(0,480);g.l(-640,0);g.close();g.fin();
 		g.clear();
-		g.rgba(0,0,0,1);g.fill1();
-		g.alpha(1);
+		g.gray(0);
+		g.M(0,0);g.l(640,0);g.l(0,480);g.l(-640,0);g.close();g.fin();
+		g.fill1();
+		g.clear();
+
 		for(int i=0;i<500;i++)
 		{
 			g.clear();

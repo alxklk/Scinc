@@ -28,13 +28,13 @@ void Wave(float x, float y, int col, float t, float w)
 	g.M(x,y-cos(t)*3.);
 	for(int i=0;i<50;i++)
 	{
-		float dy=sin(i*.25-t);
+		float dy=sin(i*.35-t);
 		//dy*=Fabs(dy);
 		dy*=(1.2+i*0.05);
-		g.l(-5,dy);
+		g.l(-4,dy);
 	}
 	g.fin();
-	g.width(w,w);
+	g.width(w*2,1);
 	g.rgba32(col);
 	g.stroke();
 }
@@ -99,6 +99,7 @@ int main()
 	while(true)
 	{
 		float T=Time();
+		//* Use mouse instead of time, for debug */ {int x;int y;int b;GetMouseState(x,y,b);T=x/512.;}
 		g.rgba32(0xff000040);
 		g.FillRT();
 		g.clear();
@@ -132,15 +133,24 @@ int main()
 		g.M(200+bdx,270+bdy);
 		g.c(-10,-5,-20,bdy*2-5,-40+bdy,-bdy*4-10);
 
-		g.M(210,305-bdy);
-		g.l(-bdx*2.5-5,15);
 		g.M(235,305+bdx);
 		g.l(-bdy*2.5-5,15);
-
-		g.M(290,305-bdx*1.4);
-		g.l(bdy*3.,15);
 		g.M(315,305-bdy);
 		g.l(-bdx*2.,15);
+
+		g.fin();
+		g.rgba32(0xff000000);
+		g.width(13,13);
+		g.stroke();
+		g.rgba32(0xffa0a0a0);
+		g.width(8,8);
+		g.stroke();
+
+		g.clear();
+		g.M(210,305-bdy);
+		g.l(-bdx*2.5-5,15);
+		g.M(290,305-bdx*1.4);
+		g.l(bdy*3.,15);
 
 		g.fin();
 		g.rgba32(0xff000000);
