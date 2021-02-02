@@ -1,7 +1,12 @@
 #include <stdio.h>
+
+#define G_SCREEN_WIDTH 320
+#define G_SCREEN_HEIGHT 240
+#define G_SCREEN_SCALE 4
+
 #include "graphics.h"
 
-#define __SCINC_STEPS__ 100000000
+#define __SCINC_STEPS__ 500
 
 int main()
 {
@@ -10,15 +15,18 @@ int main()
 	for(;;)
 	{
 		g.gray(0);g.fill1();
-		for(int y=0;y<480;y++)
+		float cy=-120.;
+		for(int y=0;y<240;y++)
 		{
-			float dy=y-240;
-			for(int x=0;x<640;x++)
+			float ddy=cy*cy;
+			cy=cy+1.;
+			float cx=-160;
+			for(int x=0;x<320;x++)
 			{
-				float dx=x-320;
-				float R=sqrt(dx*dx+dy*dy);
-				int l=R;
-				PutPixel(x,y,(l+n)&0xff);
+				float R=sqrt(cx*cx+ddy);
+				cx=cx+1.;
+				int l=sin((R+n)*.03)*127.+127.;
+				PutPixel(x,y,(l&0xff));
 			}
 		}
 		Present();

@@ -35,8 +35,7 @@ int main()
 		g.t_y(0,1);
 		g.rgb(.01,.15,.05);
 		g.clear();
-		g.M(0,0);g.l(640,0);g.l(0,480);g.l(-640,0);g.close();g.fin();
-		g.fill1();
+		g.FillRT();
 		g.clear();
 
 		int nSamples=Time()*44100-tframe*44100+1;

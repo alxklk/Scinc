@@ -1,3 +1,8 @@
+#ifdef NOTDEF
+Scinc "$0"
+exit
+#endif
+
 #define G_SCREEN_WIDTH 512
 #define G_SCREEN_HEIGHT 512
 

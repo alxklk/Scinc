@@ -1,7 +1,7 @@
 #define G_SCREEN_WIDTH 320
 #define G_SCREEN_HEIGHT 240
-#define G_SCREEN_SCALE 5
-#define G_SCREEN_MODE 2
+#define G_SCREEN_SCALE 3
+#define G_SCREEN_MODE 1
 
 #define CENTER G_SCREEN_WIDTH/2
 
@@ -60,6 +60,7 @@ int main()
 			g.gradstop(.3,l*.5+l*l*.5,l*.7+l*l*.3,l,1);
 			g.gradstop(0,.5,.75,.75,1);
 			g.gradtype(1);
+			g.gradmethod(2);
 			g.gradend();
 			g.graduse(0);
 			g.g_0(0,19);
@@ -122,6 +123,7 @@ int main()
 			g.gradstop(.7,l*.5+l*l*.5,l*.9+l*l*.1,l,1);
 			g.gradstop(1,.2,.8,.9,1);
 			g.gradtype(1);
+			g.gradmethod(2);
 			g.gradend();
 			g.graduse(0);
 			g.g_0(0,19);

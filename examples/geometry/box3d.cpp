@@ -59,9 +59,9 @@ int main()
 	while(true)
 	{
 		t=Time();
-		g.rgb(.4,.15,.1);
+		g.rgba(.4,.15,.1,1);
+		g.FillRT();
 		g.clear();
-		g.fill1();
 		g.alpha(1);
 		for(int i=0;i<6;i++)
 		{
@@ -99,7 +99,7 @@ int main()
 		g.width(30,1);
 		g.stroke();
 		g.gray(1);
-		g.width(1.5,1.);
+		g.width(1.,1.);
 		g.stroke();
 		Present();
 	}
