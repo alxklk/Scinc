@@ -1,6 +1,6 @@
 #include <vector>
-#include "base.h"
-class Scinc
+#include "ScincBase.h"
+class ScincVM
 {
 public:
 	union{

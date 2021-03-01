@@ -2,10 +2,10 @@
 // Created by klk on 9/5/20.
 //
 
-#ifndef SCRIP_TPLBINDER_H
-#define SCRIP_TPLBINDER_H
+#ifndef SCRIP_SCINCBINDER_H
+#define SCRIP_SCINCBINDER_H
 
-#include "base.h"
+#include "ScincBase.h"
 #include <tuple>
 
 template<typename T>struct TSSizeOf;
@@ -124,11 +124,11 @@ public:
 	}
 };
 
-template<typename I, typename R, typename... As>int ScincCall(I*pit, R(*function)(As...))
+template<typename I, typename R, typename... As>int ScincBoundCall(I*pit, R(*function)(As...))
 {
 	Wrapper<R,As...>::func(pit,(void*)function);
 	return 1;
 }
 
 
-#endif //SCRIP_TPLBINDER_H
+#endif //SCRIP_SCINCBINDER_H
