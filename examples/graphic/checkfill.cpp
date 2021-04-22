@@ -19,10 +19,7 @@ int main()
 		{
 			float x=(cos(i*M_PI/N*2.*5+T*1.1)*.8+sin(i*M_PI/N*2.*29-T*0.12)*.2)*300+320;
 			float y=(sin(i*M_PI/N*2.*4+T*.93)*.8+cos(i*M_PI/N*2.*27-T*0.37)*.2)*220+240;
-			if(i==0)
-				g.M(x,y);
-			else
-				g.L(x,y);
+			g.L(x,y);
 		}
 		g.close();
 		g.fin();

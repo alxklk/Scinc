@@ -1,4 +1,7 @@
 #include <stdio.h>
+#define G_SCREEN_WIDTH 512
+#define G_SCREEN_HEIGHT 512
+#define G_SCREEN_SCALE 2
 #include "graphics.h"
 
 Graph g;
@@ -7,22 +10,18 @@ Graph g;
 
 int main()
 {
+	int n=0;
 	while(true)
 	{
-		double cx=320;
-		double cy=240;
-		double R=100;
-		double r=20;
+		double cx=G_SCREEN_WIDTH/2;
+		double cy=G_SCREEN_HEIGHT/2;
+		double R=G_SCREEN_HEIGHT*(.35+.1*sin(Time()));
+		double r=G_SCREEN_HEIGHT*.1*(1+0.1*sin(Time()));
 		g.clear();
 		g.gray(.5);
-		g.fill1();
+		g.FillRT();
+		g.clear();
 		g.M(cx,cy-R);
-		//int N=128;
-		//for(int i=1;i<N;i++)
-		//{
-		//	float a=2*M_PI*i/N;
-		//	g.L(cx+sin(a)*R, cy-cos(a)*R);
-		//}
 		g.a(R,R,0,0,0,0,2*R);
 		g.a(R,R,0,0,0,0,-2*R);
 		g.close();
@@ -54,6 +53,15 @@ int main()
 
 		g.gray(0);
 		g.fill1();
+		if(n==0)
+		{
+			char fn[64];
+			snprintf(fn,64,"yy%05i.jpg",n);
+			g.WriteImage(fn, "jpg", "");
+			// g.WriteImage("yin_and_yang.png", "png", "");
+			// g.WriteImage("yin_and_yang.jpg", "jpg", "");
+		}
+		n++;
 
 		Present();
 	}

@@ -1,4 +1,7 @@
 #include <stdio.h>
+
+#define G_SCREEN_SCALE 2
+
 #include "graphics.h"
 
 #define M_PI 3.141592654
@@ -9,12 +12,12 @@ float t;
 
 float f(float x, float y)
 {
-	return sin(sqrt(x*x+y*y)*.4-t*0);
+	return sin(sqrt(x*x+y*y)*.4+t);
 }
 
-#define N 30
+#define N 40
 
-float S=1.5;
+float S=1.;
 float SZ=30;
 
 float h[(N*2+1)*(N*2+1)];
@@ -31,14 +34,15 @@ int main()
 		int my;
 		int mb;
 		GetMouseState(mx,my,mb);
-		if(oldmx==mx)
-		{
-			Present();
-			continue;
-		}
+		//if(oldmx==mx)
+		//{
+		//	Present();
+		//	continue;
+		//}
 		oldmx=mx;
 		float a=mx/60.;
-		//a=t*.4;
+		a=t*.4;
+		//a=2;
 		float SXX= 7*S*cos(a);
 		float SYX= 7*S*sin(a);
 		float SXY= 3*S*sin(a);
@@ -49,7 +53,7 @@ int main()
 
 		g.clear();
 		g.gray(1);
-		g.width(1,1);
+		g.width(1.,.5);
 		for(int i=-N;i<=N;i++)
 		{
 			for(int j=-N;j<=N;j++)
@@ -90,11 +94,14 @@ int main()
 				g.close();
 				g.fin();
 				float l=(h0+h1+h2+h3)/4.*.5+.5;
-				g.gray(0);
-				g.rgb((h0-h1)*.15+.15,(h0-h2)*.15+.15,0);
+				//g.gray(0);
+				g.rgb(0.3,.15,.1);
+				//g.alpha(.65);
+				g.rgb((h0-h1)*.15+.15,(h0-h2)*.15+.15,.0);
 				g.fill1();
 				g.rgb((h0-h1)*.5+.5,(h0-h2)*.5+.5,0);
-				g.stroke();
+				g.alpha(1);
+				//g.stroke();
 			}
 		}
 		Present();

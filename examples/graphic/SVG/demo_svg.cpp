@@ -26,7 +26,7 @@ int main()
 	while(true)
 	{
 		g.rgb(.3,.1,.0);
-		g.fill1();
+		g.FillRT();
 		float t=Time()*1.2;
 		for(int i=0;i<260;i++)
 		{

@@ -28,12 +28,9 @@ void Rect(float x, float y ,float w, float h)
 
 void Circle(float x, float y, float r)
 {
-	g.M(x+r,y);
-	float a=0.55;
-	g.C(x+r,y+r*a,x+r*a,y+r,x,y+r);
-	g.C(x-r*a,y+r,x-r,y+r*a,x-r,y);
-	g.C(x-r,y-r*a,x-r*a,y-r,x,y-r);
-	g.C(x+r*a,y-r,x+r,y-r*a,x+r,y);
+	g.M(x-r,y);
+	g.a(1,1,0,0,1,2*r,0);
+	g.a(1,1,0,0,1,-2*r,0);
 	g.close();
 }
 
@@ -197,7 +194,6 @@ public:
 					if(field[j+i*FW]&1)
 					{
 						g.M(j*NOTESIZE+NOTESIZE/2+x-1,i*NOTESIZE+NOTESIZE/2+y-1);
-						g.l(0,0);
 					}
 				}
 			}
@@ -214,7 +210,6 @@ public:
 					if(field[j+i*FW]&1)
 					{
 						g.M(j*NOTESIZE+NOTESIZE/2+x-1.5,i*NOTESIZE+NOTESIZE/2+y-1.5);
-						g.l(0,0);
 					}
 				}
 			}
@@ -229,9 +224,8 @@ public:
 			g.clear();
 			Rect(hoverx*NOTESIZE+x,hovery*NOTESIZE+y,NOTESIZE,NOTESIZE);
 			g.fin();
-			g.width(1.,1.);
-			g.rgba(1,1,1,1);
-			g.alpha(1);
+			g.width(2.,2.);
+			g.rgba(0,1,1,.5);
 			g.stroke();
 		}
 

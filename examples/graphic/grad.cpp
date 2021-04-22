@@ -6,7 +6,7 @@ void Gradient()
 {
 	float t=-Time();
 	g.graddef(0);
-	for(int i=0;i<256;i+=32)
+	for(int i=0;i<256;i+=2)
 	{
 		float s=i*1./256.0;
 		g.gradstop(s,

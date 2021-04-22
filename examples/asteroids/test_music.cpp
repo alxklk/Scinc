@@ -43,9 +43,8 @@ int main()
 	while(true)
 	{
 		g.rgb(.03,.1,.05);
-		g.alpha(.15);
+		g.FillRT();
 		g.clear();
-		g.fill1();
 		g.alpha(1);
 		//g.clear();
 		//g.M(0,240.5);g.l(640,0);
