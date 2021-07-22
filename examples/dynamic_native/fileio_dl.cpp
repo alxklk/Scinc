@@ -7,7 +7,7 @@ struct FILE_ptr{
 	static const int size_of=sizeof(FILE*);
 };
 
-#ifdef MSVC
+#ifdef _MSC_VER
 #define EXPORT __declspec(dllexport)
 #else
 #define EXPORT
