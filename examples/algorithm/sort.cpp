@@ -13,7 +13,7 @@ void DrawArray(int* arr, int len, int highlight)
 	float h=460./len;
 	g.rgb(.4,.1,.0);
 	g.clear();
-	g.fill1();
+	g.FillRT();
 	g.width(s/2,s/2-1);
 	for(int l=0;l<len;l++)
 	{
