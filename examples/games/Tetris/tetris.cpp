@@ -208,6 +208,10 @@ char* figtpl=//IJLOSTZ
 	"    "
 ;
 
+#ifndef __SCINC__
+unsigned
+#endif
+
 int stdcols[12]=
 {
 	0xffe010a0,
