@@ -3,10 +3,15 @@
 
 #define SW 320
 #define SH 240
+#ifdef __SCINC__
 #define NL 20
+#else
+#define NL SH
+#endif
 
 #define G_SCREEN_WIDTH SW
 #define G_SCREEN_HEIGHT SH
+#define G_SCREEN_MODE 0
 #define G_SCREEN_SCALE 4
 //#define USE_AA 2
 
@@ -521,13 +526,15 @@ int main()
 			n=SH-fn;
 #ifdef GRAPH
 		g.BitBlt(&buf[fn*SW*4],SW,NL,0,fn);
+#ifdef __SCINC__
 		g.rgba32(0xffffffff);
 		g.lineH(0,fn+NL,SW);
+#endif
 		SetPresentWait(0);
 		Present();
 #ifdef __SCINC__
 		// prevent CPU overheating
-		Wait(0.15);
+		//Wait(0.15);
 #endif
 
 #endif
