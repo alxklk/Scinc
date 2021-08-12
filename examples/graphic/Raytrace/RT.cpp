@@ -1,0 +1,543 @@
+#include <stdio.h>
+#include <math.h>
+
+#define SW 320
+#define SH 240
+#define NL 20
+
+#define G_SCREEN_WIDTH SW
+#define G_SCREEN_HEIGHT SH
+#define G_SCREEN_SCALE 4
+//#define USE_AA 2
+
+#ifdef __SCINC__
+#define const
+#endif
+
+#define GRAPH
+
+#ifdef GRAPH
+#include "graphics.h"
+Graph g;
+#endif
+
+#define float3 flt3
+
+class float3
+{
+public:
+	float x;
+	float y;
+	float z;
+	static float3 New(float newx, float newy, float newz)
+	{
+		float3 retval;
+		retval.x=newx;
+		retval.y=newy;
+		retval.z=newz;
+		return retval;
+	}
+	float3 Normalized() const
+	{
+		float3 ret=*this;
+		ret.Normalize();
+		return ret;
+	}
+	void Normalize()
+	{
+		float l=1./sqrt(x*x+y*y+z*z);
+		x*=l;
+		y*=l;
+		z*=l;
+	}
+	float3 operator-(const float3& r) const
+	{
+		return New(x-r.x,y-r.y,z-r.z);
+	}
+	float3 operator-() const
+	{
+		return New(-x,-y,-z);
+	}
+	float3 operator+(const float3& r) const
+	{
+		return New(x+r.x,y+r.y,z+r.z);
+	}
+	float3 operator-(float r) const
+	{
+		return New(x-r,y-r,z-r);
+	}
+	float3 operator*(float r) const
+	{
+		return New(x*r,y*r,z*r);
+	}
+	float3 operator/(float r) const
+	{
+		return New(x/r,y/r,z/r);
+	}
+};
+
+float3 cross(const float3& u, const float3& v)
+{
+	return float3::New(
+		u.y*v.z-u.z*v.y,
+		u.z*v.x-u.x*v.z,
+		u.x*v.y-u.y*v.x
+		);
+}
+
+float dot(const float3& v1, const float3& v2)
+{
+	return v1.x*v2.x+v1.y*v2.y+v1.z*v2.z;
+}
+
+float clamp(float x, float min, float max)
+{
+	if(x<min)return min;
+	else if(x>max)return max;
+	return x;
+}
+
+struct Intersection
+{
+	int id;
+	float t;
+	float3 p;
+	float3 n;
+	float3 uv;
+};
+
+struct Reflection
+{
+	int id;
+	float3 dir;
+	float fresn;
+};
+
+struct Plane
+{
+	int id;
+	float3 p0;
+	float3 dp1;
+	float3 dp2;
+};
+
+struct Sphere
+{
+	int id;
+	float3 p;
+	float r;
+};
+
+struct Ray
+{
+	float3 p;
+	float3 d;
+};
+
+struct Trace
+{
+	float3 rgb;
+	float val;
+};
+
+struct Cylinder
+{
+    int id;
+    float3 p0;
+    float3 p1;
+    float r;
+};
+
+void RayCylinder(const Cylinder& C, const Ray& R, Intersection& i)
+{
+	float r2=C.r*C.r;
+	float3 dp=C.p1-C.p0;
+	float3 dpt=dp/dot(dp,dp);
+	float3 ao=R.p-C.p0;
+	float3 aoxab=cross(ao,dpt);
+	float3 vxab=cross(R.d,dpt);
+	float ab2=dot(dpt,dpt);
+	float a=2.0*dot(vxab,vxab);
+	float b=2.0*dot(vxab,aoxab);
+	float c=dot(aoxab,aoxab)-r2*ab2;
+	float det=b*b-2.0*a*c;
+
+ 
+	if(det<0.0)
+	{
+		return;
+	}
+
+	float ra=1.0/a;
+	det=sqrt(det);
+
+	float t0=(-b+det)*ra;
+	float t1=(-b-det)*ra;
+
+	bool inside=false;
+	if(t0>t1)
+	{
+		float temp=t1;
+		t1=t0;
+		t0=temp;
+	}
+
+	float d=t0;
+	if(d<0.0)
+	{
+		return;
+	}
+
+	float3 ip=R.p+R.d*d;
+	float3 lp=ip-C.p0;
+	float ct=dot(lp,dpt);
+	if((ct<0.0)||(ct>1.0))
+	{	
+		d=t1;
+		if(d<0.0)
+		{
+			return;
+		}
+
+		inside=true;
+		ip=R.p+R.d*d;
+		float3 lp=ip-C.p0;
+		float ct=dot(lp,dpt);
+		if((ct<0.0)||(ct>1.0))
+		{
+			return;
+		}
+	}
+
+	if((i.id!=0)&&(i.t<d))
+		return;
+
+	i.id=C.id;
+	i.p=ip;
+	i.t=d;
+	i.n=(ip-(C.p0+dp*ct)).Normalized();
+	if(inside)i.n=-i.n;
+	i.uv.y=ct;
+	i.uv.x=atan2(i.n.x,i.n.y);
+	i.uv.z=0.0;
+}
+
+void RayPlane(const Plane& p, const Ray& r,  Intersection& i)
+{
+	float3 dp0=r.p-p.p0;
+
+	float3 dett=cross(p.dp1,p.dp2);
+	float3 detuv=cross(dp0,r.d);
+
+	float det=-1.0/dot(dett,r.d);
+
+	float t=(dot(dett ,dp0))*det;
+
+	if(t>0.)
+	{
+		if((i.id!=0)&&(i.t<t))
+			return;
+		float u=(dot(detuv,p.dp2))*det;
+		float v=(dot(detuv,p.dp1))*det;
+		i.id=p.id;
+		i.t=t;
+		i.uv=float3::New(u,v,0.);
+		i.p=r.p+r.d*t;
+		i.n=-dett.Normalized();
+	}
+}
+
+void RaySphere(const Sphere& s, const Ray& r, Intersection& i)
+{
+	float3 l=s.p-r.p;
+	float tc=dot(l,r.d);
+	if(tc<0.0)
+	{
+		return;
+	};
+
+	float d2=s.r*s.r+tc*tc-dot(l,l);
+
+	if(d2<0.0)
+	{
+		return;
+	};
+
+	float thc=sqrt(d2);
+	float t=tc-thc;
+	if((i.id!=0)&&(i.t<t))
+		return;
+
+	i.t=tc-thc;
+	i.p=r.p+r.d*i.t;
+	i.n=(i.p-s.p).Normalized();
+	i.uv=i.p;
+	i.id=s.id;
+}
+
+void F3ToCol(const float3& col, char* c)
+{
+	c[0]=int(clamp(col.z,0.,1.)*255);
+	c[1]=int(clamp(col.y,0.,1.)*255);
+	c[2]=int(clamp(col.x,0.,1.)*255);
+}
+
+Sphere sphere;
+Sphere sphere1;
+Sphere sphere2;
+Plane plane;
+Cylinder cyl1;
+float3 tolight;
+
+
+void RayScene(const Ray& ray, Intersection& is)
+{
+	RaySphere(sphere,ray,is);
+	RaySphere(sphere1,ray,is);
+	RaySphere(sphere2,ray,is);
+	//RayCylinder(cyl1,ray,is);
+	RayPlane(plane,ray,is);
+}
+
+float3 HorzColor(float y)
+{
+	if(y<0.)y*=-.2;
+	y=pow(1.-y,12);
+	return float3::New(.9,.75,.7)*y+float3::New(.4,.6,.9)*(1.-y);
+}
+
+float3 VReflect(const float3& ray, const float3& norm)
+{
+	return (ray+norm*dot(norm,-ray)*2.0).Normalized();
+}
+
+void SceneCol(const Intersection& is, float3& col, float& a)
+{
+	col=float3::New(.5,.5,.5);
+	if(is.id==1)
+	{
+		int ip=(int(is.uv.x+1000)^int(is.uv.y-1000))&1;
+		col=float3::New(ip,ip,ip);
+	}
+	else if(is.id==2)
+		col=float3::New(.2,.5,.75);
+	else if(is.id==3)
+		col=float3::New(.2,.5,1.);
+	else if(is.id==4)
+		col=float3::New(1.,.8,.2);
+
+	a=1.;
+}
+
+
+void SceneDirectionalLight(
+	const Intersection& is, 
+	const float3& ldir,
+	const Ray& ray,
+	const Reflection& refl,
+	float3& col,
+	float& a
+	)
+{
+	float lamb=clamp(dot(is.n, tolight),0.,1.);
+
+	float3 halfn=-(tolight-ray.d).Normalized();
+
+	//float spec1=clamp(dot(halfn,-is.n),0.0,1.0);
+	float spec2=clamp(dot(tolight,refl.dir),0.0,1.0);
+
+	float light=pow(lamb,0.75);
+	float shadow=1.;
+	{
+		Intersection iss;
+		iss.id=0;
+		float3 tol=ldir;
+		Ray rays;
+		rays.p=is.p+tol*0.002;
+		rays.d=tol;
+
+		RayScene(rays,iss);
+		if(iss.id!=0)
+			shadow=0.;
+	}
+	col=col*(.25+.125+.125*is.n.y+light*shadow*.5);
+
+	float fresn=refl.fresn;
+	float frw=pow(spec2*shadow,80.)*fresn;
+	
+	col=col*(1.-frw)+float3::New(5,4,2)*frw;
+}
+
+
+void TraceScene(
+	const Ray& ray,
+	float3& ocol,
+	Intersection& is,
+	Reflection& refl,
+	float& a)
+{
+	ocol=HorzColor(ray.d.z);
+
+	is.id=0;
+	refl.id=0;
+	RayScene(ray, is);
+	if(is.id!=0)
+	{
+		refl.id=is.id;
+		refl.dir=VReflect(ray.d,is.n);
+		refl.fresn=.3+.7*pow(clamp(1.0-dot(ray.d,-is.n),0.0,1.0),2.);
+
+		a=0;
+		SceneCol(is,ocol,a);
+		SceneDirectionalLight(is, tolight, ray, refl, ocol,a);
+	}
+	else
+	{
+		refl.fresn=1.0;
+	}
+
+}
+
+
+int main()
+{
+	float3 p0=float3::New(1,1,1);
+
+	int n=0;
+	char* buf=(char*)malloc(SW*SH*4);
+	tolight=float3::New(1,1,1).Normalized();
+	sphere.p=float3::New(0,0,0);
+	sphere.r=0.6;
+	sphere.id=3;
+	sphere1.p=float3::New(0.,0.8,.5);
+	sphere1.r=0.5;
+	sphere1.id=2;
+	sphere2.p=float3::New(0.,-0.7,.4);
+	sphere2.r=0.4;
+	sphere2.id=4;
+	plane.id=1;
+	plane.p0=float3::New(0,0,-.7);
+	plane.dp1=float3::New(-1,0,0);
+	plane.dp2=float3::New(0,1,0);
+	cyl1.id=4;
+	cyl1.p0=float3::New(0.5,-0.7,0);
+	cyl1.p1=float3::New(0.,-0.7,.4);;
+	cyl1.r=.4;
+
+	float3 Z=float3::New(0,0,1);
+	int fn=0;
+	float t=Time();
+	for(;;)
+	{
+		if(fn==0)
+			t=Time();
+		float3 look_at=float3::New(0,0,0);
+		float3 campos;
+		campos.x=cos(t+.1)*5;
+		campos.y=sin(t+.1)*5;
+		campos.z=.5+sin(t*1.3)*.35;
+		campos=campos*.4;
+		float3 forward=(look_at-campos).Normalized();
+		float3 right=cross(forward,Z).Normalized();
+		float3 up=cross(forward,right).Normalized();
+		Ray ray;
+		ray.p=campos;
+		int last=fn+NL;
+		if(last>SH)
+			last=SH;
+		for(int y=fn;y<last;y++)
+		{
+			for(int x=0;x<SW;x++)
+			{
+				float3 c0=float3::New(0,0,0);
+				char* p=&buf[(y*SW+x)*4];
+#ifdef USE_AA
+				for(int i=0;i<USE_AA;i++)
+				{
+					for(int j=0;j<USE_AA;j++)
+					{
+						ray.d=(forward+up*((y+i*(1./USE_AA))/(SH*.5)-1.)+right*((x+j*(1./USE_AA))/(SH*.5)-1.333)).Normalized();
+#else
+						ray.d=(forward+up*((y)/(SH*.5)-1.)+right*((x)/(SH*.5)-1.333)).Normalized();
+#endif
+						Reflection refl;
+						Intersection is;
+						is.id=0;
+						float3 ocol;
+						float a;
+						TraceScene(ray,ocol,is,refl,a);
+						float fresn=refl.fresn;
+						Trace hits[16];
+						hits[0].rgb=ocol;
+						hits[0].val=refl.fresn*a;
+
+						
+						int maxdepth=0;
+						int depth=15;
+						for(int r=1;r<depth;r++)
+						{
+							if(refl.id!=0)
+							{
+								Ray rray;
+								Intersection ris;
+								ris.id=0;
+								refl.id=0;
+								rray.p=is.p+refl.dir*0.001;
+								rray.d=refl.dir;
+								float3 rcol;
+								float ra;
+								TraceScene(rray,rcol,ris,refl,ra);
+								hits[r].rgb=rcol;
+								hits[r].val=refl.fresn;
+								maxdepth=r;
+								is=ris;
+							}
+							else
+							{
+								break;
+							}
+						}
+
+					ocol=hits[maxdepth].rgb;
+					for(int r=maxdepth-1;r>=0;r--)
+						ocol=hits[r].rgb*(1.-hits[r].val)+ocol*hits[r].val;
+					c0=c0+ocol;
+
+#ifdef USE_AA
+					}
+				}
+
+
+				F3ToCol(c0*(1./(USE_AA*USE_AA)),p);
+#else
+				F3ToCol(c0,p);
+#endif
+				p[3]=255;
+			}
+		}
+
+		int n=NL;
+		if(fn+NL>SH)
+			n=SH-fn;
+#ifdef GRAPH
+		g.BitBlt(&buf[fn*SW*4],SW,NL,0,fn);
+		g.rgba32(0xffffffff);
+		g.lineH(0,fn+NL,SW);
+		SetPresentWait(0);
+		Present();
+#ifdef __SCINC__
+		// prevent CPU overheating
+		Wait(0.15);
+#endif
+
+#endif
+		n++;
+		fn+=NL;
+		if(fn>SH-1)
+		{
+			fn=0;
+			//break;
+		}
+	}
+	return 0;
+}
