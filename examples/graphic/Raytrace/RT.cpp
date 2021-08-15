@@ -4,16 +4,16 @@
 #define SW 320
 #define SH 240
 #ifdef __SCINC__
-#define NL 20
+#define NL 10
 #else
 #define NL SH
 #endif
 
 #define G_SCREEN_WIDTH SW
 #define G_SCREEN_HEIGHT SH
-#define G_SCREEN_MODE 0
+#define G_SCREEN_MODE 1
 #define G_SCREEN_SCALE 4
-//#define USE_AA 2
+#define USE_AA 3
 
 #ifdef __SCINC__
 #define const
@@ -55,9 +55,19 @@ public:
 		y*=l;
 		z*=l;
 	}
+	float3 operator-(float r) const
+	{
+		return New(x-r,y-r,z-r);
+	}
 	float3 operator-(const float3& r) const
 	{
 		return New(x-r.x,y-r.y,z-r.z);
+	}
+	void operator-=(const float3& r)
+	{
+		x-=r.x;
+		y-=r.y;
+		z-=r.z;
 	}
 	float3 operator-() const
 	{
@@ -67,13 +77,21 @@ public:
 	{
 		return New(x+r.x,y+r.y,z+r.z);
 	}
-	float3 operator-(float r) const
+	void operator+=(const float3& r)
 	{
-		return New(x-r,y-r,z-r);
+		x+=r.x;
+		y+=r.y;
+		z+=r.z;
 	}
 	float3 operator*(float r) const
 	{
 		return New(x*r,y*r,z*r);
+	}
+	void operator*=(float r)
+	{
+		x*=r;
+		y*=r;
+		z*=r;
 	}
 	float3 operator/(float r) const
 	{
@@ -145,12 +163,20 @@ struct Trace
 	float val;
 };
 
+struct Quad
+{
+	int id;
+	float3 p0;
+	float3 p1;
+	float3 p2;
+};
+
 struct Cylinder
 {
-    int id;
-    float3 p0;
-    float3 p1;
-    float r;
+	int id;
+	float3 p0;
+	float3 p1;
+	float r;
 };
 
 void RayCylinder(const Cylinder& C, const Ray& R, Intersection& i)
@@ -287,13 +313,45 @@ void F3ToCol(const float3& col, char* c)
 	c[2]=int(clamp(col.x,0.,1.)*255);
 }
 
+
+void RayQuad(const Quad& q, const Ray& r, Intersection& i)
+{
+	float3 dp0=r.p-q.p0;
+	float3 dp1=q.p1-q.p0;
+	float3 dp2=q.p0-q.p2;
+
+	float3 dett=cross(dp1,dp2);
+	float3 detuv=cross(dp0,r.d);
+
+	float det=-1.0/dot(dett,r.d);
+
+	float t=(dot(dett ,dp0))*det;
+
+	if(t>0.)
+	{
+		if((i.id!=0)&&(i.t<t))
+			return;
+		float u=(dot(detuv,dp2))*det;
+		if((u<0.)||(u>1.))
+			return;
+		float v=(dot(detuv,dp1))*det;
+		if((v<0.)||(v>1.))
+			return;
+		i.id=q.id;
+		i.t=t;
+		i.uv=float3::New(u,v,0.);
+		i.p=r.p+r.d*t;
+		i.n=dett.Normalized();
+	}
+}
+
 Sphere sphere;
 Sphere sphere1;
 Sphere sphere2;
 Plane plane;
 Cylinder cyl1;
 float3 tolight;
-
+Quad quad[6];
 
 void RayScene(const Ray& ray, Intersection& is)
 {
@@ -302,6 +360,7 @@ void RayScene(const Ray& ray, Intersection& is)
 	RaySphere(sphere2,ray,is);
 	//RayCylinder(cyl1,ray,is);
 	RayPlane(plane,ray,is);
+	//for(int i=0;i<6;i++)RayQuad(quad[i],ray,is);
 }
 
 float3 HorzColor(float y)
@@ -330,6 +389,8 @@ void SceneCol(const Intersection& is, float3& col, float& a)
 		col=float3::New(.2,.5,1.);
 	else if(is.id==4)
 		col=float3::New(1.,.8,.2);
+	else if(is.id==5)
+		col=float3::New(is.uv.x,is.uv.y,.5);
 
 	a=1.;
 }
@@ -404,10 +465,89 @@ void TraceScene(
 }
 
 
+float vb[24]={
+	-1,-1,-1,
+	 1,-1,-1,
+	 1, 1,-1,
+	-1, 1,-1,
+	-1,-1, 1,
+	 1,-1, 1,
+	 1, 1, 1,
+	-1, 1, 1
+};
+
+int ib[18]={
+	0,1,2,
+	4,5,6,
+	0,1,5,
+	1,2,6,
+	2,3,7,
+	3,0,4
+};
+
+void rot(float& x, float& y, float a)
+{
+	float ox=x;
+	x=x*cos(a)+y*sin(a);
+	y=-ox*sin(a)+y*cos(a);
+}
+
+void rotrot(float3& p, float a)
+{
+	rot(p.x,p.y,.3*a);
+	rot(p.y,p.z,.6*a);
+	rot(p.z,p.x,.2*a);
+}
+
+float3 TraceRay(const Ray& ray, int depth)
+{
+	Reflection refl;
+	Intersection is;
+	is.id=0;
+	float3 ocol;
+	float a;
+	TraceScene(ray,ocol,is,refl,a);
+	float fresn=refl.fresn;
+	Trace hits[16];
+	hits[0].rgb=ocol;
+	hits[0].val=refl.fresn*a;
+
+	
+	int maxdepth=0;
+	for(int r=1;r<depth;r++)
+	{
+		if(refl.id!=0)
+		{
+			Ray rray;
+			Intersection ris;
+			ris.id=0;
+			refl.id=0;
+			rray.p=is.p+refl.dir*0.001;
+			rray.d=refl.dir;
+			float3 rcol;
+			float ra;
+			TraceScene(rray,rcol,ris,refl,ra);
+			hits[r].rgb=rcol;
+			hits[r].val=refl.fresn;
+			maxdepth=r;
+			is=ris;
+		}
+		else
+		{
+			break;
+		}
+	}
+
+	ocol=hits[maxdepth].rgb;
+	for(int r=maxdepth-1;r>=0;r--)
+		ocol=hits[r].rgb*(1.-hits[r].val)+ocol*hits[r].val;
+	return ocol;
+}
+
+
 int main()
 {
 	float3 p0=float3::New(1,1,1);
-
 	int n=0;
 	char* buf=(char*)malloc(SW*SH*4);
 	tolight=float3::New(1,1,1).Normalized();
@@ -424,6 +564,19 @@ int main()
 	plane.p0=float3::New(0,0,-.7);
 	plane.dp1=float3::New(-1,0,0);
 	plane.dp2=float3::New(0,1,0);
+	for(int i=0;i<6;i++)
+	{
+		quad[i].id=4;
+		int i0=ib[i*3+1];
+		int i1=ib[i*3+0];
+		int i2=ib[i*3+2];
+		quad[i].p0=float3::New(vb[i0*3],vb[i0*3+1],vb[i0*3+2])*.5;
+		quad[i].p1=float3::New(vb[i1*3],vb[i1*3+1],vb[i1*3+2])*.5;
+		quad[i].p2=float3::New(vb[i2*3],vb[i2*3+1],vb[i2*3+2])*.5;
+		rotrot(quad[i].p0,3.7);
+		rotrot(quad[i].p1,3.7);
+		rotrot(quad[i].p2,3.7);
+	}
 	cyl1.id=4;
 	cyl1.p0=float3::New(0.5,-0.7,0);
 	cyl1.p1=float3::New(0.,-0.7,.4);;
@@ -432,21 +585,126 @@ int main()
 	float3 Z=float3::New(0,0,1);
 	int fn=0;
 	float t=Time();
+	bool changed=false;
+	int mx;
+	int my;
+	int mb;
+	int oldmx;
+	int oldmy;
+	int oldmb;
+	GetMouseState(mx,my,mb);
+	oldmb=mb;
+	oldmx=mx;
+	oldmy=my;
+
+	bool upPressed=false;
+	bool downPressed=false;
+	bool leftPressed=false;
+	bool rightPressed=false;
+	bool forwardPressed=false;
+	bool backPressed=false;
+
+
+	float3 campos=float3::New(2,2,1);
+	float3 forward=-float3::New(2,2,1).Normalized();
+
 	for(;;)
 	{
-		if(fn==0)
-			t=Time();
-		float3 look_at=float3::New(0,0,0);
-		float3 campos;
-		campos.x=cos(t+.1)*5;
-		campos.y=sin(t+.1)*5;
-		campos.z=.5+sin(t*1.3)*.35;
-		campos=campos*.4;
-		float3 forward=(look_at-campos).Normalized();
+		oldmb=mb;
+		oldmx=mx;
+		oldmy=my;
+		GetMouseState(mx,my,mb);
+		if(mb)
+		{
+			float3 right=cross(forward,Z).Normalized();
+			float3 up=cross(forward,right).Normalized();
+			changed=true;
+			campos-=right*(mx-oldmx)*.01;
+			campos-=up*(my-oldmy)*.01;
+			forward+=right*(mx-oldmx)*.01;
+			forward+=up*(my-oldmy)*.01;
+			forward.Normalize();
+		}
+
+		forwardPressed  = KeyPressed(119);
+		backPressed     = KeyPressed(115);
+		leftPressed     = KeyPressed(97 );
+		rightPressed    = KeyPressed(100);
+		downPressed     = KeyPressed(113);
+		upPressed       = KeyPressed(101);
+
+
+		//if(forwardPressed||backPressed||leftPressed||rightPressed||downPressed||upPressed)
+		//	changed=true;
+
+		{
+			float3 right=cross(forward,Z).Normalized();
+			float3 up=cross(forward,right).Normalized();
+			if(forwardPressed){campos+=forward*0.1;changed=true;}
+			if(   backPressed){campos-=forward*0.1;changed=true;}
+			if(   leftPressed){campos-=right*0.1;changed=true;}
+			if(  rightPressed){campos+=right*0.1;changed=true;}
+			if(   downPressed){campos-=up*0.1;changed=true;}
+			if(     upPressed){campos+=up*0.1;changed=true;}
+		}
+
+		if(changed)
+		{
+			SetPersistentFloat("campos.x",campos.x);
+			SetPersistentFloat("campos.y",campos.y);
+			SetPersistentFloat("campos.z",campos.z);
+			SetPersistentFloat("forward.x",forward.x);
+			SetPersistentFloat("forward.y",forward.y);
+			SetPersistentFloat("forward.z",forward.z);
+		}
+
+
+		campos.x=GetPersistentFloat("campos.x",campos.x);
+		campos.y=GetPersistentFloat("campos.y",campos.y);
+		campos.z=GetPersistentFloat("campos.z",campos.z);
+		forward.x=GetPersistentFloat("forward.x",forward.x);
+		forward.y=GetPersistentFloat("forward.y",forward.y);
+		forward.z=GetPersistentFloat("forward.z",forward.z);
+		
 		float3 right=cross(forward,Z).Normalized();
 		float3 up=cross(forward,right).Normalized();
 		Ray ray;
 		ray.p=campos;
+
+
+		if(changed)
+		{
+			#define RS 8
+			int nx=SW/RS;
+			int ny=SH/RS;
+			for(int i=0;i<ny;i++)
+			{
+				for(int j=0;j<nx;j++)
+				{
+					float3 ocol=float3::New(0,0,0);
+					ray.d=(forward*2+up*(i/((ny-.5)*.5)-1.)+right*(j/((ny-.5)*.5)-1.333)).Normalized();
+					ocol+=TraceRay(ray,2);
+					ray.d=(forward*2+up*((i+.5)/((ny-.5)*.5)-1.)+right*(j/((ny-.5)*.5)-1.333)).Normalized();
+					ocol+=TraceRay(ray,2);
+					ray.d=(forward*2+up*(i/((ny-.5)*.5)-1.)+right*((j+.5)/((ny-.5)*.5)-1.333)).Normalized();
+					ocol+=TraceRay(ray,2);
+					ray.d=(forward*2+up*((i+.5)/((ny-.5)*.5)-1.)+right*((j+.5)/((ny-.5)*.5)-1.333)).Normalized();
+					ocol+=TraceRay(ray,2);
+					ocol*=0.25;
+					g.rgb(
+						clamp(ocol.z,0.,1.),
+						clamp(ocol.y,0.,1.),
+						clamp(ocol.x,0.,1.)
+						);
+					g.fillrect(j*RS,i*RS,RS,RS);
+				}
+			}
+			Present();
+			changed=false;
+			fn=0;
+			continue;
+		}
+
 		int last=fn+NL;
 		if(last>SH)
 			last=SH;
@@ -461,52 +719,12 @@ int main()
 				{
 					for(int j=0;j<USE_AA;j++)
 					{
-						ray.d=(forward+up*((y+i*(1./USE_AA))/(SH*.5)-1.)+right*((x+j*(1./USE_AA))/(SH*.5)-1.333)).Normalized();
+						ray.d=(forward*2+up*((y+i*(1./USE_AA))/(SH*.5)-1.)+right*((x+j*(1./USE_AA))/(SH*.5)-1.333)).Normalized();
 #else
-						ray.d=(forward+up*((y)/(SH*.5)-1.)+right*((x)/(SH*.5)-1.333)).Normalized();
+						ray.d=(forward*2+up*((y)/(SH*.5)-1.)+right*((x)/(SH*.5)-1.333)).Normalized();
 #endif
-						Reflection refl;
-						Intersection is;
-						is.id=0;
-						float3 ocol;
-						float a;
-						TraceScene(ray,ocol,is,refl,a);
-						float fresn=refl.fresn;
-						Trace hits[16];
-						hits[0].rgb=ocol;
-						hits[0].val=refl.fresn*a;
 
-						
-						int maxdepth=0;
-						int depth=15;
-						for(int r=1;r<depth;r++)
-						{
-							if(refl.id!=0)
-							{
-								Ray rray;
-								Intersection ris;
-								ris.id=0;
-								refl.id=0;
-								rray.p=is.p+refl.dir*0.001;
-								rray.d=refl.dir;
-								float3 rcol;
-								float ra;
-								TraceScene(rray,rcol,ris,refl,ra);
-								hits[r].rgb=rcol;
-								hits[r].val=refl.fresn;
-								maxdepth=r;
-								is=ris;
-							}
-							else
-							{
-								break;
-							}
-						}
-
-					ocol=hits[maxdepth].rgb;
-					for(int r=maxdepth-1;r>=0;r--)
-						ocol=hits[r].rgb*(1.-hits[r].val)+ocol*hits[r].val;
-					c0=c0+ocol;
+					c0+=TraceRay(ray,8);
 
 #ifdef USE_AA
 					}
@@ -534,15 +752,14 @@ int main()
 		Present();
 #ifdef __SCINC__
 		// prevent CPU overheating
-		//Wait(0.15);
+		//Wait(0.01);
 #endif
 
 #endif
-		n++;
 		fn+=NL;
 		if(fn>SH-1)
 		{
-			fn=0;
+			//fn=0;
 			//break;
 		}
 	}
