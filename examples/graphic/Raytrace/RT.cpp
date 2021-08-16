@@ -366,7 +366,7 @@ void RayScene(const Ray& ray, Intersection& is)
 float3 HorzColor(float y)
 {
 	if(y<0.)y*=-.2;
-	y=pow(1.-y,12);
+	y=pow(1.-y,6);
 	return float3::New(.9,.75,.7)*y+float3::New(.4,.6,.9)*(1.-y);
 }
 
@@ -384,7 +384,7 @@ void SceneCol(const Intersection& is, float3& col, float& a)
 		col=float3::New(ip,ip,ip);
 	}
 	else if(is.id==2)
-		col=float3::New(.2,.5,.75);
+		col=float3::New(1.,.2,.1);
 	else if(is.id==3)
 		col=float3::New(.2,.5,1.);
 	else if(is.id==4)
@@ -674,7 +674,7 @@ int main()
 
 		if(changed)
 		{
-			#define RS 8
+			#define RS 16
 			int nx=SW/RS;
 			int ny=SH/RS;
 			for(int i=0;i<ny;i++)
