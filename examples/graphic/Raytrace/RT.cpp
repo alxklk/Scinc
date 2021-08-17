@@ -4,7 +4,7 @@
 #define SW 320
 #define SH 240
 #ifdef __SCINC__
-#define NL 10
+#define NL 5
 #else
 #define NL SH
 #endif
@@ -405,14 +405,15 @@ void SceneDirectionalLight(
 	float& a
 	)
 {
-	float lamb=clamp(dot(is.n, tolight),0.,1.);
+	float lamb=dot(is.n, tolight)*1.5;
+	if(lamb<0)lamb=0;
 
 	float3 halfn=-(tolight-ray.d).Normalized();
 
 	//float spec1=clamp(dot(halfn,-is.n),0.0,1.0);
-	float spec2=clamp(dot(tolight,refl.dir),0.0,1.0);
+	float spec2=dot(tolight,refl.dir);
 
-	float light=pow(lamb,0.75);
+	float light=lamb;
 	float shadow=1.;
 	{
 		Intersection iss;
@@ -429,7 +430,7 @@ void SceneDirectionalLight(
 	col=col*(.25+.125+.125*is.n.y+light*shadow*.5);
 
 	float fresn=refl.fresn;
-	float frw=pow(spec2*shadow,80.)*fresn;
+	float frw=pow(spec2,120.)*shadow*fresn*2.;
 	
 	col=col*(1.-frw)+float3::New(5,4,2)*frw;
 }
@@ -674,7 +675,7 @@ int main()
 
 		if(changed)
 		{
-			#define RS 16
+			#define RS 12
 			int nx=SW/RS;
 			int ny=SH/RS;
 			for(int i=0;i<ny;i++)
