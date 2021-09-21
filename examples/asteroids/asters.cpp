@@ -1,3 +1,6 @@
+#define G_SCREEN_MODE 1
+#define G_SCREEN_SCALE 4
+
 #include "graphics.h"
 
 #define M_PI 3.141592654
@@ -417,8 +420,8 @@ public:
 			{
 				float aspeed=Len(asts[i].dx,asts[i].dy);
 				float bspeed=Len(vx,vy);
-				asts[i].dx=-vy/bspeed*aspeed+frand(eseed)*30;
-				asts[i].dy= vx/bspeed*aspeed+frand(eseed)*30;
+				asts[i].dx=-vy/bspeed*aspeed+frand(eseed)*130;
+				asts[i].dy= vx/bspeed*aspeed+frand(eseed)*130;
 				if(nl<NA-1)
 				{
 					asts[nl]=asts[i];
@@ -705,6 +708,20 @@ int main()
 			g.width(1.25,1.25);
 			g.rgb(.5,.8,1.0);
 			g.stroke();
+
+			if(nl==0)
+			{
+				g.clear();
+				g.t_0(50,200);
+				g.t_x(5.5,0);
+				g.t_y(0,-7.5);
+				gtext("All asteroids destroyed, press m for menu");
+				g.fin();
+				g.width(1.25,1.25);
+				g.rgb(.5,.2,1.0);
+				g.stroke();
+			}
+
 
 			Present();
 		}

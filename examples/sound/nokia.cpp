@@ -4,7 +4,9 @@
 #define const
 #endif
 
-#include "FFT.h"
+#define NFFT 1024
+
+#include "FFT_rc.h"
 
 #pragma STACK_SIZE 655360
 
@@ -21,30 +23,26 @@ double freqs[12]={
 	261.626, 277.183, 293.665, 311.127, 329.628, 349.228, 369.994, 391.995, 415.305, 440.000, 466.164, 493.883
 };
 
-/*
-void StdFreqs()
-{
-	freqs[ 0]=261.626;
-	freqs[ 1]=277.183;
-	freqs[ 2]=293.665;
-	freqs[ 3]=311.127;
-	freqs[ 4]=329.628;
-	freqs[ 5]=349.228;
-	freqs[ 6]=369.994;
-	freqs[ 7]=391.995;
-	freqs[ 8]=415.305;
-	freqs[ 9]=440.000;
-	freqs[10]=466.164;
-	freqs[11]=493.883;
-}
-*/
-
 struct Note
 {
 	double f;  // freq
 	int t0; // starh
 	int t1; // end
 };
+
+int seed=374693645;
+
+int irand(int& seed)
+{
+	seed=(seed*1103515245+12345)%0x7ffffff;
+	return seed;
+}
+
+float frand(int& seed)
+{
+	return (irand(seed)>>11)/65536.0;
+}
+
 
 #define NN 16
 class Polyphony
@@ -85,7 +83,7 @@ Graph g;
 
 Polyphony notes;
 
-#define EL 8192
+#define EL 9000
 
 #define ALMOST_ONE 0.9999999999999
 
@@ -94,6 +92,12 @@ double mod(double a, double b)
 	int r=a/b;
 	return a-b*r;
 }
+
+double Fabs(double x)
+{
+	return x<0?-x:x;
+}
+
 
 double lega(double globalTime, double time, double t0, double t1, double f0, double f1)
 {
@@ -129,6 +133,10 @@ double lega(double globalTime, double time, double t0, double t1, double f0, dou
 	return v;
 }
 
+float S_Curve(float x)
+{
+	return x*x*(-2.0*x+3.0);
+}
 
 class CSnd
 {
@@ -163,65 +171,75 @@ public:
 			echo[ep  ]=r*echoVal;
 			echo[ep+1]=l*echoVal;
 		}
-		for(int j=0;j<NN;j++)
+
+		if(mb)
 		{
-			if(mb)
+			for(int i=0;i<nSamples;i++)
+			{
+				int ep=(echoPos+i)%EL*2;
+				echo[ep  ]=0;
+				echo[ep+1]=0;
+			}
+
+			if(mb&1)
 			{
 				for(int i=0;i<nSamples;i++)
 				{
-					int ep=(echoPos+i)%EL*2;
-					echo[ep  ]=0;
-					echo[ep+1]=0;
+					int s=sample+i;
+					double l=lega(s/44100.,s/44100.,sample/44100.,(sample+nSamples)/44100.,prevmx*10,mx*10)*.3;
+					int ep=((echoPos+i)%EL)*2;
+					echo[ep  ]+=l;
+					echo[ep+1]+=l;
 				}
-
-				if(mb&1)
-				{
-					for(int i=0;i<nSamples;i++)
-					{
-						int s=sample+i;
-						double l=lega(s/44100.,s/44100.,sample/44100.,(sample+nSamples)/44100.,prevmx*10,mx*10)*.3;
-						int ep=((echoPos+i)%EL)*2;
-						echo[ep  ]+=l;
-						echo[ep+1]+=l;
-					}
-				}
-
-				if(mb&2)
-				{
-					for(int i=0;i<nSamples;i++)
-					{
-						int t=(sample+i);
-						int il=((t*("16164289"[(t>>13)&7]&15))/12&128)+(((((t>>12)^(t>>12)-2)%11*t)/4|t>>13)&127);
-						double l=((il&255)/255.-.5);
-						int ep=((echoPos+i)%EL)*2;
-						echo[ep  ]+=l;
-						echo[ep+1]+=l;
-					}
-				}
-
-				if(mb&4)
-				{
-					double f=mx*4;
-					for(int i=0;i<nSamples;i++)
-					{
-						int s=sample+i;
-						int ep=(echoPos+i)%EL*2;
-						double t=s/44100.;
-						double l=sin(t*2*3*440.*4+2000*sin(t*3))*.3;
-						echo[ep  ]+=l;
-						echo[ep+1]+=l;
-					}
-				}
-				for(int i=0;i<nSamples;i++)
-				{
-					int ep=(echoPos+i)%EL*2;
-					snd_out(echo[ep],echo[ep+1]);
-				}
-				echoPos=(echoPos+nSamples-1)%EL;
-				sample+=nSamples;
-				return;
 			}
 
+			if(mb&2)
+			{
+				for(int i=0;i<nSamples;i++)
+				{
+					int t=(sample+i);
+					int il=((t*("16164289"[(t>>13)&7]&15))/12&128)+(((((t>>12)^(t>>12)-2)%11*t)/4|t>>13)&127);
+					double l=((il&255)/255.-.5);
+					int ep=((echoPos+i)%EL)*2;
+					echo[ep  ]+=l;
+					echo[ep+1]+=l;
+				}
+			}
+
+			if(mb&4)
+			{
+				double f=mx*4;
+				for(int i=0;i<nSamples;i++)
+				{
+					int s=sample+i;
+					int ep=(echoPos+i)%EL*2;
+					double t=s/44100.;
+					double l=0;
+					//for(int k=0;k<20;k++)l+=sin(t*2000+2000*sin(t*(2+k*.05)))*.05;
+					l+=.5*frand(seed);
+					//for(int k=0;k<12;k++)
+					//{
+					//	float ti=t*.02+k/12.;
+					//	ti=ti-int(ti);
+					//	float w=.5-Fabs(ti-.5);
+					//	w=S_Curve(w*2.);
+					//	l+=sin(ti*3*440.*(3.+ti*600.))*.2*w;
+					//}
+					echo[ep  ]+=l;
+					echo[ep+1]+=l;
+				}
+			}
+			for(int i=0;i<nSamples;i++)
+			{
+				int ep=(echoPos+i)%EL*2;
+				snd_out(echo[ep],echo[ep+1]);
+			}
+			echoPos=(echoPos+nSamples-1)%EL;
+			sample+=nSamples;
+			return;
+		}
+		else for(int j=0;j<NN;j++)
+		{
 			Note& n=notes.n[j];
 			if(sample>n.t1)
 				continue;
@@ -458,13 +476,6 @@ public:
 
 MelodyProcessor melody;
 
-double Fabs(double x)
-{
-	return x<0?-x:x;
-}
-
-#define NFFT 1024
-
 void FFT(double* in, double* o, int j)
 {
 	I.re=0;
@@ -474,7 +485,7 @@ void FFT(double* in, double* o, int j)
 	cplx out[NFFT];
 	for(int i=0;i<NFFT;i++)
 	{
-		int idx=((-i*2+j)+EL)%EL*2;
+		int idx=((-i*4+j)+EL)%EL*2;
 		buf[i].re=in[idx];
 		buf[i].im=0;
 	}
@@ -499,6 +510,7 @@ int main()
 	melody.Init(1);
 	notes.Init();
 	snd.Init();
+	FFT_Init();
 	double t0=Time();
 	for(int i=0;i<NFFT;i++)
 		fftout[i]=0;
@@ -543,20 +555,43 @@ int main()
 			}
 		}
 
-		double t1=Time();
-		int nSamples=t1*44100-t0*44100+5;
-		t0=t1;
-		if(nSamples>2000)nSamples=2000;
-		if(snd_bufhealth()>2748)
+		//double t1=Time();
+		//int nSamples=t1*44100-t0*44100+5;
+		//t0=t1;
+		//if(nSamples>2000)nSamples=2000;
+		//if(snd_bufhealth()>2748)
+		//{
+		//	nSamples-=10;
+		//}
+		while(snd_bufhealth()<(2000+NFFT))
 		{
-			nSamples-=10;
+			melody.Update(NFFT);
+			notes.Update(snd.sample);
+			snd.GenerateSamples(NFFT);
+			FFT(snd.echo,fftout,snd.echoPos);
+
+			if(graph)
+			{
+				for(int i=0;i<NFFT;i++)
+				{
+					double lvl=fftout[i];
+					lvl/=4.;
+					float lvlr=lvl*960.;lvlr=lvlr>255.?255.:lvlr;
+					float lvlg=lvl*420.;lvlg=lvlg>255.?255.:lvlg;
+					float lvlb=lvl*220.;lvlb=lvlb>255.?255.:lvlb;
+					int c=
+						((int(lvlb))<<16)|
+						((int(lvlg))<<8)|
+						int(lvlr);
+					PutPixel((frame)%640,480-112-i/2,c);
+				}
+				frame++;
+			}
 		}
-		melody.Update(nSamples);
-		notes.Update(snd.sample);
-		snd.GenerateSamples(nSamples);
-		FFT(snd.echo,fftout,snd.echoPos);
+
 		if(graph)
 		{
+			g.clear();
 			g.M(0,0);
 			g.l(640,0);
 			g.l(0,110);
@@ -571,23 +606,7 @@ int main()
 			g.rgba(.2,0,0,1);
 			g.fill2();
 
-			g.clear();
-			for(int i=0;i<NFFT/2;i++)
-			{
-				g.clear();
-				double lvl=(fftout[i])
-				/16.;
-				g.M((frame)%640,480-112-i*.5);
-				g.l(0,0);
-				g.fin();
-				lvl=lvl>1?1.:lvl;
-				g.rgb(lvl,lvl*lvl,lvl*lvl*lvl);
-				g.width(1.5,1.);
-				g.stroke();
-				g.clear();
-			}
 			Present();
-			frame++;
 			continue;
 		}
 
@@ -596,27 +615,25 @@ int main()
 		g.M(0,0);g.l(640,0);g.l(0,480);g.l(-640,0);g.close();g.fin();
 		g.fill1();
 		g.clear();
-		g.M(-1,240);
+		//g.M(-1,240);
 		for(int i=0;i<640;i++)
 		{
 			double lvl=snd.echo[(snd.echoPos+(640-i))%EL*2];
 			g.L(i,lvl*200+240);
 		}
-		g.L(641,240);
-		g.l(-641,0);
+		//g.L(641,240);
+		//g.l(-641,0);
 		g.fin();
-		g.rgb(.2,.4,0.);
-		g.fill1();
 		g.width(2.,1.);
 		g.rgb(0.5,1.0,0.0);
 		g.stroke();
 		g.clear();
 
 		g.clear();
-		for(int i=0;i<NFFT/2;i+=4)
+		for(int i=0;i<NFFT/2;i++)
 		{
 			double lvl=0;
-			for(int j=0;j<4;j++)lvl+=fftout[i+j];
+			lvl=fftout[i*2];
 			lvl*=2.;
 			if(lvl>240)lvl=240;
 			g.M(i+.5,480);
@@ -624,7 +641,7 @@ int main()
 		}
 		g.fin();
 		g.rgb(1.,.7,.1);
-		g.width(6.,1.);
+		g.width(2.,1.);
 		g.stroke();
 		g.rgb(1.,.8,.5);
 		g.width(1.,1.);
@@ -633,7 +650,7 @@ int main()
 
 		melody.Render();
 		char ss[64];
-		snprintf(ss,64,"% 5i % 5i % 5i", nSamples, snd.echoPos, snd_bufhealth());
+		snprintf(ss,64,"% 5i % 5i % 5i", NFFT, snd.echoPos, snd_bufhealth());
 		stext(ss,10,470,0xffffff00);
 		Present();
 	}

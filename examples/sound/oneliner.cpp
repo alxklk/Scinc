@@ -5,6 +5,8 @@
 float sndVal(int t)
 {
 	int il=((t*("16164289"[(t>>13)&7]&15))/12&128)+(((((t>>12)^(t>>12)-2)%11*t)/4|t>>13)&127);
+	//t/=5;int il=(t&(t>>6)+(t<<((t>>11)^((t>>13)+3))|((t>>14%64)+(t>>14)))&(-t>>5));
+	//t/=5;int il=((t >> 10) & 42) * t;
 	return (il&255)/255.;
 }
 
@@ -38,10 +40,14 @@ int main()
 		g.FillRT();
 		g.clear();
 
-		int nSamples=Time()*44100-tframe*44100+1;
 		tframe=Time();
-		if(nSamples>2000)nSamples=2000;
-		GenerateSamples(nSamples);
+		int nruns=0;
+		while(snd_bufhealth()<3000)
+		{
+			GenerateSamples(1024);
+			nruns++;
+		}
+
 		g.M(0.,120+240.*sndVal(sndSample-640));
 		for(int i=1;i<640;i++)
 		{
@@ -59,7 +65,7 @@ int main()
 		g.t_x(3.5,0);
 		g.t_y(0,-4.5);
 		g.clear();
-		snprintf(ss,64,"Time %f", Time());
+		snprintf(ss,64,"Time %f nr % i", Time(), nruns);
 		g.t_0(5,20);
 		gtext(ss);
 

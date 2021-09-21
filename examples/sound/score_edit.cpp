@@ -17,18 +17,25 @@ char mel1[16];
 char baz0[16];
 char baz1[16];
 
+// 	float i1=(t*("0867604356602121"[idx0]-'0')*("0120421012034200"[idx1]-'0'));
+// 	float i2=(t*("0102030102030120"[idx0]-'0')*("2432342324323323"[idx2]-'0'));
+
 void MusicInit()
 {
 	for(int i=0;i<16;i++)
 	{
-		mel0[i]="0334566776503030"[i]-'0';
-		mel1[i]="0120303021040400"[i]-'0';
-		baz0[i]="0034231032423100"[i]-'0';
-		baz1[i]="1212131213212312"[i]-'0';
-		//mel0[i]="0305423542305040"[i]-'0';
-		//mel1[i]="0400605004005040"[i]-'0';
-		//baz0[i]="0435430345340210"[i]-'0';
-		//baz1[i]="2300230340320300"[i]-'0';
+		// mel0[i]="0334566776503030"[i]-'0';
+		// mel1[i]="0120303021040400"[i]-'0';
+		// baz0[i]="0034231032423100"[i]-'0';
+		// baz1[i]="1212131213212312"[i]-'0';
+		// mel0[i]="0305423542305040"[i]-'0';
+		// mel1[i]="0400605004005040"[i]-'0';
+		// baz0[i]="0435430345340210"[i]-'0';
+		// baz1[i]="2300230340320300"[i]-'0';
+		mel0[i]="0867604356602121"[i]-'0';
+		mel1[i]="0102030102030120"[i]-'0';
+		baz0[i]="0120421012034200"[i]-'0';
+		baz1[i]="2432342324323323"[i]-'0';
 	}
 }
 
@@ -311,14 +318,15 @@ int main()
 		g.clear();
 
 		float t1=Time();
-		int nSamples=t1*44100-tframe*44100+1;
 		tframe=t1;
-		if(nSamples>2000)nSamples=2000;
 
 		g.M(-1,240);
 		{
-			music.GenerateSamples(nSamples);
-			cursnd+=nSamples;
+			if(snd_bufhealth()<(2000+1024))
+			{
+				music.GenerateSamples(1024);
+				cursnd+=1024;
+			}
 			for(int i=0;i<640;i+=2)
 			{
 				float lvl=music.echo[((music.echoPos+(i-640)*2+11150)%11150)];
@@ -334,7 +342,7 @@ int main()
 		}
 
 		char ss[64];
-		snprintf(ss,64,"Time %f %i %i", Time(),nSamples, cursnd);
+		snprintf(ss,64,"Time %f %i", Time(), cursnd);
 		stext(ss,10,10,0xffffffff);
 
 

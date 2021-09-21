@@ -80,6 +80,8 @@ void _fft(cplx* buf, cplx* out, int n, int step)
 	}
 }
 
+void FFT_Init(){}
+
 void fft(cplx* buf, cplx* out, int n)
 {
 	for (int i = 0; i < n; i++) out[i] = buf[i];

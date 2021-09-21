@@ -1,6 +1,7 @@
 #define G_SCREEN_WIDTH 320
 #define G_SCREEN_HEIGHT 240
 #define G_SCREEN_SCALE 4
+#define G_SCREEN_MODE 1
 
 #include "graphics.h"
 
@@ -281,18 +282,19 @@ void Background()
 	//g.fill2();
 
 	g.clear();
-	for(int i=0;i<30;i++)
+	for(int i=0;i<10;i++)
 	{
 		float x=(cos(i*M_PI/100*2.*5+T*1.1 )*.8+sin(i*M_PI/100*2.*29-T*0.12)*.2)*150+160;
 		float y=(sin(i*M_PI/100*2.*4+T*2.93)*.8+cos(i*M_PI/100*2.*27-T*0.37)*.2)*110+120;
-		float w=(1.+frand(seed1))*.25;
+		//float w=(1.+frand(seed1))*.25;
 		g.M(x,y);
+		g.fin();
+		g.width(20,.2);
+		g.stroke();
+		g.width(1.5,1);
+		g.stroke();
+		g.clear();
 	}
-	g.fin();
-	g.width(50,.2);
-	g.stroke();
-	g.width(2,1);
-	g.stroke();
 
 
 	for(int i=0;i<60;i++)

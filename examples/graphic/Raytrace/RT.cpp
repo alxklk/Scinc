@@ -13,7 +13,7 @@
 #define G_SCREEN_HEIGHT SH
 #define G_SCREEN_MODE 1
 #define G_SCREEN_SCALE 4
-#define USE_AA 3
+//#define USE_AA 3
 
 #ifdef __SCINC__
 #define const
@@ -548,6 +548,70 @@ float3 TraceRay(const Ray& ray, int depth)
 
 int main()
 {
+	int x0;
+	int y0;
+	if(0)while(true)
+	{
+		g.rgba32(0xff404050);
+		g.FillRT();
+		g.clear();
+		g.M(160,70);
+		g.a(50,50,0,0,0,0,100);
+		g.a(50,50,0,0,0,0,-100);
+		g.fin();
+		g.rgba32(0xffffffff);
+		g.stroke();
+		Sphere s;
+		s.p=float3::New(160,120,0);
+		s.r=50;
+		Ray r;
+		r.p=float3::New(x0,y0,0);
+		int mx;
+		int my;
+		int mb;
+		GetMouseState(mx,my,mb);
+		if(mb){x0=mx;y0=my;}
+		r.d=float3::New(mx-r.p.x,my-r.p.y,0).Normalized();
+		Intersection in;
+		in.id=0;
+		RaySphere(s,r,in);
+		g.clear();
+		g.M(r.p.x,r.p.y);
+		if(in.id)
+		{
+			g.L(in.p.x, in.p.y);
+			float3 refl=VReflect(r.d,in.n);
+			g.l(refl.x*1000,refl.y*1000);
+			g.fin();
+			g.rgba32(0xff008000);
+			g.stroke();
+			g.clear();
+
+			//float3 refr;
+			//if(dot(r.d,in.n)<0)
+			//	refr=-VRefract(r.d,in.n,.8);
+			//else
+			//	refr=-VRefract(r.d,-in.n,1./.8);
+			//g.M(in.p.x, in.p.y);
+			//g.l(refr.x*1000,refr.y*1000);
+			g.fin();
+			g.rgba32(0xff000080);
+			g.stroke();
+		}
+		else
+		{
+			g.l(r.d.x*1000,r.d.y*1000);
+			g.fin();
+			g.rgba32(0xff008000);
+			g.stroke();
+
+		}
+
+
+		Present();
+	}
+
+
 	float3 p0=float3::New(1,1,1);
 	int n=0;
 	char* buf=(char*)malloc(SW*SH*4);

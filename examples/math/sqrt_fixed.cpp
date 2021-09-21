@@ -11,7 +11,7 @@ int argc, char** argv
 	printf("Sqrt(200)\n");
 	fixed two;
 	two.Seti(200);
-    fixed stwo=two.Sqrt();
+	fixed stwo=two.Sqrt();
 	stwo.Print();printf("\n");
 	printf("Check:");(stwo*stwo).Print();printf("\n");
 	return 0;
