@@ -39,19 +39,19 @@ public:
 	int sample;
 	int echoPos;
 	bool do_out;
-	float echo[22500];
+	float echo[24000];
 	void Init()
 	{
 		sample=0;
 		echoPos=0;
 		do_out=true;
-		for(int i=0;i<22500;i++)echo[i]=0;
+		for(int i=0;i<24000;i++)echo[i]=0;
 	}
 	void GenerateSamples(int nSamples)
 	{
 		for(int i=0;i<nSamples;i++)
 		{
-			float ts=sample*.75;
+			float ts=sample*.75*(44100./48000.);
 			float l=sndVal(ts+sin(sample/20000.)*150);
 			float r=sndVal(ts-sin(sample/20000.)*150);
 //			float l=sndVal(sample*.375+sin(sample/5000.)*500);
@@ -63,7 +63,7 @@ public:
 			echo[ep  ]=l;
 			echo[ep+1]=r;
 			echoPos++;
-			echoPos=echoPos%11250;
+			echoPos=echoPos%12000;
 			//if(do_out)snd_out(l,r);
 		}
 		if(do_out)
@@ -73,7 +73,7 @@ public:
 			if(idx<0)
 			{
 				count+=idx;
-				snd_out_buf(&(echo[(11250+idx)*2]),-idx);
+				snd_out_buf(&(echo[(12000+idx)*2]),-idx);
 				idx=0;
 			}
 			snd_out_buf(&(echo[idx*2]),count);

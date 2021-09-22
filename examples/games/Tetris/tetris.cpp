@@ -3,6 +3,7 @@
 #define G_SCREEN_SCALE 4
 #define G_SCREEN_MODE 1
 
+#include "sound.h"
 #include "graphics.h"
 
 int gseed=4734234;

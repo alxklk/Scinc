@@ -1,3 +1,5 @@
+#include "sound.h"
+
 #define G_SCREEN_MODE 0
 #include "graphics.h"
 
@@ -16,7 +18,7 @@ void FFT(float* in, float* o, int j)
 	cplx buf[NFFT];
 	for(int i=0;i<NFFT;i++)
 	{
-		int idx=(-i*6+j+11250*2)%11250;
+		int idx=(-i*6+j+12000*2)%12000;
 		buf[i].re=in[idx];
 		buf[i].im=in[idx];
 	}
@@ -84,7 +86,7 @@ int main()
 		//g.M(0,240.5);
 		for(int i=0;i<640;i++)
 		{
-			float lvl=music.echo[((music.echoPos+(i-640)*2+11150)%11150)];
+			float lvl=music.echo[((music.echoPos+(i-640)*2+12000)%12000)];
 			g.L(i,240.5+lvl*120);
 			//g.l(2,0);
 			//g.l(0,-lvl*120);

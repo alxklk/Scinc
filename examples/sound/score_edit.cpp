@@ -1,3 +1,4 @@
+#include "sound.h"
 #include "graphics.h"
 
 #pragma STACK_SIZE 4096
@@ -67,30 +68,6 @@ float sndVal(float t)
 	float i2=(t*mel1[idx0]*baz1[idx2]);
 	return (s0(mod(i1,1024)/1024.)*.35-s0(mod(i1,256)/256.)*.17-s1(mod(i2,1024)/1024.)*.35);
 }
-
-class Echo
-{
-public:
-	float* data;
-	int pos;
-	void Init()
-	{
-		data=(float*)malloc(16384*sizeof(float));
-	}
-	void Clear()
-	{
-		for(int i=0;i<16384;i++)data[i]=0;
-		pos=0;
-	}
-	float Voice(float l)
-	{
-			l=(l+data[pos]*0.9)*.7;
-			data[pos]=l;
-			pos++;
-			pos=pos%11150;
-			return l;
-	}
-};
 
 Graph g;
 
@@ -248,14 +225,14 @@ public:
 	{
 		sample=0;
 		echoPos=0;
-		echo=(float*)malloc(22500*sizeof(float));
-		for(int i=0;i<22500;i++)echo[i]=0;
+		echo=(float*)malloc(24000*sizeof(float));
+		for(int i=0;i<24000;i++)echo[i]=0;
 	}
 	void GenerateSamples(int nSamples)
 	{
 		for(int i=0;i<nSamples;i++)
 		{
-			float ts=sample;
+			float ts=sample*0.91875;
 			float l=sndVal(ts+sin(sample/20000.)*150);
 			float r=sndVal(ts-sin(sample/20000.)*150);
 //			float l=sndVal(sample*.375+sin(sample/5000.)*500);
@@ -266,7 +243,7 @@ public:
 			echo[ep  ]=l;
 			echo[ep+1]=r;
 			echoPos++;
-			echoPos=echoPos%11150;
+			echoPos=echoPos%12000;
 			snd_out(l,r);
 		}
 	}	
@@ -285,9 +262,6 @@ int main()
 	rseed=21397862;
 	MusicInit();
 
-	Echo echo;
-	echo.Init();
-	echo.Clear();
 	music.Init();
 	Editor ed1;
 	Editor ed2;
@@ -322,14 +296,14 @@ int main()
 
 		g.M(-1,240);
 		{
-			if(snd_bufhealth()<(2000+1024))
+			while(snd_bufhealth()<(2000+1024))
 			{
 				music.GenerateSamples(1024);
 				cursnd+=1024;
 			}
 			for(int i=0;i<640;i+=2)
 			{
-				float lvl=music.echo[((music.echoPos+(i-640)*2+11150)%11150)];
+				float lvl=music.echo[((music.echoPos+(i-640)*2+12000)%12000)];
 				g.L(i,lvl*120+240);
 			}
 			g.L(641,240);
@@ -364,19 +338,17 @@ int main()
 		if(KeyPressed('0'))
 		{
 			cursnd=0;
-			echo.Clear();
 		}
 
 		if(KeyPressed('t'))
 		{
-			echo.Clear();
 			for(int i=0;i<16;i++)
 			{
 				int val;
-				val=irand(rseed);if(val<0)val=-val;val=val%4;mel0[i]=val;
-				val=irand(rseed);if(val<0)val=-val;val=val%4;mel1[i]=val;
-				val=irand(rseed);if(val<0)val=-val;val=val%4;baz0[i]=val;
-				val=irand(rseed);if(val<0)val=-val;val=val%4;baz1[i]=val;
+				val=irand(rseed);if(val<0)val=-val;val=val%7;mel0[i]=val;
+				val=irand(rseed);if(val<0)val=-val;val=val%7;mel1[i]=val;
+				val=irand(rseed);if(val<0)val=-val;val=val%7;baz0[i]=val;
+				val=irand(rseed);if(val<0)val=-val;val=val%7;baz1[i]=val;
 			}
 		}
 
