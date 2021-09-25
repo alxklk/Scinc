@@ -15,8 +15,8 @@ unsigned int rate=48000;
 snd_pcm_t *captureHandle;
 snd_pcm_hw_params_t *hwParams;
 snd_pcm_format_t format = SND_PCM_FORMAT_S16_LE;
-//const char* deviceName = "default";
-const char* deviceName = "hw:1";
+const char* deviceName = "default";
+//const char* deviceName = "hw:1";
 
 char errorText[512];
 

@@ -137,7 +137,7 @@ bool saw_on=false;
 bool square_on=false;
 bool oneliner_on=false;
 bool uprising_on=false;
-bool rawfile_on=true;
+bool rawfile_on=false;
 
 FILE* rawf;
 
@@ -307,6 +307,7 @@ void GenerateSamples()
 }
 void Out(double* buf, int count)
 {
+	curSample+=count;
 	snd_out_buf(buf, count);
 	return;
 	int count2=count*2;
@@ -314,10 +315,9 @@ void Out(double* buf, int count)
 	{
 		snd_out(buf[i],buf[i]);
 	}
-	curSample+=count;
 }
 
-bool graph=true;
+bool graph=false;
 int frame;
 bool filter=false;
 bool hipass=false;
@@ -339,7 +339,7 @@ int main()
 	music.Init();
 	music.do_out=false;
 	frame=0;
-	graph=true;
+	//graph=true;
 	rawf=fopen("out.raw","wb");
 	printf("File opened: %i\n", rawf);
 
@@ -416,12 +416,12 @@ int main()
 			GenerateSamples();
 			float mic_buf[NFFT/2];
 			int res=MIC_In_Record((float*)&(mic_buf[0]));
-			fwrite((void*)&(mic_buf[0]), 1, sizeof(double)*NFFT/2,rawf);
+			//fwrite((void*)&(mic_buf[0]), 1, sizeof(double)*NFFT/2,rawf);
 			//printf("Mic in: %i\n", res);
 			for(int i=0;i<NFFT/2;i++)
 			{
 				echo[NFFT+i*2]+=mic_buf[i];
-				//echo[i*2+1]+=mic_buf[i];
+				echo[NFFT+i*2+1]+=mic_buf[i];
 			}
 			if(filter)
 			{
