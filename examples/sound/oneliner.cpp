@@ -1,3 +1,4 @@
+#include "sound.h"
 #include "graphics.h"
 
 #define M_PI 3.141592654

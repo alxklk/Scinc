@@ -1,6 +1,6 @@
 #define SW 1024
 #define G_SCREEN_WIDTH SW
-#define G_SCREEN_SCALE 2
+#define G_SCREEN_SCALE 1
 
 #define NFFT 1024
 
@@ -307,10 +307,12 @@ void GenerateSamples()
 }
 void Out(double* buf, int count)
 {
+	int count2=count*2;
+	for(int i=0;i<count2;i+=2)
+		buf[i+1]=buf[i];
 	curSample+=count;
 	snd_out_buf(buf, count);
 	return;
-	int count2=count*2;
 	for(int i=0;i<count2;i+=2)
 	{
 		snd_out(buf[i],buf[i]);

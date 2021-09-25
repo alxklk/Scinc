@@ -60,17 +60,17 @@ void CALLBACK waveInProc(
 			printf("MM_OPEN\n");
 			break;
 		case MM_WIM_DATA:
-			printf("MM_DATA\n");
+			//printf("MM_DATA\n");
 			{
 				WAVEHDR* phdr=(WAVEHDR*)param0;
 				int size=phdr->dwBytesRecorded;
-				printf("data %i bytes\n", size);
+				//printf("data %i bytes\n", size);
 				while(accum.size()>bufferFrames*8)
 				{
 					accum.erase(accum.begin(), accum.begin()+bufferFrames);
 				}
 				int pos=accum.size();
-				accum.resize(pos+size);
+				accum.resize(pos+size/2);
 				memcpy(&accum.at(pos), phdr->lpData, size);
 				if(quit)
 				{
@@ -81,7 +81,7 @@ void CALLBACK waveInProc(
 				else
 				{
 					res=waveInAddBuffer(hwavein, phdr, sizeof(WAVEHDR));
-					printf("@%i res=%i\n", __LINE__,res);
+					//printf("@%i res=%i\n", __LINE__,res);
 				}
 			}
 			break;
@@ -107,10 +107,10 @@ void WaveInStartup(int nFrames)
 	wformat.wFormatTag      = WAVE_FORMAT_PCM;
 	wformat.nChannels       = 1;
 	wformat.nSamplesPerSec  = 48000;
-	wformat.nAvgBytesPerSec = 48000;
-	wformat.nBlockAlign     = 1;
+	wformat.nAvgBytesPerSec = 48000*2;
+	wformat.nBlockAlign     = 2;
 	wformat.wBitsPerSample  = 16;
-	wformat.cbSize          = 0;
+	wformat.cbSize          = sizeof(WAVEFORMATEX);
 
 	printf("Before WaveOpen\n");
 	res=waveInOpen(&hwavein, WAVE_MAPPER, &wformat, (int64_t)&waveInProc, 0, CALLBACK_FUNCTION);

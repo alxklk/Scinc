@@ -1,3 +1,4 @@
+#include "sound.h"
 #include "graphics.h"
 
 #ifdef __SCINC__
