@@ -138,6 +138,7 @@ bool square_on=false;
 bool oneliner_on=false;
 bool uprising_on=false;
 bool rawfile_on=false;
+bool mic_in=false;
 
 FILE* rawf;
 
@@ -416,14 +417,17 @@ int main()
 			prevmb=mb;
 			GetMouseState(mx, my, mb);
 			GenerateSamples();
-			float mic_buf[NFFT/2];
-			int res=MIC_In_Record((float*)&(mic_buf[0]));
-			//fwrite((void*)&(mic_buf[0]), 1, sizeof(double)*NFFT/2,rawf);
-			//printf("Mic in: %i\n", res);
-			for(int i=0;i<NFFT/2;i++)
+			if(mic_in)
 			{
-				echo[NFFT+i*2]+=mic_buf[i];
-				echo[NFFT+i*2+1]+=mic_buf[i];
+				float mic_buf[NFFT/2];
+				int res=MIC_In_Record((float*)&(mic_buf[0]));
+				//fwrite((void*)&(mic_buf[0]), 1, sizeof(double)*NFFT/2,rawf);
+				//printf("Mic in: %i\n", res);
+				for(int i=0;i<NFFT/2;i++)
+				{
+					echo[NFFT+i*2]+=mic_buf[i];
+					echo[NFFT+i*2+1]+=mic_buf[i];
+				}
 			}
 			if(filter)
 			{
