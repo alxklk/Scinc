@@ -1,10 +1,11 @@
-#define G_SCREEN_MODE 1
-#define G_SCREEN_SCALE 4
+#define G_SCREEN_MODE 0
+#define G_SCREEN_SCALE 2
 
 #include "graphics.h"
 
 #define M_PI 3.141592654
 
+#include "sound.h"
 #include "scinc_utils.h"
 #include "asters_sounds.h"
 #include "asters_music.h"
@@ -527,10 +528,14 @@ int main()
 		if(state==MENU)
 		{
 			BGMENU();
-			int nsndsamples=Time()*44100-tframe*44100;
+			//int nsndsamples=Time()*48000-tframe*48000;
 			tframe=Time();
-			if(nsndsamples>2000)nsndsamples=2000;
-			music.GenerateSamples(nsndsamples);
+			/*if(nsndsamples>2000)nsndsamples=2000;
+			music.GenerateSamples(nsndsamples);*/
+			while(snd_bufhealth()<(2000+1024))
+			{
+				music.GenerateSamples(1024);
+			}
 			g.graduse(-1);
 
 			g.t_0(320-200+sin(Time()*3.)*10,240);
