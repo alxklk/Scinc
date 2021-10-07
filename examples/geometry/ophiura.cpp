@@ -12,7 +12,6 @@ float t;
 
 int main()
 {
-	printf("Start\n");
 	int oldmx=-1;
 	g.M(0,0);
 	g.l(640,0);
@@ -20,7 +19,7 @@ int main()
 	g.l(-640,0);
 	g.close();
 	g.fin();
-	g.rgba(0,0,0,1+2./255.);
+	g.rgb(.7,.6,.5);
 	for(;;)
 	{
 		t=Time()*2;
@@ -28,7 +27,7 @@ int main()
 
 		float xs[10]={};
 		float ys[10]={};
-		for(float i=0;i<30;i+=0.2)
+		for(float i=0;i<30;i+=0.1)
 		{
 			for(int j=0;j<10;j++)
 			{
@@ -37,19 +36,21 @@ int main()
 				float ca=cos(a);
 				float sa=sin(a);
 				int c=0x00000000;
-				c|=(int(0.3*255.*(1.5-f))<<24);
-				c|=(int(80.*sin(14+t*.7+f*1.7)+100));
-				c|=(int(20.*sin(41+t*.6+f*1.6)+30)<<8);
-				c|=(int(80.*sin(23+t*.8+f*1.5)+100)<<16);
-				float af=t*.02+j*.6+sin(f*f*9.+t*.1+j*13.1)*28.*sin(t*.1+j)*(1.2+sin(t*0.3))*.2;
-				xs[j]+=sin(af)*2.;
-				ys[j]+=cos(af)*2.;
+				c|=(int(255)<<24);
+				c|=(int(80.*sin(14+t*.7+f*1.7+j)+100));
+				c|=(int(80.*sin(41+t*.6+f*1.6+j)+100)<<8);
+				c|=(int(80.*sin(23+t*.8+f*1.5+j)+100)<<16);
+//				float af=t*.0+j*.6+sin(f*f*9.+t*.5+j*13.1)*28.*sin(t*.1+j)*(1.2+sin(t*0.3))*.2;
+				float af=t*.1+j+sin(f*12*(11.7+j*1.71)*.05-t*(26.3+j*1.87)*.02+j*3.1+117)*f*5;
+				xs[j]+=sin(af)*1.5;
+				ys[j]+=cos(af)*1.5;
 				float x=xs[j];
 				float y=ys[j];
 				float x1=x*ca+y*sa;
 				float y1=y*ca-x*sa;
-				g.Circle(320+x1,240+y1,0,3,4*(1.-f)+4,c);
-				g.Circle(320+x1,240+y1-(1.-f)*6,0,2,6*(1.-f),c|0x00ffffff);
+				g.Circle(320+x1,240+y1,0,2*(1.-f)+1,2*(1.5-f),c);
+				g.Circle(320+x1,240+y1+(1.-f)*2,0,0,3*(1.-f)+2,(int(0x80*(1.5-f))<<24));
+				g.Circle(320+x1,240+y1-(1.-f)*2.5,0,.5*(1.-f)+1,2,(int(0x80*(1.5-f))<<24)|0x00ffffff);
 			}
 		}
 
