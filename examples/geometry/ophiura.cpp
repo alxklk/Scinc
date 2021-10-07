@@ -36,10 +36,12 @@ int main()
 				float ca=cos(a);
 				float sa=sin(a);
 				int c=0x00000000;
+				float fw=sin(f*50.);
+				fw=fw<0.?-fw:fw;
 				c|=(int(255)<<24);
-				c|=(int(80.*sin(14+t*.7+f*1.7+j)+100));
-				c|=(int(80.*sin(41+t*.6+f*1.6+j)+100)<<8);
-				c|=(int(80.*sin(23+t*.8+f*1.5+j)+100)<<16);
+				c|=(int(fw*(80.*sin(14+t*.7+f*1.7+j)+100.)));
+				c|=(int(fw*(80.*sin(41+t*.6+f*1.6+j)+100.))<<8);
+				c|=(int(fw*(80.*sin(23+t*.8+f*1.5+j)+100.))<<16);
 //				float af=t*.0+j*.6+sin(f*f*9.+t*.5+j*13.1)*28.*sin(t*.1+j)*(1.2+sin(t*0.3))*.2;
 				float af=t*.1+j+sin(f*12*(11.7+j*1.71)*.05-t*(26.3+j*1.87)*.02+j*3.1+117)*f*5;
 				xs[j]+=sin(af)*1.5;
@@ -48,10 +50,12 @@ int main()
 				float y=ys[j];
 				float x1=x*ca+y*sa;
 				float y1=y*ca-x*sa;
-				if(i-int(i)<.1)g.Circle(320+x1,240+y1,0,4*(1.-f)+1,1,-1);
+				//if(i-int(i)<.5)g.Circle(320+x1,240+y1,0,4*(1.-f)+1,1,-1);
+				//else
+				f-=fw*fw*.5;
 				g.Circle(320+x1,240+y1,0,2*(1.-f)+1,2*(1.5-f),c);
 				g.Circle(320+x1,240+y1+(1.-f)*2,0,0,3*(1.-f)+2,(int(0x80*(1.5-f))<<24));
-				g.Circle(320+x1,240+y1-(1.-f)*2.5,0,.5*(1.-f)+1,2,(int(0x80*(1.5-f))<<24)|0x00ffffff);
+				g.Circle(320+x1,240+y1-(1.-f)*2.5,0,.5*(1.-f)+.5,1.5,(int(0x80*(1.5-f))<<24)|0x00ffffff);
 			}
 		}
 
