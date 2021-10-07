@@ -48,6 +48,7 @@ int main()
 				float y=ys[j];
 				float x1=x*ca+y*sa;
 				float y1=y*ca-x*sa;
+				if(i-int(i)<.1)g.Circle(320+x1,240+y1,0,4*(1.-f)+1,1,-1);
 				g.Circle(320+x1,240+y1,0,2*(1.-f)+1,2*(1.5-f),c);
 				g.Circle(320+x1,240+y1+(1.-f)*2,0,0,3*(1.-f)+2,(int(0x80*(1.5-f))<<24));
 				g.Circle(320+x1,240+y1-(1.-f)*2.5,0,.5*(1.-f)+1,2,(int(0x80*(1.5-f))<<24)|0x00ffffff);
