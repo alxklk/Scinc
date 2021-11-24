@@ -1,12 +1,19 @@
 #define G_SCREEN_WIDTH 320
 #define G_SCREEN_HEIGHT 240
+#ifdef __JS__
+#define G_SCREEN_SCALE 2
+#else
 #define G_SCREEN_SCALE 4
+#endif
 #define G_SCREEN_MODE 1
 
 #include "sound.h"
 #include "graphics.h"
-
+#include "penta.h"
+#include "minos.h"
 int gseed=4734234;
+
+int MAXPIECE=25;
 
 int irand(int& seed)
 {
@@ -71,26 +78,58 @@ int MakeShootSound(int len)
 	return res;
 }
 
+int adseed=32845720983;
+
+void AddDing(int len, float* a, int p, float w, float V)
+{
+	float l=48000*.1*(.5+1.5*frand(adseed));
+	for(int i=0;i<l;i++)
+	{
+		int pi=p+i;
+		if(pi>=len)
+			break;
+		float v=i/l;
+		float vv=(1.-v);
+		vv*=vv;
+		//vv*=vv;
+		a[pi]+=vv*sin(v*w);//*(1.-pi/float(len))*V;
+	}
+}
+
 int MakeExplodeSound(int len, int seed)
 {
 	int res=snd_add(len);
+	//printf("E %i\n", len);
+	float* eSB;
+	eSB=malloc(sizeof(float)*len);
+	//1printf("E %i\n", len);
+	for(int i=0;i<len;i++)
 	{
-		float t=0.;
-		float f=0.;
-		float dlen=1./len;
-		float fr0=frand(seed);
-		float fr1=frand(seed);
-		for(int i=0;i<len;i++)
-		{
-			float v=(1.-f)*(1-f)*bell_curve3(f);
-			float l=0;
-			if(!(i&16))fr0=frand(seed);
-			if(!(i&256))fr1=frand(seed);
-			if(f<0.1)l=l+fr0*(1.-f/0.1)*.5;
-			if(f<0.5)l=l+(1.-f/0.5)*0.75*sin(f*(fr1+1)*4200);
-			snd_data(res,i,l,l);
-			f+=dlen;
-		}
+		eSB[i]=0;
+	}
+	for(int i=0;i<100;i++)
+	{
+		int p=frand(seed)*frand(seed)*frand(seed)*len*.9;
+		float w=3000+frand(seed)*1500-i*15;
+		//printf("%i  %f\n",p, w);
+		AddDing(len, eSB, p, w, 1);
+	}
+	float max=0;
+	for(int i=0;i<len;i++)
+	{
+		float x=eSB[i];
+		if(x<0)x=-x;
+		if(max<x)max=x;
+	}
+	for(int i=0;i<len;i++)
+	{
+		eSB[i]/=max;
+		float v=(1.-i/float(len));
+		eSB[i]*=v*v;
+	}
+	for(int i=0;i<len;i++)
+	{
+		snd_data(res,i,eSB[i],eSB[i]);
 	}
 	return res;
 }
@@ -127,89 +166,6 @@ int MakeEngineSound(int len, int seed)
 #define HIT_BOTTOM 8
 #define HIT_CELL 1
 
-#define M_PI 3.141592654
-
-float rotCenter[14]=
-{
-	0.5,2.0,//I
-	1.5,1.5,//J
-	0.5,1.5,//L
-	1.0,1.0,//O
-	1.5,1.0,//S
-	1.5,0.5,//T
-	1.5,1.0 //Z
-};
-
-int deltasNew[7*4]=
-{
-	0, 0, 0, 0, //I
-	0, 1, 0, 0, //J
-	0, 1, 0, 0, //L
-	0, 0, 0, 0, //O
-	0, 1, 0, 1, //S
-	0, 1, 0, 0, //T
-	0, 1, 0, 1  //Z
-};
-
-int offsets[7*8]=
-{
-	 0,  1, -2, -1, 0, -2, 1, -1,  //I
-	-1,  0, -1, -2, 1, -2, 1,  0,  //J
-	 0,  0, -1, -1, 0, -2, 1, -1,  //L
-	-1,  0, -1, -1, 0, -1, 0,  0,  //O
-	-1,  0, -1, -2, 1, -1, 0,  0,  //S
-	-1, -1,  0, -2, 1, -1, 0,  0,  //T
-	-1,  0, -1, -2, 1, -1, 0,  0   //Z
-};
-
-int boxes[7*2]=
-{
-	1, 4,  //I
-	2, 3,  //J
-	2, 3,  //L
-	2, 2,  //O
-	3, 2,  //S
-	3, 2,  //T
-	3, 2   //Z
-};
-
-char* figtpl=//IJLOSTZ
-	"1   "
-	"1   "
-	"1   "
-	"1   "
-
-	" 1  "
-	" 1  "
-	"11  "
-	"    "
-
-	"1   "
-	"1   "
-	"11  "
-	"    "
-
-	"11  "
-	"11  "
-	"    "
-	"    "
-
-	" 11 "
-	"11  "
-	"    "
-	"    "
-
-	"111 "
-	" 1  "
-	"    "
-	"    "
-
-	"11  "
-	" 11 "
-	"    "
-	"    "
-;
-
 #ifndef __SCINC__
 unsigned
 #endif
@@ -232,86 +188,120 @@ int stdcols[12]=
 
 Graph g;
 
+int LitColor(int col, float l)
+{
+	float cr=((col    )&0xff)/255.;
+	float cg=((col>> 8)&0xff)/255.;
+	float cb=((col>>16)&0xff)/255.;
+	cr*=l;
+	cg*=l;
+	cb*=l;
+	cr+=l*l*l;
+	cg+=l*l*l;
+	cb+=l*l*l;
+	if(cr>1)cr=1;
+	if(cg>1)cg=1;
+	if(cb>1)cb=1;
+	return int(cr*255)|(int(cg*255)<<8)|(int(cb*255)<<16)|0xff000000;
+}
+
+void DrawAChip(float x, float y, float angle, float size, int col)
+{
+	float dx=size*cos(angle);
+	float dy=size*sin(angle);
+	g.clear();
+	g.M(x+dx+dy,y-dy+dx);
+	g.l(-2*dy,-2*dx);
+	g.l(-2*dx, 2*dy);
+	g.l( 2*dy, 2*dx);
+	g.l( 2*dx,-2*dy);
+	g.fin();
+	g.rgba32(col);
+	g.fill1();
+	float l=sqrt(dx*dx+dy*dy);
+	float ldx=dx/l;
+	float ldy=dy/l;
+	x-=.5;y-=.5;
+	g.rgba32(LitColor(col,ldy*.5+.5));
+	g.hairline(x+dx+dy,y-dy+dx,x+dx-dy,y-dy-dx);
+	g.rgba32(LitColor(col,ldx*.5+.5));
+	g.hairline(x+dx-dy,y-dy-dx,x-dx-dy,y+dy-dx);
+	g.rgba32(LitColor(col,-ldy*.5+.5));
+	g.hairline(x-dx-dy,y+dy-dx,x-dx+dy,y+dy+dx);
+	g.rgba32(LitColor(col,-ldx*.5+.5));
+	g.hairline(x-dx+dy,y+dy+dx,x+dx+dy,y-dy+dx);
+}
 
 void Background()
 {
-	g.clear();
-	g.rgba(.3,.2,.1,1);
-	//g.FillRT();
-	//return;
 	float t=Time();
-	g.graddef(0);
-	g.gradstop(0.0,.9,.5,.0,1);
-	g.gradstop( .4,.2,.1,.1,1);
-	g.gradstop( .6,.3,.0,.2,1);
-	g.gradstop(1.0,.4,.2,.3,1);
-	g.alpha(1);
-	g.gradtype(1);
-	g.gradmethod(2);
-	g.gradend();
-	g.graduse(0);
+	/*
 	g.clear();
-	g.M(0,0);
-	g.l(640,0);
-	g.l(0,480);
-	g.l(-640,0);
-	g.close();
-	g.fin();
-	g.g_0(0,0);
-	g.g_y(320,0);
-	g.g_x(0,-240);
-	g.fill1();
-	g.graduse(-1);
+	g.rgba(.4,.2,.0,1);
+	g.FillRT();
+	g.width(140,1);
+	g.clear();
+	g.M(0,0);g.l(320,0);g.fin();
+	g.rgba(.2,.6,.9,1);
+	//g.stroke();
+	g.clear();
+	g.M(0,240);g.l(320,0);g.fin();
+	g.width(140,1);
+	g.rgba(.9,.6,.2,1);
+	//g.stroke();
+
+	g.clear();
+	g.M(160,0);g.l(0,240);g.fin();
+	g.width(140,1);
+	g.rgba(.9,.6,.0,1);
+	//g.stroke();
+
+	g.clear();
+	g.M(0,120);g.l(320,0);g.fin();
+	g.width(140,1);
+	g.rgba(.2,.9,.8,1);
+	//g.stroke();
 	int seed=23452345;
 	int seed1=76853345;
 	g.clear();
 	g.gray(1);
 	g.alpha(1);
-	g.clear();
-	float T=t*.5;
-	//#define N 2000
-	//for(int i=0;i<N;i++)
-	//{
-	//	float x=(cos(i*M_PI/N*2.*5+T*1.1)*.8+sin(i*M_PI/N*2.*29-T*0.12)*.2)*150+160;
-	//	float y=(sin(i*M_PI/N*2.*4+T*2.93)*.8+cos(i*M_PI/N*2.*27-T*0.37)*.2)*110+120;
-	//	g.L(x,y);
-	//}
-	//g.close();
-	//g.fin();
-	//g.gray(1);
-	//g.alpha(.2);
-	//g.fill2();
+	g.clear();*/
 
+	for(int i=0;i<G_SCREEN_HEIGHT;i+=16)
+	{
+		int gr=int(sin(t*.147+i*.011-54)*40+48);
+		int gg=int(sin(t*.149-i*.017+13)*40+48);
+		int gb=int(sin(t*.141+i*.013-77)*40+48);
+		g.Rect(0,i,G_SCREEN_WIDTH,16,0xff000000|(gr<<16)|(gg<<8)|gb);
+	}
+
+	float T=t*.5;
+	
 	g.clear();
+	for(int i=0;i<6;i++)
+	{
+		float x=(cos(i*M_PI/100*2.*5+T*1.1 )*.8+sin(i*M_PI/100*2.*29-T*0.12)*.2)*150+160;
+		float y=(sin(i*M_PI/100*2.*4+T*2.93)*.8+cos(i*M_PI/100*2.*27-T*0.37)*.2)*110+120;
+		DrawAChip(x,y,i*M_PI/100*2.*4+T*(-2.645+i*1.21),5,stdcols[i&7]);
+	}
+
+	T-=0.1;
 	for(int i=0;i<10;i++)
 	{
 		float x=(cos(i*M_PI/100*2.*5+T*1.1 )*.8+sin(i*M_PI/100*2.*29-T*0.12)*.2)*150+160;
 		float y=(sin(i*M_PI/100*2.*4+T*2.93)*.8+cos(i*M_PI/100*2.*27-T*0.37)*.2)*110+120;
-		//float w=(1.+frand(seed1))*.25;
-		g.M(x,y);
-		g.fin();
-		g.width(20,.2);
-		g.stroke();
-		g.width(1.5,1);
-		g.stroke();
-		g.clear();
+		DrawAChip(x,y,i*M_PI/100*2.*4+T*(-2.645+i*1.21),4,stdcols[(i+2)&7]);
 	}
 
-
-	for(int i=0;i<60;i++)
+	T-=0.25;
+	for(int i=0;i<10;i++)
 	{
-		float x=(1.+frand(seed));
-		float y=int(220*(frand(seed))+10)+.5;
-		float w=(1.+frand(seed1))*.25;
-		//w*=w;
-		x=Fmod(x+t*w*.5+27.72,1.);
-		g.M(x*380-20,y);
-		g.l(30*w,w*.5);
-		g.l(0,-w);
-		g.close();
+		float x=(cos(i*M_PI/100*2.*5+T*1.1 )*.8+sin(i*M_PI/100*2.*29-T*0.12)*.2)*150+160;
+		float y=(sin(i*M_PI/100*2.*4+T*2.93)*.8+cos(i*M_PI/100*2.*27-T*0.37)*.2)*110+120;
+		DrawAChip(x,y,i*M_PI/100*2.*4+T*(-2.645+i*1.21),2,stdcols[(i+5)&7]);
 	}
-	g.fin();
-	g.fill1();
+
 }
 
 struct sRemLine
@@ -392,7 +382,13 @@ int FindPiece(int *field, float* fieldD, int* imask, int W, int H, int x, int y,
 	return ff.fill(x,y,bs,field[W*y+x]);
 };
 
+struct MLFig
+{
+	int cnt;
+	MLItem ml[16];
+};
 
+MLFig mlfs[25];
 
 #define NREMLINES 6
 #define W 10
@@ -406,7 +402,7 @@ public:
 	float fieldD[W*H];
 	float x;
 	float y;
-	int fig4[4*4*7];
+	int fig5[5*5*25];
 	sRemLine remLines[NREMLINES];
 	int lastRemLine;
 	int col;
@@ -421,16 +417,56 @@ public:
 
 	void InitFig()
 	{
-		sndExplode=MakeExplodeSound(20000,gseed);
+		sndExplode=MakeExplodeSound(48000,gseed);
 		sndShoot=MakeShootSound(12000);
 		sndRocket=MakeEngineSound(12000,gseed);
 
-		for(int i=0;i<4*4*7;i++)
+		for(int i=0;i<25;i++)
+		{
+			Shape s;
+			s.cellSize=cellSize;
+			s.Make(&(figtpl[i*5*5]),5,5);
+			s.Optimize();
+			s.Shrink();
+			mlfs[i].cnt=s.MakeML(&(mlfs[i].ml[0]),16);
+			for(int j=0;j<mlfs[i].cnt;j++)
+			{
+				mlfs[i].ml[j].x/=float(cellSize);
+				mlfs[i].ml[j].y/=float(cellSize);
+			}
+		}
+		for(int i=0;i<5*5*25;i++)
 		{
 			if(figtpl[i]==' ')
-				fig4[i]=0x00;
+				fig5[i]=0x00;
 			else
-				fig4[i]=0x01;
+				fig5[i]=0x01;
+		}
+
+		for(int f=7;f<25;f++)
+		{
+			int w=0;
+			int h=0;
+			for(int i=0;i<5;i++)
+			{
+				for(int j=0;j<5;j++)
+				{
+					if(fig5[f*25+i*5+j])
+					{
+						if(h<i+1)h=i+1;
+						if(w<j+1)w=j+1;
+					}
+				}
+			}
+			boxes[f*2]=w;
+			boxes[f*2+1]=h;
+			rotCenter[f*2]=w*.5;
+			rotCenter[f*2+1]=h*.5;
+		}
+
+		for(int i=0;i<25;i++)
+		{
+			printf("{ %i, %i},\n", boxes[i*2],boxes[i*2+1]);
 		}
 	}
 	void NewPiece()
@@ -443,9 +479,9 @@ public:
 		newpy=py;
 		newpa=pa;
 		col=nextcol;
-		nextcol=irand(gseed)%7+1;
+		nextcol=irand(gseed)%7;
 		piece=nextPiece;
-		nextPiece=irand(gseed)%7;
+		nextPiece=irand(gseed)%MAXPIECE;
 		order++;
 
 	}
@@ -458,8 +494,9 @@ public:
 	}
 	void Init()
 	{
-		nextPiece=irand(gseed)%7;
-		nextcol=irand(gseed)%7;
+		//nextPiece=irand(gseed)%MAXPIECE;
+		//nextcol=irand(gseed)%7;
+		NewPiece();
 		NewPiece();
 		t=0;
 		scores=0;
@@ -476,35 +513,7 @@ public:
 
 	void DrawChip(int j, int i, float d, int col)
 	{
-//		printf("%f\n",d);
-		g.clear();
-		g.M(x+j*cellSize+.5,y+i*cellSize+d*cellSize+.5);
-		g.l(cellSize-.25,0);
-		g.l(0,cellSize-.25);
-		g.l(-cellSize+.25,0);
-		g.close();
-		g.fin();
-		g.rgba32(stdcols[col]);
-		g.fill1();
-		//g.alpha(1);
-		//g.rgba(cols[col*3]*.5,cols[col*3+1]*.5,cols[col*3+2]*.5,1);
-		//g.width(1.,1.);
-		//g.stroke();
-	}
-
-	void DrawAChip(float x, float y, float angle, float size, int col)
-	{
-		float dx=size*cos(angle);
-		float dy=size*sin(angle);
-		g.clear();
-		g.M(x+dx*2,y-dy*2);
-		g.l(dy*2,dx*2);
-		g.l(-dx*2,dy*2);
-		g.l(-dy*2,-dx*2);
-		g.close();
-		g.fin();
-		g.rgba32(stdcols[col]);
-		g.fill1();
+		g.Rect(x+j*cellSize+1,y+i*cellSize+int(d*cellSize)+1, cellSize, cellSize, stdcols[col]);
 	}
 
 	void CalcPieceDelta(int piece, int a, float& dx, float& dy)
@@ -513,6 +522,14 @@ public:
 		if(a==1){dx=Fract(rotCenter[piece*2+1]);dy=Fract(rotCenter[piece*2  ]);}
 		if(a==2){dx=Fract(rotCenter[piece*2  ]);dy=Fract(rotCenter[piece*2+1]);}
 		if(a==3){dx=Fract(rotCenter[piece*2+1]);dy=Fract(rotCenter[piece*2  ]);}
+	}
+
+	void fixAA(int ia, float& x, float& y)
+	{
+		      if(ia==1){x=x+.5/cellSize;y=y-.5/cellSize;}
+		else  if(ia==2){x=x-.5/cellSize;y=y-.5/cellSize;}
+		else  if(ia==3){x=x-.5/cellSize;y=y+.5/cellSize;}
+		else           {x=x+.5/cellSize;y=y+.5/cellSize;}
 	}
 
 	void DrawPiece(float x, float y, float pa, int piece, int col)
@@ -528,44 +545,85 @@ public:
 		float dy1;
 		CalcPieceDelta(piece, ia%4   ,dx0,dy0);
 		CalcPieceDelta(piece,(ia+1)%4,dx1,dy1);
+		fixAA( ia%4   ,dx0,dy0);
+		fixAA((ia+1)%4,dx1,dy1);
 		float cs=cellSize;
 		//da=da*da;
 		pa=ia+da;
-		x+=(dx0*(1.-da)+dx1*da)*cs+.5;
-		y+=(dy0*(1.-da)+dy1*da)*cs+.5;
 
 		float angle=pa*M_PI/2.;
+		x+=(dx0*(1.-da)+dx1*da)*cs;
+		y+=(dy0*(1.-da)+dy1*da)*cs;
+
 		float dx=cellSize*cos(angle);
 		float dy=cellSize*sin(angle);
 
-		for(int i=0;i<4;i++)
 		{
-			for(int j=0;j<4;j++)
+			MLFig& mi=mlfs[piece];
 			{
-				float cj=j-rotCenter[piece*2  ];
-				float ci=i-rotCenter[piece*2+1];
-				if(fig4[i*4+j+piece*16])
+				g.clear();
+				float cx;
+				float cy;
+				for(int i=0;i<mi.cnt;i++)
 				{
-					DrawAChip(x+cj*dx+ci*dy,y-cj*dy+ci*dx,angle,cellSize/2,col);
+					float cj=mi.ml[i].x-rotCenter[piece*2  ];
+					float ci=mi.ml[i].y-rotCenter[piece*2+1];
+					cx=x+cj*dx+ci*dy+3;
+					cy=y-cj*dy+ci*dx+3;
+
+					if('M'==mi.ml[i].cmd)
+						g.M(cx,cy);
+					else
+						g.L(cx,cy);
 				}
+				g.fin();
+				g.rgba32(0x40000000);
+				g.fill1();
 			}
-		}
-		for(int i=0;i<4;i++)
-		{
-			for(int j=0;j<4;j++)
+
+			g.clear();
+			float cx;
+			float cy;
+			for(int i=0;i<mi.cnt;i++)
 			{
-				float cj=j-rotCenter[piece*2  ];
-				float ci=i-rotCenter[piece*2+1];
-				if(fig4[i*4+j+piece*16])
+				float cj=mi.ml[i].x-rotCenter[piece*2  ];
+				float ci=mi.ml[i].y-rotCenter[piece*2+1];
+				cx=x+cj*dx+ci*dy;
+				cy=y-cj*dy+ci*dx;
+
+				if('M'==mi.ml[i].cmd)
+					g.M(cx,cy);
+				else
+					g.L(cx,cy);
+			}
+			g.fin();
+			g.rgba32(stdcols[col]);
+			g.fill1();
+
+			for(int i=0;i<mi.cnt;i++)
+			{
+				float cj=mi.ml[i].x-rotCenter[piece*2  ];
+				float ci=mi.ml[i].y-rotCenter[piece*2+1];
+				float ox=cx;
+				float oy=cy;
+				cx=x+cj*dx+ci*dy;
+				cy=y-cj*dy+ci*dx;
+
+				if('M'!=mi.ml[i].cmd)
 				{
-						if((i==0)||(!fig4[(i-1)*4+j  +piece*16]))
-						{g.gray(.5+sin(angle+  M_PI/4)*.5);g.hairline(x+cj*dx+ci*dy,y-cj*dy+ci*dx,x+cj*dx+ci*dy+dx,y-cj*dy+ci*dx-dy);}
-						if((j==0)||(!fig4[ i   *4+j-1+piece*16]))
-						{g.gray(.5+sin(angle+3*M_PI/4)*.5);g.hairline(x+cj*dx+ci*dy,y-cj*dy+ci*dx,x+cj*dx+ci*dy+dy,y-cj*dy+ci*dx+dx);}
-						if((i==3)||(!fig4[(i+1)*4+j  +piece*16]))
-						{g.gray(.5+sin(angle-3*M_PI/4)*.5);g.hairline(x+cj*dx+ci*dy+dx+dy,y-cj*dy+ci*dx+dx-dy,x+cj*dx+ci*dy+dy,y-cj*dy+ci*dx+dx);}
-						if((j==3)||(!fig4[ i   *4+j+1+piece*16]))
-						{g.gray(.5+sin(angle-  M_PI/4)*.5);g.hairline(x+cj*dx+ci*dy+dx+dy,y-cj*dy+ci*dx+dx-dy,x+cj*dx+ci*dy+dx,y-cj*dy+ci*dx-dy);}
+					g.clear();
+					g.M(ox,oy);
+					g.L(cx,cy);
+					float ddx=cx-ox;
+					float ddy=cy-oy;
+					float l=sqrt(ddx*ddx+ddy*ddy);
+					ddx/=l;
+					ddy/=l;
+					g.fin();
+					float lb=(-ddx*1.5+ddy)*.25+.5;
+					g.rgba32(LitColor(stdcols[col],lb));
+					//g.stroke();
+					g.hairline(ox,oy,cx,cy);
 				}
 			}
 		}
@@ -784,7 +842,7 @@ public:
 
 	void Key(int key)
 	{
-		//printf("%i\n",key);
+		//printf("Key %i\n",key);
 		if(key==4001)
 		{
 			Down();
@@ -903,7 +961,7 @@ public:
 		{
 			for(int j=0;j<boxw;j++)
 			{
-				if(fig4[piece*16+i*4+j])
+				if(fig5[piece*25+i*5+j])
 				{
 					int cx=newpx+i*orxi[ori]+j*orxj[ori]+dx;
 					if(cx<0)hit|=HIT_LEFT;
@@ -943,9 +1001,10 @@ public:
 		g.alpha(.35);
 		g.fill1();
 		g.width(1,1);
-		g.rgb(.9,.6,.5);
+		g.rgb(.9,.4,.3);
 		g.stroke();
 
+		g.alpha(.5);
 		g.clear();
 		for(int i=1;i<H;i++)
 		{
@@ -959,7 +1018,23 @@ public:
 		}
 		g.fin();
 		g.width(1.,1.);
-		g.rgb(.9,.6,.5);
+		g.rgb(1.,.8,.7);
+		g.stroke();
+
+		g.clear();
+		for(int i=1;i<H;i++)
+		{
+			g.M(x+1,y+1+i*cellSize);
+			g.l(W*cellSize-1,0);
+		}
+		for(int i=1;i<W;i++)
+		{
+			g.M(x+1+i*cellSize,y+1);
+			g.l(0,H*cellSize-1);
+		}
+		g.fin();
+		g.width(1.,1.);
+		g.rgb(.2,.3,.5);
 		g.stroke();
 	}
 
@@ -1020,19 +1095,18 @@ public:
 					if((j>0    )&&(field[j-1+(H-i-1)*W]==c))lt=false;
 					if((i<(H-1))&&(field[j+  (H-i-2)*W]==c))tp=false;
 					if((i>0    )&&(field[j+  (H-i-0)*W]==c))bt=false;
-					float X=x+j*cellSize-.5;
-					float Y=y+i*cellSize+d*cellSize-.5;
+					float X=x+j*cellSize;
+					float Y=y+i*cellSize+int(d*cellSize);
 
-					g.rgba32(stdcols[c&0xf]);
-					if(!rt)g.hairline(X+cellSize,Y+1,X+cellSize,Y+cellSize);
-					if(!tp)g.hairline(X+1,Y+cellSize,X+cellSize,Y+cellSize);
+					//g.rgba32(stdcols[c&0xf]);
+					//if(!rt)g.hairline(X+cellSize,Y+1,X+cellSize,Y+cellSize);
+					//if(!tp)g.hairline(X+1,Y+cellSize,X+cellSize,Y+cellSize);
 
-					g.rgba(1,1,1,.5);
-					if(lt)g.hairline(X+1,Y+1,X+1,Y+cellSize);
-					if(bt)g.hairline(X+1,Y+1,X+cellSize,Y+1);
-					g.rgba(0,0,0,.5);
-					if(rt)g.hairline(X+cellSize,Y,X+cellSize,Y+cellSize);
-					if(tp)g.hairline(X,Y+cellSize,X+cellSize,Y+cellSize);
+
+					if(lt){g.rgba32(LitColor(col,.66));g.Rect(X+1,Y+1,1,cellSize,0x80ffffff);}
+					if(bt){g.rgba32(LitColor(col,.20));g.Rect(X+1,Y+1,cellSize,1,0x80ffffff);}
+					if(rt){g.rgba32(LitColor(col,.33));g.Rect(X+cellSize,Y+1,1,cellSize,0x80000000);}
+					if(tp){g.rgba32(LitColor(col,.80));g.Rect(X+1,Y+cellSize,cellSize,1,0x80000000);}
 				}
 			}
 		}
@@ -1063,7 +1137,7 @@ public:
 				float lx=j/(float)W-.5;
 				DrawAChip(
 					x+j*cellSize+lx*Fabs(lx)*cellSize*20*dt,
-					y+ly*cellSize+dt*dt*cellSize*10*(1.5+rnd),dt*rnd,cellSize/2,ci);
+					y+ly*cellSize+dt*dt*cellSize*10*(1.5+rnd),dt*(rnd-.5)*8,cellSize/2,stdcols[ci]);
 			}
 		}
 		DrawPiece(x+(apx)*cellSize,y+H*cellSize-apy*cellSize,pa,piece,col);
@@ -1087,6 +1161,10 @@ int main()
 		//Present();continue;
 		game.UpdateField(dt);
 		game.RenderField();
+
+		float T=Time()*1.5;
+		//DrawAChip(50,150,T,5,1);
+
 		char s[64];
 		snprintf(s,64,"%f",Time());
 		//stext(s,10,10,0xffffffff);
@@ -1108,6 +1186,13 @@ int main()
 				if(key=='1'){puts("Explode");snd_play(game.sndExplode);}
 				if(key=='2'){puts("Rocket");snd_play(game.sndRocket);}
 				if(key=='3'){puts("Shoot");snd_play(game.sndShoot);}
+				if(key=='4')
+				{
+					puts("BreakLine");
+					int rl=H-3;//irand(gseed)%(H/2);
+					for(int i=0;i<W;i++)
+						game.field[rl*W+i]=irand(gseed)%7+1;
+				}
 				if(key==4010)
 				{
 					game.doUpdate=!game.doUpdate;
