@@ -470,6 +470,7 @@ public:
 		//	printf("{ %i, %i},\n", boxes[i*2],boxes[i*2+1]);
 		//}
 	}
+	
 	void NewPiece()
 	{
 		falling=false;
