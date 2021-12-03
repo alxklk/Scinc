@@ -409,6 +409,7 @@ public:
 	int nextcol;
 	int piece;
 	int nextPiece;
+	int nextPA;
 	int order;
 
 	int sndExplode;
@@ -464,20 +465,20 @@ public:
 			rotCenter[f*2+1]=h*.5;
 		}
 
-		for(int i=0;i<25;i++)
-		{
-			printf("{ %i, %i},\n", boxes[i*2],boxes[i*2+1]);
-		}
+		//for(int i=0;i<25;i++)
+		//{
+		//	printf("{ %i, %i},\n", boxes[i*2],boxes[i*2+1]);
+		//}
 	}
 	void NewPiece()
 	{
 		falling=false;
 		px=W/2;
 		py=H;
-		pa=0;
 		newpx=px;
 		newpy=py;
-		newpa=pa;
+		newpa=pa=nextPA;
+		nextPA=irand(gseed)%4;
 		col=nextcol;
 		nextcol=irand(gseed)%7;
 		piece=nextPiece;
@@ -496,6 +497,7 @@ public:
 	{
 		//nextPiece=irand(gseed)%MAXPIECE;
 		//nextcol=irand(gseed)%7;
+		pa=0;
 		NewPiece();
 		NewPiece();
 		t=0;
@@ -1141,7 +1143,7 @@ public:
 			}
 		}
 		DrawPiece(x+(apx)*cellSize,y+H*cellSize-apy*cellSize,pa,piece,col);
-		DrawPiece(50.5,70.5,0,nextPiece, nextcol);
+		DrawPiece(50.5,70.5,nextPA, nextPiece, nextcol);
 	}
 };
 
@@ -1154,6 +1156,7 @@ int main()
 	game.Init();
 	while(true)
 	{
+		//game.piece=24;
 		float tframe1=Time();
 		float dt=tframe1-tframe0;
 		tframe0=tframe1;
@@ -1166,8 +1169,11 @@ int main()
 		//DrawAChip(50,150,T,5,1);
 
 		char s[64];
-		snprintf(s,64,"%f",Time());
+		int ga=int(game.pa);
+		ga=ga%4;
+		//snprintf(s,64,"piece %i angle %i",game.piece, ga);
 		//stext(s,10,10,0xffffffff);
+
 		if(!game.doUpdate)stext("Paused",10,20,0xffff0000);
 		stext("Next",40,30,0xff00ffff);
 
@@ -1179,6 +1185,7 @@ int main()
 
 		int key;
 		int press;
+		bool psof=false;
 		if(GetKeyEvent(key,press))
 		{
 			if(press>0)
@@ -1201,13 +1208,53 @@ int main()
 				{
 					exit(0);
 				}
+				else if(key=='a')
+				{
+					offsets[game.piece*8+ga*2]--;
+					psof=true;
+				}
+				else if(key=='d')
+				{
+					offsets[game.piece*8+ga*2]++;
+					psof=true;
+				}
+				else if(key=='w')
+				{
+					offsets[game.piece*8+ga*2+1]--;
+					psof=true;
+				}
+				else if(key=='s')
+				{
+					offsets[game.piece*8+ga*2+1]++;
+					psof=true;
+				}
 				else
 				{
 					game.Key(key);
 				}
+
 				//printf("Key pressed %i %i\n", key, press);
 			}
 		}
+
+/*
+		char sof[128];
+		snprintf(sof,64,"% 2i, % 2i, % 2i, % 2i, % 2i, % 2i, % 2i, % 2i,",
+			offsets[game.piece*8+0],
+			offsets[game.piece*8+1],
+			offsets[game.piece*8+2],
+			offsets[game.piece*8+3],
+			offsets[game.piece*8+4],
+			offsets[game.piece*8+5],
+			offsets[game.piece*8+6],
+			offsets[game.piece*8+7]
+		);
+		stext(sof,10,20,0xffffffff);
+		if(psof)
+		{
+			puts(sof);
+		}
+*/
 		Present();
 	}
 	return 0;
