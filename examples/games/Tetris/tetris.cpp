@@ -415,6 +415,9 @@ public:
 	int sndExplode;
 	int sndRocket;
 	int sndShoot;
+	bool gameOver;
+	bool showMenu;
+	bool unPaused;
 
 	void InitFig()
 	{
@@ -470,7 +473,7 @@ public:
 		//	printf("{ %i, %i},\n", boxes[i*2],boxes[i*2+1]);
 		//}
 	}
-	
+
 	void NewPiece()
 	{
 		falling=false;
@@ -484,6 +487,12 @@ public:
 		nextcol=irand(gseed)%7;
 		piece=nextPiece;
 		nextPiece=irand(gseed)%MAXPIECE;
+		int tryToPut=Put(piece,px,py,pa,0,false);
+		if(tryToPut!=0)
+		{
+			gameOver=true;
+			//printf("Game Over\n");
+		}
 		order++;
 
 	}
@@ -498,12 +507,13 @@ public:
 	{
 		//nextPiece=irand(gseed)%MAXPIECE;
 		//nextcol=irand(gseed)%7;
+		gameOver=false;
 		pa=0;
 		NewPiece();
 		NewPiece();
 		t=0;
 		scores=0;
-		doUpdate=true;
+		unPaused=true;
 		cellSize=10;
 		x=G_SCREEN_WIDTH/2 -W*cellSize/2+.5;
 		y=G_SCREEN_HEIGHT/2-H*cellSize/2+.5;
@@ -710,7 +720,6 @@ public:
 		level=lines/25;
 	}
 
-	bool doUpdate;
 	bool falling;
 
 	float t;
@@ -740,7 +749,7 @@ public:
 			if(delta>0)pa+=fd;
 			else pa-=fd;
 		}
-		if(doUpdate)
+		if(unPaused)
 		{
 			if(falling)
 			{
@@ -1175,7 +1184,7 @@ int main()
 		//snprintf(s,64,"piece %i angle %i",game.piece, ga);
 		//stext(s,10,10,0xffffffff);
 
-		if(!game.doUpdate)stext("Paused",10,20,0xffff0000);
+		if(!game.unPaused)stext("Paused",10,20,0xffff0000);
 		stext("Next",40,30,0xff00ffff);
 
 		int mb;
@@ -1203,7 +1212,7 @@ int main()
 				}
 				if(key==4010)
 				{
-					game.doUpdate=!game.doUpdate;
+					game.unPaused=!game.unPaused;
 				}
 				else if(key==1000)
 				{
