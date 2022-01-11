@@ -1,0 +1,358 @@
+<html>
+<head>
+	<script lang="text/javascript" src="SC_Letters.js"></script>
+	<script lang="text/javascript" src="SC_Runtime.js"></script>
+	<script lang="text/javascript" src="code.js"></script>
+	<style>
+	canvas
+	{
+		image-rendering: -moz-crisp-edges;
+		image-rendering: -webkit-crisp-edges;
+		image-rendering: pixelated;
+		image-rendering: crisp-edges;
+	}
+	</style>
+</head>
+<body>
+
+<center><div id='SC_Content'></div></center>
+<script lang="text/javascript">
+
+function MultiCharI(s)
+{
+	let x=0;
+	for(i=0;i<s.length;i++)
+	{
+		x=x*256+s.charCodeAt(i);
+	}
+	return x;
+}
+
+
+document.body.style.background="#808080"
+
+var ctx
+var scrCtx
+
+var screen=false;
+
+var events=[];
+
+if((typeof graphics !== 'undefined')&&(graphics))
+{
+	if(typeof G_SCREEN_WIDTH === 'undefined')
+		G_SCREEN_WIDTH=640
+
+	if(typeof G_SCREEN_HEIGHT === 'undefined')
+		G_SCREEN_HEIGHT=480
+
+	if(typeof G_SCREEN_SCALE === 'undefined')
+		G_SCREEN_SCALE=2
+
+	var offScreen = document.createElement('canvas')
+	offScreen.width = G_SCREEN_WIDTH
+	offScreen.height = G_SCREEN_HEIGHT
+
+	screen = document.createElement('canvas')
+
+	screen.width=G_SCREEN_WIDTH*G_SCREEN_SCALE
+	screen.height=G_SCREEN_HEIGHT*G_SCREEN_SCALE
+
+	document.getElementById('SC_Content').appendChild(screen)
+
+	var SC_mx;
+	var SC_my;
+	var SC_mb;
+
+	screen.onmousemove=function(e)
+	{
+		SC_mx=e.offsetX/G_SCREEN_SCALE;
+		SC_my=e.offsetY/G_SCREEN_SCALE;
+		SC_mb=e.buttons;
+		events.push({type:MultiCharI("MMOV"), _0:SC_mb, _1:SC_mx, _2:SC_my})
+	}
+
+	screen.onmousedown=function(e)
+	{
+		SC_mx=e.offsetX/G_SCREEN_SCALE;
+		SC_my=e.offsetY/G_SCREEN_SCALE;
+		SC_mb=e.buttons;
+		events.push({type:MultiCharI("MLDN"), _0:SC_mb, _1:SC_mx, _2:SC_my})
+	}
+
+	screen.onmouseup=function(e)
+	{
+		SC_mx=e.offsetX/G_SCREEN_SCALE;
+		SC_my=e.offsetY/G_SCREEN_SCALE;
+		SC_mb=e.buttons;
+		events.push({type:MultiCharI("MLUP"), _0:SC_mb, _1:SC_mx, _2:SC_my})
+	}
+
+	scrCtx=screen.getContext('2d')
+	scrCtx.fillStyle = "#304050";
+	scrCtx.fillRect(0, 0, screen.width, screen.height);
+	scrCtx.imageSmoothingEnabled = false
+
+	ctx=offScreen.getContext('2d')
+	ctx.fillStyle = "#304050";
+	ctx.fillRect(0, 0, offScreen.width, offScreen.height);
+
+	keysMap=new Map()
+
+	for(i=0;i<26;i++)
+	{
+		keysMap.set(65+i,"a".charCodeAt(0)+i)
+	}
+
+	for(i=0;i<10;i++)
+	{
+		keysMap.set(48+i,"0".charCodeAt(0)+i)
+	}
+
+	keysMap.set(38,4000)
+	keysMap.set(40,4001)
+	keysMap.set(37,4002)
+	keysMap.set(39,4003)
+	keysMap.set(32,32)
+	keysMap.set(9,4010)
+	keysMap.set(8,4008)
+	keysMap.set(16,3004)
+	keysMap.set(17,3000)
+
+
+	keysPressed=new Set()
+
+	keyEvents=[]
+
+	doc_onkeydown=function(e)
+	{
+		if(keysMap.has(e.keyCode))
+		{
+			let keyCode=keysMap.get(e.keyCode);
+			keysPressed.add(keyCode)
+			keyEvents.push([keyCode,1])
+			events.push({type:MultiCharI("KBDN"), _0:keyCode, _1:0, _2:0})
+		}
+		else
+			console.log("Unhandled key: code=", e.keyCode, ", '", e.code, "'")
+	}
+
+	doc_onkeyup=function(e)
+	{
+		if(keysMap.has(e.keyCode))
+		{
+			let keyCode=keysMap.get(e.keyCode);
+			keysPressed.delete(keyCode)
+			keyEvents.push([keyCode,0])
+			events.push({type:MultiCharI("KBUP"), _0:keyCode, _1:0, _2:0})
+		}
+	}
+
+	document.addEventListener( "keydown", doc_onkeydown, false);
+	document.addEventListener( "keyup", doc_onkeyup, false);
+
+
+	var touchx
+	var touchy
+	doc_touchstart=function(e)
+	{
+		e.preventDefault()
+		if(e.touches.length==1)
+		{
+			touchx=e.touches[0].screenX
+			touchy=e.touches[0].screenY
+		}
+	}
+
+	doc_touchend=function(e)
+	{
+		e.preventDefault()
+		//out.innerText+="UnTouch "
+		if(e.changedTouches.length==1)
+		{
+			let dx=e.changedTouches[0].screenX-touchx;
+			let dy=e.changedTouches[0].screenY-touchy;
+			//out.innerText+=" "+dx+" "+dy+"\n"
+			if((Math.abs(dx)<5)&&(Math.abs(dy)<5))
+			{
+				keyEvents.push([32,1])
+				keyEvents.push([32,0])
+				return
+			}			
+			if(Math.abs(dx)<Math.abs(dy))
+			{
+				if(dy<0)
+				{
+					keyEvents.push([4000,1])
+					keyEvents.push([4000,0])
+				}
+				else
+				{
+					keyEvents.push([4001,1])
+					keyEvents.push([4001,0])
+				}
+			}
+			else
+			{
+				if(dx<0)
+				{
+					//out.innerText+="Left\n"
+					keyEvents.push([4002,1])
+					keyEvents.push([4002,0])
+				}
+				else
+				{
+					//out.innerText+="Right\n"
+					keyEvents.push([4003,1])
+					keyEvents.push([4003,0])
+				}
+			}
+		}
+	}
+
+	document.body.addEventListener('touchstart',  doc_touchstart, false);
+	//document.addEventListener('touchmove',   doc_touchmove, false);
+	//document.addEventListener('touchcancel', doc_touchcancel, false);
+	document.body.addEventListener('touchend',    doc_touchend, false);
+
+}
+
+var out = document.createElement('pre')
+out.id = 'out'
+out.style.color="blue"
+out.style.background="lightgrey"
+document.body.appendChild(out)
+
+//out=document.getElementById('out');
+
+var reg_ip=start_addr;
+var reg_sp=start_rsp;
+var reg_this=0;
+var regs=[0];
+
+for(i=0;i<consts.length;i++)
+{
+	mem8[i]=consts[i];
+}
+
+
+var interrupt=false
+var quit=false
+let gui=true
+var printed=0
+
+function Step()
+{
+	while(true)
+	{
+		code[reg_ip]()
+		if(interrupt)
+		{
+			if(quit)
+			{
+				console.log("OK. Run time ", performance.now()-startTime, " ms")
+				return;
+			}
+			if(printed>100)
+			{
+				printed=0;
+				break;
+			}
+			interrupt=false;
+			break;
+		}
+	}
+	if(screen)
+	{/*
+		g_path=new Path2D()
+		g_tcpx=100
+		g_tcpy=100
+		g_tscx=10
+		g_tscy=-10
+		SC_DrawText("Hi there");
+		ctx.strokeStyle='red'
+		ctx.globalAlpha=1
+		ctx.lineWidth=2
+		ctx.stroke(g_path)
+*/
+		scrCtx.drawImage(offScreen,0,0,screen.width, screen.height)
+	}
+	requestAnimationFrame(Step)
+}
+
+
+var proFont = new FontFace('proFont', 'url(ProFontWindows.ttf)');
+
+proFont.load().then(function(font){
+	document.fonts.add(font);
+	console.log('Font loaded');
+	var ctx = offScreen.getContext("2d");
+	ctx.font = "12px proFont";
+});	
+
+if((typeof sound !== 'undefined')&&(sound))
+{
+	if(natives.includes('snd_out')||natives.includes('snd_out_buf'))
+	{
+		let btn = document.createElement("button");
+		btn.style.position="absolute"
+		btn.style.top="10"
+		btn.style.left="64"
+		btn.innerHTML = "Start";
+		btn.onclick = function ()
+		{
+			StartSound()
+			var startTime=performance.now()
+			requestAnimationFrame(Step)
+			document.body.removeChild(btn)
+		};
+		document.body.appendChild(btn);
+	}
+	else
+	{
+		audioContext=new AudioContext()
+		var startTime=performance.now()
+		requestAnimationFrame(Step)
+	}
+}
+else
+{
+	var startTime=performance.now()
+	requestAnimationFrame(Step)
+}
+
+var svgDiv = document.createElement('div')
+svgDiv.style.opacity=".33"
+svgDiv.style.position="absolute"
+svgDiv.style.top="0"
+svgDiv.style.left="0"
+svgDiv.href=
+document.body.appendChild(svgDiv)
+
+svgDiv.innerHTML = 
+`<a href="https://github.com/alxklk/Scinc">
+<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg">
+<g transform="scale(0.25)">
+	<g fill="#6b7" stroke="#000" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+		<path d="M53.055 26.672l.487 11.145c.168 3.845 2.451 5.899 6.187 5.668l9.746-.601c1.929-.12 1.274 4.523 3.317 4.12 2.039-.402-.127-3.584.487-4.459.765-1.089 4.681 1.012 4.616-1.397-.056-2.078-4.312-.682-4.483-1.901-.216-1.536 1.787-3.676-.29-4.338-1.764-.563-2.379 4.44-3.871 4.323l-8.14-.645c-.978-.077-1.695-.728-1.636-2.003l.688-14.804M98.851 99.257l11.14.597c3.843.206 5.874 2.51 5.607 6.243l-.699 9.74c-.138 1.927 4.51 1.319 4.088 3.358-.423 2.034-3.583-.163-4.464.442-1.097.754.965 4.691-1.443 4.602-2.077-.077-.64-4.318-1.857-4.502-1.533-.23-3.693 1.751-4.334-.333-.545-1.77 4.464-2.334 4.36-3.828l-.563-8.146c-.068-.978-.712-1.702-1.987-1.655l-14.81.54"/>
+		<path d="M75.46 7.13c7.97-.427 24.572-5.06 30.152 13.92.789 2.685 1.787 6.168 2.34 8.91 2.236 11.1-12.97 16.658-23.438 10.353-5.893-3.55-8.524-7.757-13.93-12.011-18.525-14.58-37.137 17.139-5.799 23.264l26.038 5.09c32.935 6.437 38.915 63.59-16.408 62.968-10.807-.121-20.809-2.232-27.23-14.3-4.13-7.764-8.975-10.01-11.846-10.72-2.834-.699-9.683.172-11.459 6.258-.975 3.344-.136 9.268 6.119 10.75 2.25.533 5.767-.32 7.506-2.633 3.185-4.236 7.386-.999 7.202 1.856-.204 3.174-4.056 7.478-9.215 8.516-12.449 2.505-21.455-7.192-22.122-15.126-1.393-16.57 9.29-23.863 18.534-23.853 15.882.016 20.607 9.797 26.493 14.68 17.815 14.778 38.111-17.24 5.986-23.137L39.13 67.279C7.258 61.429-.619 3.683 53.297 3.979c9.274.05 15.808 3.36 22.163 3.15z"/>
+		<path d="M38.149 26.672l.486 11.145c.168 3.845 2.452 5.899 6.188 5.668l9.746-.601c1.928-.12 1.274 4.523 3.317 4.12 2.038-.402-.128-3.584.486-4.459.765-1.089 4.682 1.012 4.617-1.397-.057-2.078-4.312-.682-4.484-1.901-.215-1.536 1.788-3.676-.29-4.338-1.764-.563-2.378 4.44-3.871 4.323l-8.14-.645c-.977-.077-1.695-.728-1.635-2.003l.687-14.804M88.294 100.052l-11.14.597c-3.842.206-5.874 2.51-5.606 6.243l.698 9.74c.139 1.927-4.51 1.319-4.087 3.358.422 2.034 3.583-.163 4.464.442 1.096.754-.966 4.691 1.443 4.602 2.076-.077.64-4.318 1.856-4.502 1.533-.23 3.693 1.751 4.335-.333.545-1.77-4.464-2.334-4.36-3.828l.563-8.146c.067-.978.711-1.702 1.987-1.655l14.81.54"/>
+		<path d="M98.48 34.436c5.664 4.403 11.878 14.767 4.655 22.564.695-4.393-1.59-7.332-2.452-8.785.69 4.604-3.603 9.787-7.238 8.816 5.231-5.2 1.75-16.008-1.751-21.062" fill="#1e90ff"/>
+		<path d="M107.885 34.606c-5.112 13.587-25.724 2.04-29.221-5.225" />
+	</g>
+	<g transform="matrix(.85 0 0 .85 -678.656 -57.683)">
+		<circle cx="897.507" cy="93.942" r="2.606" stroke="#090909" stroke-width="2" />
+		<circle r="1.65" cy="92.619" cx="896.184" fill="#fff" />
+	</g>
+	<g transform="matrix(.85 0 0 .85 -661.902 -58.023)">
+		<circle r="2.606" cy="93.942" cx="897.507" stroke="#090909" stroke-width="2" />
+		<circle cx="896.184" cy="92.619" r="1.65" fill="#fff" />
+	</g>
+</g>
+</svg>
+</a>
+`
+;
+
+</script>
+</body></html>
