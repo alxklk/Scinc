@@ -4,17 +4,17 @@
 
 ## VM architecture
 
-Scinc VM is register-based, with 3 address memory-to-memory instruction set. Each command operand can be immediate integer, immediate float or address. Addresses are based upon 3 virtual address spaces:
+Scinc VM is register-based, with 3 address memory-to-memory instruction set. Each command operand can be immediate integer, immediate float or address. Addressing may utilize onre of following 3 modes:
 
-Segment | purpose | base register
+   mode | purpose | base register
 --------|---------|--------------
-`LOCAL` |local variables and function arguments |`sp` register
-`THIS`  |class data members for usage in methods | `this` register
+`LOCAL` |local variables and function arguments|`sp`
+`THIS`  |class data members for usage in methods| `this`
 `GLOBAL`|global variables, constants and pointed/referenced items | none (direct address)
 
 Special bit in memory mode codes indirect access, `mem[addr]` if 0 or `mem[mem[addr]]` otherwise.
 
-VM has these сontrol registers:
+VM has these 3 сontrol registers:
 
  reg | description
 -----|------------
@@ -29,7 +29,7 @@ Interpreter takes next bytecode from program memory at `[IP]` and executes corre
 
 Return stack is used by CALL and RET commands.
 
-Operands are denoted as `dst`, `src0` (=`src`) and `src1` in following table.
+Operands are denoted as `dst`, `src0` (or `src`) and `src1` in following table.
 Indirect memory locations are enclosed in additional [].
 
 Bytecode|# operands| types         | actions                  | rough C++ equivalent
