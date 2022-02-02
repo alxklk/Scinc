@@ -4,18 +4,13 @@
 
 ## VM architecture
 
-Scinc VM is register-based, with 3 address memory-to-memory instruction set. Each command operand can be immediate integer, immediate float or address. Addresses are based upon 6 virtual segments, 4 of them are based on registers:
+Scinc VM is register-based, with 3 address memory-to-memory instruction set. Each command operand can be immediate integer, immediate float or address. Addresses are based upon 3 virtual address spaces:
 
 Segment | purpose | base register
 --------|---------|--------------
-`LOCAL` |local variables |`loc` register
-`ARG`   |function arguments | `arg` register
-`TMP`   |temporary variables, intermediate result of calculations in expressions | `tmp` register
+`LOCAL` |local variables and function arguments |`sp` register
 `THIS`  |class data members for usage in methods | `this` register
-`GLOBAL`|global variables | none (direct address)
-`CONST` |constants | direct address
-
-Some of these segments are considered to be extra and may be refactored out in future releases. This should not affect functionality.
+`GLOBAL`|global variables, constants and pointed/referenced items | none (direct address)
 
 Special bit in memory mode codes indirect access, `mem[addr]` if 0 or `mem[mem[addr]]` otherwise.
 
@@ -26,11 +21,8 @@ VM has these сontrol registers:
 IP   | Instruction Pointer
 SP   | Stack Pointer
 this | `this` pointer for current member function
-loc  | Local variables for current function
-arg  | Arguments for current function
-tmp  | Temporary variables
 
-They are hidden from programmer. Each register `IP`, `this`, `loc`, `arg` and `tmp` has own stack, it is unaccessible by program and used by some commands, for example, IAM pushes current value of `this` into stack and NOTME pops - it is intended for nested method calls.
+They are hidden from programmer. Register `IP`, `this` has own stack, it is unaccessible by program and used by some commands, for example, IAM pushes current value of `this` into stack and NOTME pops - it is intended for nested method calls.
 
 Code and data memory are separated (Harvard architecture). 
 Interpreter takes next bytecode from program memory at `[IP]` and executes corresponding action. In debug mode interpreter returns control to host program after each step. In release mode interpreter returns controls only in non-linear points (JMPs, CALL) and special instructions (INT, FIN)
