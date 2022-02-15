@@ -4,7 +4,7 @@
 
 ## VM architecture
 
-Scinc VM is register-based, with 3 address memory-to-memory instruction set. Each command operand can be immediate integer, immediate float or address. Addresses are based upon 6 virtual segments, 4 of them are based on registers:
+Scinc VM is register-based, with 3 address memory-to-memory instruction set. Each command operand can be immediate integer, immediate float or address. Addressing may utilize onre of following 3 modes:
 
 Address<br>Mode| Purpose                                                                                                                | Base<br>Register
 ---------------|------------------------------------------------------------------------------------------------------------------------|--------------
@@ -14,7 +14,7 @@ Address<br>Mode| Purpose                                                        
 
 Special bit in memory mode codes indirect access, `mem[addr]` if 0 or `mem[mem[addr]]` otherwise.
 
-VM has these сontrol registers:
+VM has these 3 сontrol registers:
 
 Register | description
 -------|------------
@@ -22,14 +22,14 @@ IP     | Instruction Pointer
 SP     |  Stack Pointer
 this   | `this` pointer for current member function
 
-They are hidden from programmer. Each register `IP`, `this`, `loc`, `arg` and `tmp` has own stack, it is unaccessible by program and used by some commands, for example, IAM pushes current value of `this` into stack and NOTME pops - it is intended for nested method calls.
+They are hidden from programmer. Register `IP`, `this` has own stack, it is unaccessible by program and used by some commands, for example, IAM pushes current value of `this` into stack and NOTME pops - it is intended for nested method calls.
 
 Code and data memory are separated (Harvard architecture). 
 Interpreter takes next bytecode from program memory at `[IP]` and executes corresponding action. In debug mode interpreter returns control to host program after each step. In release mode interpreter returns controls only in non-linear points (JMPs, CALL) and special instructions (INT, FIN)
 
 Return stack is used by CALL and RET commands.
 
-Operands are denoted as `dst`, `src0` (=`src`) and `src1` in following table.
+Operands are denoted as `dst`, `src0` (or `src`) and `src1` in following table.
 Indirect memory locations are enclosed in additional [].
 
  Bytecode | # operands | types           | actions                                                         | rough C++ equivalent                 
