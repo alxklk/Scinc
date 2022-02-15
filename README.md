@@ -2,8 +2,6 @@
 
 ![Scinc picture](scinc.png)
 
-Scriptable C IN C / scinc (skink)
-
 (pronounced as \[stsɪnk\])
 
 _Skinks are lizards belonging to the family Scincidae and the infraorder Scincomorpha._
@@ -13,7 +11,7 @@ Small and simple statically strong typed embeddable interpreted programming lang
 
 Syntactical and semantical subset of C++. Can be embedded in another applications or run by interpreter. Scinc program is correct C++ program and thus can be compiled into native code without changes.
 
-Current VM realization runs on own virtual processor and virtual address space. Speed is about 10-12 host CPU clock cycle per VM opcode. On modern 4.5 GHz desktop CPU it is ~420 million vm opcodes per second.
+Current VM realization runs on own virtual processor and virtual address space. Speed is about 9-11 host CPU clock cycle per VM opcode. On modern 4.5 GHz desktop CPU it is ~500 million vm opcodes per second.
 
 ## Motivation
 
@@ -65,9 +63,17 @@ Preprocessor supports object-style and function-style macros, `__SCINC__` macro 
 
 ## Error messages
 
-Error messages are sometimes confusing or missing, sometimes extra. No file/line/position included in error text, but someone can run Scinc with `-gui` command line switch, and find erroneous token highlighted if he is lucky enough
+Error messages are sometimes confusing or missing, sometimes extra.
 
 ![Error picture](error.png)
+
+## Dynamic linking
+
+It is relatively easy to link function from shared library (.dll on Windows, .so on Unix-like), see examples/dynamic_native
+
+## Javascript Backend (experimental)
+
+There is experimental JS backend. VM bytecode is transformed into simplified Javascript and saved into `code.js` file. Web Runtime library ([webRT](webRT) folder content) should be in same folder. Code can be executed in browser by openint [index.html](webRT/index.html).
 
 ## Runtime library
 
