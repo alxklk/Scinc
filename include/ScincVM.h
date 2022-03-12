@@ -14,7 +14,7 @@ public:
 			VM_REG_TYPE rthis;
 			VM_REG_TYPE _glob;
 		};
-		VM_REG_TYPE segs[3];
+		VM_REG_TYPE segs[6];
 	};
 	std::vector<unsigned char>mem;
 	int GetInt(int addr)const
