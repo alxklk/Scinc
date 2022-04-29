@@ -607,24 +607,31 @@ function SC_stroke()
 	}
 }
 
+let g_t0x=0
+let g_t0y=0
+let g_tXx=1
+let g_tXy=0
+let g_tYx=0
+let g_tYy=1
+
+
 function SC_t_0()
 {
 	g_t0x=GetFloat(reg_sp-8)
 	g_t0y=GetFloat(reg_sp-16)
+	ctx.setTransform(g_tXx, g_tXy, g_tYx, g_tYy, g_t0x, g_t0y);
 }
 function SC_t_x()
 {
-	var x=GetFloat(reg_sp-8)
-	var y=GetFloat(reg_sp-16)
-	g_tXx=x
-	g_tXy=y
+	g_tXx=GetFloat(reg_sp-8)
+	g_tXy=GetFloat(reg_sp-16)
+	ctx.setTransform(g_tXx, g_tXy, g_tYx, g_tYy, g_t0x, g_t0y);
 }
 function SC_t_y()
 {
-	var x=GetFloat(reg_sp-8)
-	var y=GetFloat(reg_sp-16)
-	g_tYx=x
-	g_tYy=y
+	g_tYx=GetFloat(reg_sp-8)
+	g_tYy=GetFloat(reg_sp-16)
+	ctx.setTransform(g_tXx, g_tXy, g_tYx, g_tYy, g_t0x, g_t0y);
 }
 
 function SC_g_0()
