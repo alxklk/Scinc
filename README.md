@@ -73,7 +73,7 @@ It is relatively easy to link function from shared library (.dll on Windows, .so
 
 ## Javascript Backend (experimental)
 
-There is experimental JS backend. VM bytecode is transformed into simplified Javascript and saved into `code.js` file. Web Runtime library ([webRT](webRT) folder content) should be in same folder. Code can be executed in browser by openint [index.html](webRT/index.html).
+There is experimental JS backend. VM bytecode is transformed into simplified Javascript and saved into `code.js` file. Web Runtime library ([webRT](webRT) folder content) should be in same folder. Code can be executed in browser by opening [index.html](webRT/index.html).
 
 ## Runtime library
 
