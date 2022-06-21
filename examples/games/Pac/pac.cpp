@@ -1,12 +1,24 @@
-#define G_SCREEN_WIDTH 320
-#define G_SCREEN_HEIGHT 240
-#define G_SCREEN_SCALE 4
-#define G_SCREEN_MODE 3
+#define G_SCREEN_WIDTH 640
+#define G_SCREEN_HEIGHT 400
+
+#ifdef __JS__
+#define G_SCREEN_SCALE 2
+#else
+#define G_SCREEN_SCALE 3
+#endif
+
+#define G_SCREEN_MODE 1
 
 #define M_PI 3.141592654
 
 #include "sound.h"
 #include "graphics.h"
+
+//#define PENTA
+
+#ifdef PENTA
+#include "../Tetris/penta.h"
+#endif
 
 Graph g;
 float t;
@@ -21,14 +33,41 @@ int irand(int& seed)
 
 #define MAXFIELD 2048
 
-float cell=16;
+float cell=24;
 
 
-int fieldW=17;
-int fieldH=11;
+int fieldW=21;
+int fieldH=15;
 
 int fieldX=30;
 int fieldY=30;
+
+int MonsterBornX=10;
+int MonsterBornY=7;
+
+int PacBornX=10;
+int PacBornY=1;
+
+char* wallBuf=
+"********** **********"
+"*                   *"
+"* ***************** *"
+"*                   *"
+"* * ************* * *"
+"* *               * *"
+"* * ****** ****** * *"
+"  * *           * *  "
+"* * ************* * *"
+"* *               * *"
+"* * * ********* * * *"
+"* * *           * * *"
+"* * * ********* * * *"
+"*                   *"
+"********** **********"
+;
+
+
+
 
 int patha_[MAXFIELD];
 int pathhome[MAXFIELD];
@@ -49,61 +88,6 @@ void Background()
 int w;
 int h;
 bool put=false;
-
-int MonsterBornX=8;
-int MonsterBornY=5;
-
-int PacBornX=1;
-int PacBornY=1;
-
-char* wallBuf=
-"******** ********"
-"*               *"
-"* * ********* * *"
-"* *           * *"
-"* * **** **** * *"
-"* * *       * * *"
-"* * ********* * *"
-"* *           * *"
-"  * ********* *  "
-"*               *"
-"******** ********"
-;
-
-
-char* wallBuf0=
-"********************************"
-"*                              *"
-"* ************** ************* *"
-"*       *               *      *"
-"* **************************** *"
-"*               *              *"
-"* **************************** *"
-"*                              *"
-"* ************** ************* *"
-"* *                          * *"
-"* ****** *************** ***** *"
-"*               *              *"
-"* **************************** *"
-"*                              *"
-"* *************  ************* *"
-"         *            *         "
-"* ****** *  *  **  *  * ****** *"
-"*        *            *        *"
-"* **************************** *"
-"*                              *"
-"* ************** ************* *"
-"*                              *"
-"* ******* ************ ******* *"
-"* *                          * *"
-"* * ************************ * *"
-"* *      *           *       * *"
-"* ************* ************** *"
-"*                              *"
-"* **************************** *"
-"*                              *"
-"********************************"
-"                                ";
 
 char objs[MAXFIELD];
 
@@ -197,13 +181,13 @@ struct GameActor
 	{
 		if(dead)
 		{
-			if(Path(pathhome,x,y)<2)
+			if(Path(pathhome,x,y)<1)
 			{
 				dead=false;
 				Born(MonsterBornX,MonsterBornY,1);
 			}
 		}
-		progress+=idt*speed*(dead?2:1);
+		progress+=idt*speed*(dead?4:1);
 		if(progress>1)
 		{
 			progress-=1.;
@@ -231,7 +215,7 @@ struct GameActor
 			}
 		}
 
-		if(!moveblocked)
+		if((!moveblocked)||(progress<.5))
 		{
 			if(nextdx==-1)
 			{
@@ -366,21 +350,88 @@ void DrawPac()
 int mx=-1;
 int my=-1;
 
+void DrawOp(float x, float y, float r, int col, int mdx, int mdy)
+{
+#define N 30
+		float t=Time();
+		t=t*6*(mdx+mdy);
+		float ax=1;
+		float ay=1;
+		if(mdy)
+		{
+			ax=.2;
+			ay=sqrt(1.-ax*ax);
+		}
+
+		float dl=1./(N);
+
+		int NO=4;
+
+		float da=(NO-1.)/2.;
+
+		for(int j=0;j<NO;j++)
+		{
+			float a=(j-da)/da;
+			float px=0;
+			float py=0;
+			float nxs[N+2];
+			float nys[N+2];
+			float pxs[N+2];
+			float pys[N+2];
+			float ws [N+2];
+
+			int n=0;
+			for(float f=0.;f<1.;f+=dl)
+			{
+					float l=sin(f*6.-t*3.-a*3.5)*f*1.5*(1.+.5*sin(.8+a*3.5+t*3.));
+					float w=(1.-f)*r/NO;
+					float dx=sin(l)*ax;
+					float dy=cos(l)*ay;
+					px+=dx*dl*r;
+					py+=dy*dl*r;
+					pxs[n]=px+a*(r-w);
+					pys[n]=py;
+					nxs[n]=dy;
+					nys[n]=-dx;
+					ws [n]=w;
+					n++;
+			}
+
+			g.L(x+pxs[0]-nxs[0]*ws[0],y+pys[0]-nys[0]*ws[0]);
+			for(int i=0;i<n;i++)
+			{
+				g.L(x+pxs[i]-nxs[i]*ws[i],y+pys[i]-nys[i]*ws[i]);
+			}
+			for(int i=n-1;i>=0;i--)
+			{
+				g.L(x+pxs[i]+nxs[i]*ws[i],y+pys[i]+nys[i]*ws[i]);
+			}
+		}
+#undef N
+}
+
 void DrawMonster(GameActor& mon)
 {
-	float x=fieldX+(mon.x+mon.progress*mon.dx)*cell;
-	float y=fieldY+(mon.y+mon.progress*mon.dy)*cell;
+	float x=fieldX+(mon.x+mon.progress*mon.dx)*cell+.5;
+	float y=fieldY+(mon.y+mon.progress*mon.dy)*cell-cell/8;
 	float r=cell*2./3.;
 	if(!mon.dead)
 	{
+		//if(t-pacAnger<0)
+		//	DrawOp(x,y+r/2,r,0x200040ff);
+		//else
+		//	DrawOp(x,y+r/2,r,mon.col);
 		int col=mon.col;
 		if(t-pacAnger<0)
-			col=0xff0000ff;
+			col=0xffffffff;
 		int dx=mon.dx;
 		int dy=mon.dy;
 		g.clear();
-		g.M(x-r,y);
-		g.a(r,r,0,0,1,r*2,0);
+		//g.M(x-r,y);
+		//g.a(r,r,0,0,1,r*2,0);
+		g.M(x+r,y-r/4);
+		g.a(r,r,0,0,0,-r*2,0);
+		DrawOp(x,y+r/2,r,mon.col, dx, dy);
 		//g.l(0,r*2);
 		/*
 		for(int i=0;i<=8;i++)
@@ -408,26 +459,34 @@ void DrawMonster(GameActor& mon)
 			ampx=0;
 			ampy=1;
 		}
-		for(int i=0;i<=64;i++)
+		if(0)
 		{
-			float fi=i/64.;
-			int tn=i/16;
-			float tl=fi*4;tl=tl-int(tl);if(tl>.5)tl=1-tl;tl*=2.;tl=sqrt(tl);
-			tl*=(.8-cos(Time()*13*diry+tn*15)*.3*ampy);
-			if((mon.dx==0)&&(mon.dy==0))tl/=.8;
+			for(int i=0;i<=64;i++)
+			{
+				float fi=i/64.;
+				int tn=i/16;
+				float tl=fi*4;tl=tl-int(tl);if(tl>.5)tl=1-tl;tl*=2.;tl=sqrt(tl);
+				tl*=(.8-cos(Time()*13*diry+tn*15)*.3*ampy);
+				if((mon.dx==0)&&(mon.dy==0))tl/=.8;
 
-			g.L(x+r-r*2*fi+ampx*r*.5*tl*tl*sin(Time()*13*dirx+tn*15),y+r/2+tl*r/2*1.8);
+				g.L(x+r-r*2*fi+ampx*r*.5*tl*tl*sin(Time()*13*dirx+tn*15),y+r/2+tl*r/2*1.8);
+			}
+			//else
+			//{
+			//	g.l(0,r/2);
+			//	g.l(-2*r,0);
+			//}
 		}
 		g.close();
 		g.rgba32(col);
 		g.fin();
 		if(t-pacAnger<0)
 		{
-			g.rgba32(0x400080ff);
+			g.rgba32(0x800040ff);
 			g.fill1();
 			g.rgba32(0xff0040ff);
-			g.width(2,1);
-			g.stroke();
+			//g.width(1,1);
+			//g.stroke();
 		}
 		else
 			g.fill1();
@@ -446,8 +505,8 @@ void DrawMonster(GameActor& mon)
 	g.fill1();
 	//g.Circle(x-r*.4+sin(Time()*4)*r*.1,y-eh+sin(Time()*2.3-12.)*r*.05,0,r*.08,1,0xff000000);
 	//g.Circle(x+r*.4+sin(Time()*4)*r*.1,y-eh+sin(Time()*2.3-12.)*r*.05,0,r*.08,1,0xff000000);
-	g.Circle(x-r*.4+mon.dx*r*.2,y-eh+mon.dy*r*.2,0,r*.08,1,0xff000000);
-	g.Circle(x+r*.4+mon.dx*r*.2,y-eh+mon.dy*r*.2,0,r*.08,1,0xff000000);
+	g.Circle(x-r*.4+mon.dx*r*.2,y-eh+mon.dy*r*.2,0,r*.1,1,0xff000000);
+	g.Circle(x+r*.4+mon.dx*r*.2,y-eh+mon.dy*r*.2,0,r*.1,1,0xff000000);
 	//g.stroke();
 
 }
@@ -548,18 +607,18 @@ void Restart()
 		mon[i].Born(MonsterBornX,MonsterBornY,1);
 	for(int i=0;i<5;i++)
 	{
-		mon[i].speed=.5+.3*i;
+		mon[i].speed=2.5+.3*i;
 		mon[i].col=cols[i];
 	}
-	for(int i=0;i<fieldH;i++)
+	for(int i=1;i<fieldH-1;i++)
 	{
-		for(int j=0;j<fieldW;j++)
+		for(int j=1;j<fieldW-1;j++)
 		{
 			objs[j+i*fieldW]=0;
 			if(wallBuf[j+i*fieldW]==' ')
 			{
-				if(i<10)objs[j+i*fieldW]=1;
-				if(i>20)objs[j+i*fieldW]=1;
+				if(i<6)objs[j+i*fieldW]=1;
+				if(i>8)objs[j+i*fieldW]=1;
 			}
 			else
 			{
@@ -567,14 +626,14 @@ void Restart()
 			}
 		}
 	}
-	for(int i=1;i<fieldH;i+=4)
+	for(int i=1;i<fieldH;i+=12)
 	{
-		for(int j=1;j<fieldW;j+=14)
+		for(int j=1;j<fieldW;j+=18)
 		{
 			if(wallBuf[j+i*fieldW]==' ')
 			{
-				if(i<10)objs[j+i*fieldW]=2;
-				if(i>20)objs[j+i*fieldW]=2;
+				if(i<7)objs[j+i*fieldW]=2;
+				if(i>8)objs[j+i*fieldW]=2;
 			}
 		}
 	}
@@ -643,21 +702,88 @@ void BuildWalls()
 	}
 }
 
+#ifdef PENTA
+MLItem mls[1024];
+#endif
+
+int win=-5;
 
 int main()
 {
+	fieldX=(G_SCREEN_WIDTH-fieldW*cell+cell)/2;
+
 	Restart();
 	pac.col=0xffffe000;
 	float prevt=Time();
 	BuildPaths(MonsterBornX,MonsterBornY,pathhome,128);
 	BuildWalls();
 
+#ifdef PENTA
+	int nml=ShiftedContour(wallBuf,fieldW,fieldH,mls,cell,cell/3);
+#endif
+
 	while(1)
 	{
 		t=Time();
 		g.gray(0);
-		g.FillRT();
-		//Background();
+		//g.FillRT();
+		Background();
+		//DrawOp(100,100,cell,0xffffffff);
+
+		if(win==1)
+		{
+			stext("You WIN!!!", G_SCREEN_WIDTH/2,G_SCREEN_HEIGHT/2,0xffff0000);
+			Present();
+
+			SScincEvent ev;
+			bool dobreak=false;
+			while(GetScincEvent(ev))
+			{
+				if(ev.type=='KBDN')
+				{
+					Restart();
+					win=0;
+				}
+			}	
+			prevt=t;
+			continue;	
+		}
+		if(win==-5)
+		{
+			stext("Press a key", G_SCREEN_WIDTH/2,G_SCREEN_HEIGHT/2,0xffff0000);
+			Present();
+
+			SScincEvent ev;
+			bool dobreak=false;
+			while(GetScincEvent(ev))
+			{
+				if(ev.type=='KBDN')
+				{
+					Restart();
+					win=0;
+				}
+			}		
+			prevt=t;
+			continue;	
+		}
+		if(win==-1)
+		{
+			stext("You LOOSE!!!", G_SCREEN_WIDTH/2,G_SCREEN_HEIGHT/2,0xffff0000);
+			Present();
+
+			SScincEvent ev;
+			bool dobreak=false;
+			while(GetScincEvent(ev))
+			{
+				if(ev.type=='KBDN')
+				{
+					Restart();
+					win=0;
+				}
+			}
+			prevt=t;
+			continue;	
+		}
 
 		if(0)
 		for(int i=0;i<fieldH;i++)
@@ -671,6 +797,7 @@ int main()
 			}
 		}
 
+		bool hasBread=false;
 		g.fillrect(fieldX+mx*cell-cell/2,fieldY+my*cell-cell/2,cell,cell,0xff004080);
 		g.clear();
 		for(int i=0;i<fieldH;i++)
@@ -681,6 +808,7 @@ int main()
 				{
 					g.M(fieldX+j*cell, fieldY+i*cell);
 					g.l(.1,.1);
+					hasBread=true;
 				}
 			}
 		}
@@ -697,6 +825,7 @@ int main()
 				{
 					g.M(fieldX+j*cell, fieldY+i*cell);
 					g.l(.1,.1);
+					hasBread=true;
 				}
 			}
 		}
@@ -704,7 +833,8 @@ int main()
 		g.width(cell/4.,cell/4.);
 		g.rgba32(0xffffff8000);
 		g.stroke();
-
+		if(!hasBread)
+			win=1;
 
 		g.clear();
 
@@ -726,6 +856,7 @@ int main()
 
 		g.clear();
 
+#ifndef PENTA
 		for(int i=0;i<nWalls;i++)
 		{
  			if((wallList[i].dx!=0)||(wallList[i].dy!=0))
@@ -740,13 +871,35 @@ int main()
 		}
 
 		g.fin();
-		g.width(cell/4.,cell/8.);
+		g.width(cell/4.,cell/4.);
 		g.rgba32(0xff0080ff);
 		g.stroke();
-		g.width(cell/8.,cell/8.);
-		g.rgba32(0xff000040);
+		g.width(cell/4.-2,cell/4.-2);
+		g.rgba32(0xff002060);
 		g.stroke();
+#endif
 
+#ifdef PENTA
+		g.clear();
+		for(int i=0;i<nml;i++)
+		{
+			if(mls[i].cmd=='M')
+			{
+				g.M(fieldX-cell/2+mls[i].x,fieldY-cell/2+mls[i].y);
+			}
+			else
+			{
+				g.L(fieldX-cell/2+mls[i].x,fieldY-cell/2+mls[i].y);
+			}
+		}
+		g.fin();
+		g.calclen();
+		g.rgba32(0xff00c0ff);
+		g.fill1();
+		g.width(1,1);
+		g.rgba32(0x800000ff);
+		g.stroke();
+#endif
 
 		// g.clear();
 		// for(int i=0;i<fieldH;i++)
@@ -764,8 +917,21 @@ int main()
 
 
 		char s[60];
-		snprintf(s,60,"%f",pacAnger-t);
-		stext(s,200,10,0xff00ffff);
+		float anger=pacAnger-t;
+		int textx=G_SCREEN_WIDTH/2-45;
+		if(anger>0)
+		{
+			stext("EAT MONSTERS!!!",textx-8,8,0xffffff00);
+			for(int i=0;i<anger/7*12;i++)
+			{
+				float a=i/12.*2*M_PI;
+				g.Circle(textx+98+sin(a)*8, 12+cos(a)*8,0,1,1,0xffffff00);
+			}
+		}
+		else
+		{
+			stext("FEAR MONSTERS!!",textx,8,0xffffff00);
+		}
 
 		for(int i=0;i<5;i++)
 			mon[i].Tick(t-prevt);
@@ -798,7 +964,7 @@ int main()
 		pac.Tick(t-prevt);
 
 		if(objs[pac.x+pac.y*fieldW]==2)
-			pacAnger=t+5;
+			pacAnger=t+7;
 		objs[pac.x+pac.y*fieldW]=0;
 		DrawPac();
 		//DrawMonster(pac);
@@ -815,7 +981,7 @@ int main()
 				}
 				else if(!mon[i].dead)
 				{
-					Restart();
+					win=-1;
 				}
 			}
 
@@ -856,7 +1022,11 @@ int main()
 						put=false;
 					}
 					BuildWalls();
+					#ifdef PENTA
+					nml=ShiftedContour(wallBuf,fieldW,fieldH,mls,cell,cell/3);					
+					#else
 					BuildPaths(MonsterBornX,MonsterBornY,pathhome,128);
+					#endif
 				}
 			}
 			if(ev.type=='MMOV')
@@ -872,7 +1042,11 @@ int main()
 						else
 							wallBuf[mx+my*fieldW]=' ';
 						BuildWalls();
+						#ifdef PENTA
+						nml=ShiftedContour(wallBuf,fieldW,fieldH,mls,cell,cell/3);					
+						#else
 						BuildPaths(MonsterBornX,MonsterBornY,pathhome,128);
+						#endif
 					}
 				}
 			}
