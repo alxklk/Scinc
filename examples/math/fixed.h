@@ -17,19 +17,24 @@ class fixed
 public:
 	static int pow_of_2(int v)
 	{
-        int r=0;
+		int r=0;
 		while(v>>=1)
 		{
 			r++;
 		}
 		return r;
-    }
+	}
 	int sign;
 	int digits[FIXED_DIGITS];
 	void Zero()
 	{
 		sign=1;
 		for(int i=0;i<FIXED_DIGITS;i++)digits[i]=0;
+	}
+	fixed& operator=(int r)
+	{
+		Seti(r);
+		return *this;
 	}
 	void Seti(int x)
 	{
@@ -49,6 +54,20 @@ public:
 					break;
 			}
 		}
+	}
+
+	static fixed FromS(char* s)
+	{
+		fixed r;
+		r.Sets(s);
+		return r;
+	}
+
+	static fixed FromI(int i)
+	{
+		fixed r;
+		r.Seti(i);
+		return r;
 	}
 
 	void Sets(char* num)
@@ -177,6 +196,16 @@ public:
 			ret.digits[i]=res;
 		}
 		return ret;
+	}
+
+	bool operator<(const fixed& right)
+	{
+		if(sign<right.sign)
+			return true;
+		else if(sign>right.sign)
+			return false;
+		fixed r=*this-right;
+		return r.sign<0;
 	}
 
 	fixed operator-(const fixed& right)

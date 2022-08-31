@@ -44,37 +44,90 @@ float frand(int& seed)
 	return (irand(seed)>>11)/65536.0;
 }
 
+bool vibratto;
+bool cut;
+bool fade;
+double echoVal;
 
 #define NN 16
 class Polyphony
 {
 public:
-	Note n[NN];
+	Note notes[NN];
 	int ns;
-	void Update(int T)
-	{
-		ns=T;
-	}
 	void Init()
 	{
+		ns=0;
 		for(int i=0;i<NN;i++)
 		{
-			n[i].t0=-100;
-			n[i].t1=-100;
+			notes[i].t0=-100;
+			notes[i].t1=-100;
 		}
 	}
 	void AddNote(double f, double len)
 	{
 		for(int i=0;i<NN;i++)
 		{
-			if(ns>n[i].t1)
+			if(ns>notes[i].t1)
 			{
-				n[i].f=f;
-				n[i].t0=ns+4410;
-				n[i].t1=ns+4410+len*44100;
+				notes[i].f=f;
+				notes[i].t0=ns+4800;
+				notes[i].t1=ns+4800+len*48000;
 				break;
 			}
 		}
+	}
+	void RenderSpan(int nSamples, double* echo, int echoPos, int echoLen)
+	{
+		for(int j=0;j<NN;j++)
+		{
+			Note& n=notes[j];
+			if(ns>n.t1)
+				continue;
+			int cs=ns;
+			for(int i=0;i<nSamples;i++)
+			{
+
+				if(cs>n.t1)
+					break;
+				if(cs>n.t0)
+				{
+					double t=(cs-n.t0)/48000.;
+					//double s=sin((t+sin(cs*.0005)*0.0005)*n.f*M_PI*2);
+					if(vibratto)
+						t+=sin(t*M_PI*5.)*0.0007*t;
+					double s=sin(t*n.f*M_PI*2);
+					if(cut)
+					{
+						if(s>0.4)s=0.4;else if(s<-0.4)s=-.4;
+					}
+					else
+					{
+						s*=0.35;
+					}
+
+					if(t<0.01)s*=t*100.;
+					if(fade)
+					{
+						s*=(1. -(cs-n.t0)/double(n.t1-n.t0));
+					}
+					else
+					{
+						double te=(n.t1-cs)/48000.;if(te<0.1)s*=te*10.;
+					}
+					double b=.5+sin(cs*.0001)*.25;
+					int ep=((echoPos+i)%echoLen)*2;
+					double l=s*b     +echo[ep  ];
+					double r=s*(1.-b)+echo[ep+1];
+					if(l>.9)l=0.9;else if(l<-0.9)l=-.9;
+					if(r>.9)r=0.9;else if(r<-0.9)r=-.9;
+					echo[ep  ]=l;
+					echo[ep+1]=r;
+				}
+				cs++;
+			}
+		}
+		ns+=nSamples;
 	}
 };
 
@@ -84,7 +137,7 @@ Graph g;
 
 Polyphony notes;
 
-#define EL 9000
+#define EL 16000
 
 #define ALMOST_ONE 0.9999999999999
 
@@ -144,10 +197,6 @@ class CSnd
 public:
 	int sample;
 	int echoPos;
-	bool vibratto;
-	bool cut;
-	bool fade;
-	double echoVal;
 	double* echo;
 	void Init()
 	{
@@ -187,7 +236,7 @@ public:
 				for(int i=0;i<nSamples;i++)
 				{
 					int s=sample+i;
-					double l=lega(s/44100.,s/44100.,sample/44100.,(sample+nSamples)/44100.,prevmx*10,mx*10)*.3;
+					double l=lega(s/48000.,s/48000.,sample/48000.,(sample+nSamples)/48000.,prevmx*10,mx*10)*.3;
 					int ep=((echoPos+i)%EL)*2;
 					echo[ep  ]+=l;
 					echo[ep+1]+=l;
@@ -214,7 +263,7 @@ public:
 				{
 					int s=sample+i;
 					int ep=(echoPos+i)%EL*2;
-					double t=s/44100.;
+					double t=s/48000.;
 					double l=0;
 					//for(int k=0;k<20;k++)l+=sin(t*2000+2000*sin(t*(2+k*.05)))*.05;
 					l+=.5*frand(seed);
@@ -239,54 +288,7 @@ public:
 			sample+=nSamples;
 			return;
 		}
-		else for(int j=0;j<NN;j++)
-		{
-			Note& n=notes.n[j];
-			if(sample>n.t1)
-				continue;
-			int cs=sample;
-			for(int i=0;i<nSamples;i++)
-			{
-
-				if(cs>n.t1)
-					break;
-				if(cs>n.t0)
-				{
-					double t=(cs-n.t0)/44100.;
-					//double s=sin((t+sin(cs*.0005)*0.0005)*n.f*M_PI*2);
-					if(vibratto)
-						t+=sin(t*M_PI*5.)*0.0007*t;
-					double s=sin(t*n.f*M_PI*2);
-					if(cut)
-					{
-						if(s>0.4)s=0.4;else if(s<-0.4)s=-.4;
-					}
-					else
-					{
-						s*=0.35;
-					}
-
-					if(t<0.01)s*=t*100.;
-					if(fade)
-					{
-						s*=(1. -(cs-n.t0)/double(n.t1-n.t0));
-					}
-					else
-					{
-						double te=(n.t1-cs)/44100.;if(te<0.1)s*=te*10.;
-					}
-					double b=.5+sin(cs*.0001)*.25;
-					int ep=((echoPos+i)%EL)*2;
-					double l=s*b     +echo[ep  ];
-					double r=s*(1.-b)+echo[ep+1];
-					if(l>.9)l=0.9;else if(l<-0.9)l=-.9;
-					if(r>.9)r=0.9;else if(r<-0.9)r=-.9;
-					echo[ep  ]=l;
-					echo[ep+1]=r;
-				}
-				cs++;
-			}
-		}
+		else notes.RenderSpan(nSamples,&echo[0],echoPos,EL);
 		for(int i=0;i<nSamples;i++)
 		{
 			int ep=(echoPos+i)%EL*2;
@@ -357,7 +359,7 @@ public:
 		mul=1;
 		if     (n==0){name="     Gamma";tempo=.5;mul=.25; deflen=1./2.;defoct=7;melody="c c# d d# e f f# g g# a a# b p b a# a g# g f# f e d# d c# c p";}
 		else if(n==1){name="   Nokia tune"; mul=8;deflen=1./4.; defoct=1;melody="2p 16e2 16d2 8#f 8#g 16#c2 16b 8d 8e 16b 16a 8#c 8e 2a 2p";}
-		else if(n==2){name="     Nyan Cat";tempo=3.0;mul=1.; deflen=1./16.;defoct=5;melody="8p,16d#6,16e6,8f#6,8b6,16d#6,16e6,16f#6,16b6,16c#7,16d#7,16c#7,16a#6,8b6,8f#6,16d#6,16e6,8f#6,8b6,16c#7,16a#6,16b6,16c#7,16e7,16d#7,16e7,16c#7,8f#6,8g#6,16d#6,16d#6,16p,16b,16d6,16c#6,16b,16p,8b,8c#6,8d6,16d6,16c#6,16b,16c#6,16d#6,16f#6,16g#6,16d#6,16f#6,16c#6,16d#6,16b,16c#6,16b,8d#6,8f#6,16g#6,16d#6,16f#6,16c#6,16d#6,16b,16d6,16d#6,16d6,16c#6,16b,16c#6,8d6,16b,16c#6,16d#6,16f#6,16c#6,16d#6,16c#6,16b,8c#6,8b,8c#6,8f#6,8g#6,16d#6,16d#6,16p,16b,16d6,16c#6,16b,16p,8b,8c#6,8d6,16d6,16c#6,16b,16c#6,16d#6,16f#6,16g#6,16d#6,16f#6,16c#6,16d#6,16b,16c#6,16b,8d#6,8f#6,16g#6,16d#6,16f#6,16c#6,16d#6,16b,16d6,16d#6,16d6,16c#6,16b,16c#6,8d6,16b,16c#6,16d#6,16f#6,16c#6,16d#6,16c#6,16b,8c#6,8b,8c#6,8b,16f#,16g#,8b,16f#,16g#,16b,16c#6,16d#6,16b,16e6,16d#6,16e6,16f#6,8b,8b,16f#,16g#,16b,16f#,16e6,16d#6,16c#6,16b,16f#,16d#,16e,16f#,8b,16f#,16g#,8b,16f#,16g#,16b,16b,16c#6,16d#6,16b,16f#,16g#,16f#,8b,16b,16a#,16b,16f#,16g#,16b,16e6,16d#6,16e6,16f#6,8b,8a#,8b,16f#,16g#,8b,16f#,16g#,16b,16c#6,16d#6,16b,16e6,16d#6,16e6,16f#6,8b,8b,16f#,16g#,16b,16f#,16e6,16d#6,16c#6,16b,16f#,16d#,16e,16f#,8b,16f#,16g#,8b,16f#,16g#,16b,16b,16c#6,16d#6,16b,16f#,16g#,16f#,8b,16b,16a#,16b,16f#,16g#,16b,16e6,16d#6,16e6,16f#6,8b,8c#6";}
+		else if(n==2){name="     Nyan Cat";tempo=3.0;mul=.5; deflen=1./16.;defoct=5;melody="8p,16d#6,16e6,8f#6,8b6,16d#6,16e6,16f#6,16b6,16c#7,16d#7,16c#7,16a#6,8b6,8f#6,16d#6,16e6,8f#6,8b6,16c#7,16a#6,16b6,16c#7,16e7,16d#7,16e7,16c#7,8f#6,8g#6,16d#6,16d#6,16p,16b,16d6,16c#6,16b,16p,8b,8c#6,8d6,16d6,16c#6,16b,16c#6,16d#6,16f#6,16g#6,16d#6,16f#6,16c#6,16d#6,16b,16c#6,16b,8d#6,8f#6,16g#6,16d#6,16f#6,16c#6,16d#6,16b,16d6,16d#6,16d6,16c#6,16b,16c#6,8d6,16b,16c#6,16d#6,16f#6,16c#6,16d#6,16c#6,16b,8c#6,8b,8c#6,8f#6,8g#6,16d#6,16d#6,16p,16b,16d6,16c#6,16b,16p,8b,8c#6,8d6,16d6,16c#6,16b,16c#6,16d#6,16f#6,16g#6,16d#6,16f#6,16c#6,16d#6,16b,16c#6,16b,8d#6,8f#6,16g#6,16d#6,16f#6,16c#6,16d#6,16b,16d6,16d#6,16d6,16c#6,16b,16c#6,8d6,16b,16c#6,16d#6,16f#6,16c#6,16d#6,16c#6,16b,8c#6,8b,8c#6,8b,16f#,16g#,8b,16f#,16g#,16b,16c#6,16d#6,16b,16e6,16d#6,16e6,16f#6,8b,8b,16f#,16g#,16b,16f#,16e6,16d#6,16c#6,16b,16f#,16d#,16e,16f#,8b,16f#,16g#,8b,16f#,16g#,16b,16b,16c#6,16d#6,16b,16f#,16g#,16f#,8b,16b,16a#,16b,16f#,16g#,16b,16e6,16d#6,16e6,16f#6,8b,8a#,8b,16f#,16g#,8b,16f#,16g#,16b,16c#6,16d#6,16b,16e6,16d#6,16e6,16f#6,8b,8b,16f#,16g#,16b,16f#,16e6,16d#6,16c#6,16b,16f#,16d#,16e,16f#,8b,16f#,16g#,8b,16f#,16g#,16b,16b,16c#6,16d#6,16b,16f#,16g#,16f#,8b,16b,16a#,16b,16f#,16g#,16b,16e6,16d#6,16e6,16f#6,8b,8c#6";}
 		else if(n==3){name="    Children"; tempo=1.5; mul=1; deflen=1./4; defoct=5;melody="8p, f.6, 1p, g#6, 8g6, d#.6, 1p, g#6, 8g6, c.6, 1p,"" g#6, 8g6, g#., 1p, 16f, 16g, 16g#, 16c6, f.6, 1p, g#6, 8g6, d#.6, 1p, 16c#6, 16c6, c#6, 8c6, g#, 2p, g., g#, 8c6, f.";}
 		else if(n==4){name="  Greensleaves";tempo=1.5; mul=.5; deflen=1./4.;defoct=5;melody="p, g, 2a#, c6, d.6, 8d#6, d6, 2c6, a, f., 8g, a, 2a#, g, g., 8f, g, 2a, f, 2d, g, 2a#, c6, d.6, 8e6, d6, 2c6, a, f., 8g, a, a#., 8a, g, f#., 8e, f#, 2g";}
 		else if(n==5){name="Rondo alla turka";mul=8.;deflen=1./4.; defoct=5; melody="16#f1 16e1 16#d1 16e1 4g1 16a1 16g1 16#f1 16g1 4b1 16c2 16b1 16#a1 16b1 16#f2 16e2 16#d2 16e2 16#f2 16e2 16#d2 16e2 4g2 8e2 8g2 32d2 32e2 16#f2 8e2 8d2 8e2 32d2 32e2 16#f2 8e2 8d2 8e2 32d2 32e2 16#f2 8e2 8d2 8#c2 4b1 2p";}
@@ -463,7 +465,7 @@ public:
 		{
 			notes.AddNote(f,len<.5?.5:len);
 		}
-		return len*44100;
+		return len*48000;
 	}
 	void Update(int ds)
 	{
@@ -540,10 +542,10 @@ int main()
 				else if(key==56){melody.Init(8);printf("%s\n",melody.name);}
 				else if(key==57){melody.Init(9);printf("%s\n",melody.name);}
 				else if(key==48){melody.Init(0);printf("%s\n",melody.name);}
-				else if(key==101){snd.echoVal=Fabs(snd.echoVal-.5);}
-				else if(key==118){snd.vibratto=!snd.vibratto;}
-				else if(key==99){snd.cut=!snd.cut;}
-				else if(key==102){snd.fade=!snd.fade;}
+				else if(key==101){echoVal=Fabs(echoVal-.5);}
+				else if(key==118){vibratto=!vibratto;}
+				else if(key==99){cut=!cut;}
+				else if(key==102){fade=!fade;}
 				else if(key==4010)
 				{
 					graph=!graph;
@@ -557,7 +559,7 @@ int main()
 		}
 
 		//double t1=Time();
-		//int nSamples=t1*44100-t0*44100+5;
+		//int nSamples=t1*48000-t0*48000+5;
 		//t0=t1;
 		//if(nSamples>2000)nSamples=2000;
 		//if(snd_bufhealth()>2748)
@@ -567,7 +569,7 @@ int main()
 		while(snd_bufhealth()<(2000+NFFT))
 		{
 			melody.Update(NFFT);
-			notes.Update(snd.sample);
+			//notes.Update(snd.sample);
 			snd.GenerateSamples(NFFT);
 			FFT(snd.echo,fftout,snd.echoPos);
 
@@ -575,7 +577,7 @@ int main()
 			{
 				for(int i=0;i<NFFT;i++)
 				{
-					double lvl=fftout[i];
+					double lvl=Fabs(fftout[i]);
 					lvl/=4.;
 					float lvlr=lvl*960.;lvlr=lvlr>255.?255.:lvlr;
 					float lvlg=lvl*420.;lvlg=lvlg>255.?255.:lvlg;
@@ -653,6 +655,14 @@ int main()
 		char ss[64];
 		snprintf(ss,64,"% 5i % 5i % 5i", NFFT, snd.echoPos, snd_bufhealth());
 		stext(ss,10,470,0xffffff00);
+		snprintf(ss,64,"[%c] 'V'ibratto", " x"[vibratto]);
+		stext(ss,10,460,0xffffff00);
+		snprintf(ss,64,"[%c] 'E'cho", " x"[int(echoVal*10)!=0]);
+		stext(ss,10,450,0xffffff00);
+		snprintf(ss,64,"[%c] 'C'ut", " x"[cut]);
+		stext(ss,10,440,0xffffff00);
+		snprintf(ss,64,"[%c] 'F'ade", " x"[fade]);
+		stext(ss,10,430,0xffffff00);
 		Present();
 	}
 	return 0;

@@ -20,6 +20,10 @@
 #include "../Tetris/penta.h"
 #endif
 
+#include "../../graphic/font.h"
+#include "../../graphic/letters.h"
+#include "../../graphic/gtext.h"
+
 Graph g;
 float t;
 
@@ -710,6 +714,13 @@ int win=-5;
 
 int main()
 {
+	CFont* pfont=(CFont*)malloc(sizeof(CFont));
+	CFont& font=*pfont;
+	CFontMaker fm;
+	fm.Init(font,6);
+	MakeLetters(fm);
+
+
 	fieldX=(G_SCREEN_WIDTH-fieldW*cell+cell)/2;
 
 	Restart();
@@ -750,7 +761,26 @@ int main()
 		}
 		if(win==-5)
 		{
-			stext("Press a key", G_SCREEN_WIDTH/2,G_SCREEN_HEIGHT/2,0xffff0000);
+			char* pakmes="Press any key";
+			for(int i=0;i<256;i++)
+			{
+				if(pakmes[i]==0)
+					break;
+				g.clear();
+				DrawGlyph(g,font, int(pakmes[i]),80+i*36.,190+sin(i*3+t*8)*6-sin(i*2+t*7)*2,6,4);
+				g.fin();
+				g.rgb(.4,.0,.0);
+				g.width(10,1);
+				g.stroke();
+				g.rgb(
+					.75+sin(i*3.1-t*1.7)*.25,
+					.75+sin(i*4.1-t*2.1)*.25,
+					.75+sin(i*5.1-t*2.3)*.25
+				);
+				g.width(4,4);
+				g.stroke();
+			}
+
 			Present();
 
 			SScincEvent ev;
@@ -768,7 +798,20 @@ int main()
 		}
 		if(win==-1)
 		{
-			stext("You LOOSE!!!", G_SCREEN_WIDTH/2,G_SCREEN_HEIGHT/2,0xffff0000);
+
+			g.clear();
+			g.t_0(0,180+sin(t*4.3)*5);
+			g.t_y(sin(t*6)*.1,1.+sin(t*8.7)*.1);
+			DrawText(g,font,"You LOOSE!!!" ,0,90-sin(t*5.)*15,0,6+sin(t*5.)*.5,4+sin(t*5.)*.3);
+			g.t_t(0,0,1,0,0,1);
+			g.fin();
+			g.rgb(1,.5,.2);
+			g.width(8,8);
+			g.stroke();
+			g.rgb(1,1,1);
+			g.width(5,5);
+			g.stroke();
+
 			Present();
 
 			SScincEvent ev;
@@ -930,7 +973,15 @@ int main()
 		}
 		else
 		{
-			stext("FEAR MONSTERS!!",textx,8,0xffffff00);
+			g.clear();
+			DrawText(g,font,"FEAR MONSTERS!!!" ,0,200,18,2.5,1.5);
+			g.fin();
+			g.rgb(.3,0,1);
+			g.width(4,4);
+			g.stroke();
+			g.rgb(.2,.8,1);
+			g.width(2,2);
+			g.stroke();
 		}
 
 		for(int i=0;i<5;i++)

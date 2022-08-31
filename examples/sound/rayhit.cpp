@@ -1,3 +1,4 @@
+#include "sound.h"
 #include "graphics.h"
 
 #pragma STACK_SIZE 25600000
@@ -308,7 +309,7 @@ int main()
 	float tf=Time();
 	while(true)
 	{
-		float t=Time();
+		float t=Time()*2.;
 		hits.Update(t);
 		float dt=t-prevt;
 		hits.ns=hs.sample;
@@ -360,12 +361,9 @@ int main()
 		prevt=t;
 
 
+		while(snd_bufhealth()<3000)
 		{
-			float t1=Time();
-			int nSamples=t1*44100-tf*44100+1;
-			tf=t1;
-			if(nSamples>4000)nSamples=4000;
-			hs.GenerateSamples(nSamples);
+			hs.GenerateSamples(512);
 		}
 
 		//if(0)

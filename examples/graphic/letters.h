@@ -1,807 +1,845 @@
-void MakeLetters()
+void MakeLetters(CFontMaker& fm)
 {
-	CFont& font=*pfont;
-	for(int i=0;i<256;i++)
 	{
-		font.g[i].M(0,0);
-		font.g[i].l(5,0);
-		font.g[i].l(0,8);
-		font.g[i].l(-5,0);
-		font.g[i].l(0,-8);
+		fm.StartGlyph(' ');
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g[' '];
-		g.Init();
+		fm.StartGlyph('!');
+		fm.M(2,0);
+		fm.c( .5,0, .5,0,0,1);
+		fm.c(-.5,0,-.5,0,0,-1);
+		fm.M(2,3);
+		fm.l(0,6);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['!'];
-		g.Init();
-		g.C(2,.5,1.5,.5,1.5,-.5,2,-.5);
-		g.C(2,.5,2.5,.5,2.5,-.5,2,-.5);
-		g.M(2,3);
-		g.l(0,6);
+		fm.StartGlyph('?');
+		fm.M(2,0);
+		fm.c( .5,0, .5,0,0,1);
+		fm.c(-.5,0,-.5,0,0,-1);
+		fm.M(2,3);
+		fm.c(0,2,0,-2,2,4);
+		fm.M(0,7);
+		fm.c(0,3,0,3,4,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['?'];
-		g.Init();
-		g.C(2,.5,1.5,.5,1.5,-.5,2,-.5);
-		g.C(2,.5,2.5,.5,2.5,-.5,2,-.5);
-		//g.M(2,3);
-		//g.l(0,-.5);
-		g.C(2,3,2,5,4,5,4,7);
-		g.C(0,7,0,10,4,10,4,7);
+		fm.StartGlyph('"');
+		fm.M(1,9);
+		fm.l(0,-1);
+		fm.l(-1,-2);
+		fm.M(3,9);
+		fm.l(0,-1);
+		fm.l(-1,-2);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['\"'];
-		g.Init();
-		g.M(1,9);
-		g.l(0,-1);
-		g.l(-1,-2);
-		g.M(3,9);
-		g.l(0,-1);
-		g.l(-1,-2);
+		fm.StartGlyph('#');
+		fm.M(1.25,2);
+		fm.l(3.5,0);
+		fm.M(1.25,5);
+		fm.l(3.5,0);
+		fm.M(2,0);
+		fm.l(0,7);
+		fm.M(4,0);
+		fm.l(0,7);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['#'];
-		g.Init();
-		g.M(0,2);
-		g.l(4,0);
-		g.M(0,5);
-		g.l(4,0);
-		g.M(1,0);
-		g.l(0,7);
-		g.M(3,0);
-		g.l(0,7);
+		fm.StartGlyph('$');
+		fm.M(2,-1);
+		fm.l(0,3);
+		fm.M(2,9);
+		fm.l(0,-3);
+		fm.M(0,6);
+		fm.c(0,2.5,-.5,2,4,0.5);
+		fm.M(0,6);
+		fm.c(0,-2,0,2,4,-4);
+		fm.M(0,1.5);
+		fm.c(.5,-2,0,-2.5,4,.5);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['$'];
-		g.Init();
-		g.M(2,-1);
-		g.l(0,3);
-		g.M(2,9);
-		g.l(0,-3);
-		g.C(0,6,0,8.5,3.5,8.5,4,6.5);
-		g.C(0,6,0,4,4,4,4,2);
-		g.C(0,1.5,.5,-.5,4,-.5,4,2);
+		fm.StartGlyph('%');
+		fm.M(3,0);
+		fm.c( 1.5,0, 1.5,0,0, 2);
+		fm.c(-1.5,0,-1.5,0,0,-2);
+		fm.M(1,5);
+		fm.c( 1.5,0, 1.5,0,0, 2);
+		fm.c(-1.5,0,-1.5,0,0,-2);
+		fm.M(0,0);
+		fm.l(4,7);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['%'];
-		g.Init();
-		g.C(3,2,1.5,2,1.5,0,3,0);
-		g.C(3,2,4.5,2,4.5,0,3,0);
-		g.C(1,7,-.5,7,-.5,5,1,5);
-		g.C(1,7,2.5,7,2.5,5,1,5);
-		g.M(0,0);
-		g.l(4,7);
+		fm.StartGlyph('&');
+		fm.M(5,0);
+		fm.c(-3.5,3,-3.75,1,-2,9);
+		fm.c( 1,-.5,2.,1,-1,-3);
+		fm.c(-2,-1,0,1.,-2,-4);
+		fm.c(1,-4,1,-3,4.,2);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['&'];
-		g.Init();
-		g.C(2.5,9,-1,9,2,3,5,0);
-		g.C(2.5,9,5,7,0,5,0,2);
-		g.C(4.,4,6,0,0,-2,0,2);
+		fm.StartGlyph('\'');
+		fm.M(3,9);
+		fm.l(0,-1);
+		fm.l(-1,-2);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['\''];
-		g.Init();
-		g.M(3,9);
-		g.l(0,-1);
-		g.l(-1,-2);
+		fm.StartGlyph('(');
+		fm.M(3,10);
+		fm.c(-2.75,-3,-2.75,3,0,-11);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['('];
-		g.Init();
-		g.C(3,10,.25,7,.25,2,3,-1);
+		fm.StartGlyph(')');
+		fm.M(1,10);
+		fm.c(2.75,-3,2.75,3,0,-11);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g[')'];
-		g.Init();
-		g.C(1,10,3.75,7,3.75,2,1,-1);
+		fm.StartGlyph('*');
+		fm.M(0,4);
+		fm.l(4,0);
+		fm.M(1,6);
+		fm.l(2,-4);
+		fm.M(3,6);
+		fm.l(-2,-4);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['*'];
-		g.Init();
-		g.M(0,4);
-		g.l(4,0);
-		g.M(1,6);
-		g.l(2,-4);
-		g.M(3,6);
-		g.l(-2,-4);
+		fm.StartGlyph('+');
+		fm.M(0,4);
+		fm.l(4,0);
+		fm.M(2,6);
+		fm.l(0,-4);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['+'];
-		g.Init();
-		g.M(0,4);
-		g.l(4,0);
-		g.M(2,6);
-		g.l(0,-4);
+		fm.StartGlyph(',');
+		fm.M(3,1);
+		fm.l(0,-1);
+		fm.l(-1,-2);
+		//fm.C(2,.5,1.5,.5,1.5,-.5,2,-.5);
+		//fm.C(2,.5,2.5,.5,2.5,-.5,2,-.5);
+		//fm.C(2.5,0,2.5,-1.,2.5,-2.5,1.,-3.);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g[','];
-		g.Init();
-		g.M(3,1);
-		g.l(0,-1);
-		g.l(-1,-2);
-		//g.C(2,.5,1.5,.5,1.5,-.5,2,-.5);
-		//g.C(2,.5,2.5,.5,2.5,-.5,2,-.5);
-		//g.C(2.5,0,2.5,-1.,2.5,-2.5,1.,-3.);
+		fm.StartGlyph('-');
+		fm.M(1,4);
+		fm.l(3,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['-'];
-		g.Init();
-		g.M(1,4);
-		g.l(3,0);
+		fm.StartGlyph('.');
+		fm.M(2,0);
+		fm.c( .5,0, .5,0,0, .75);
+		fm.c(-.5,0,-.5,0,0,-.75);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['.'];
-		g.Init();
-		g.C(2,.5,1.5,.5,1.5,-.5,2,-.5);
-		g.C(2,.5,2.5,.5,2.5,-.5,2,-.5);
+		fm.StartGlyph('/');
+		fm.M(0,0);
+		fm.l(4,9);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['/'];
-		g.Init();
-		g.M(0,0);
-		g.l(4,9);
+		fm.StartGlyph('0');
+		fm.M(2,0);
+		fm.c(-2.75,0,-2.75,0,0, 9);
+		fm.c( 2.75,0, 2.75,0,0,-9);
+		fm.M(1.25,2);
+		fm.l(1.5,5);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['0'];
-		g.Init();
-		g.C(2,9,-.75,9,-.75,0,2,0);
-		g.C(2,9,4.75,9,4.75,0,2,0);
-		g.M(1.25,2);
-		g.l(1.5,5);
+		fm.StartGlyph('1');
+		fm.M(2,0);
+		fm.l(0,9);
+		fm.M(0,0);
+		fm.l(4,0);
+		fm.M(0,7);
+		fm.l(2,2);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['1'];
-		g.Init();
-		g.M(2,0);
-		g.l(0,9);
-		g.M(0,0);
-		g.l(4,0);
-		g.M(0,7);
-		g.l(2,2);
+		fm.StartGlyph('2');
+		fm.M(0,7);
+		fm.c(0,2.6,0,2.6,4,0);
+		fm.c(0,-3.,0,4,-4,-7);
+		fm.l(4,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['2'];
-		g.Init();
-		g.C(0,7,0,9.6,4,9.6,4,7);
-		g.C(4,7,4,4.,0,4,0,0);
-		g.M(0,0);
-		g.l(4,0);
+		fm.StartGlyph('3');
+		fm.M(.25,7);
+		fm.c(0,2.6,0,2.6,3.5,0);
+		fm.c(0,-1.5,1,0,-2,-2);
+		fm.c(2,0,0,1,2.5,-2.5);
+		fm.c(0,-3.,.5,-3,-4.25,-.5);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['3'];
-		g.Init();
-		g.C(.25,7,.25,9.6,3.75,9.6,3.75,7);
-		g.C(3.75,7,3.75,5.5,3,5,2,5);
-		g.C(4,2.5,4,4,3,5,2,5);
-		g.C(0,2,-.5,-.5,4,-1.,4,2.5);
+		fm.StartGlyph('4');
+		fm.M(4,0);
+		fm.l(0,9);
+		fm.l(-4,-6);
+		fm.l(5,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['4'];
-		g.Init();
-		g.M(4,0);
-		g.l(0,9);
-		g.l(-4,-6);
-		g.l(5,0);
+		fm.StartGlyph('5');
+		fm.M(4,9);
+		fm.l(-4,0);
+		fm.l(0,-4.5);
+		fm.c(1.,3,0,3,4,-1.5);
+		fm.c(0,-3,1,-2.5,-4,-1.5);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['5'];
-		g.Init();
-		g.M(4,9);
-		g.l(-4,0);
-		g.l(0,-4.5);
-		g.C(0,4.5,1,7,4,6.5,4,3);
-		g.C(0,2,-.0,-1.,4,-1.,4,3);
+		fm.StartGlyph('6');
+		fm.M(0,2.5);
+		fm.c(0,3.5,0,3.5,4,0);
+		fm.c(0,-3.5,0,-3.5,-4,0);
+		fm.c(-.5,7.5,-1,1,3.5,6);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['6'];
-		g.Init();
-		g.C(0,2.5,-.5,10.,2.5,9.5,3.5,8.5);
-		g.C(0,2.5,0,6.,4,6.,4,2.5);
-		g.C(0,2.5,0,-1.,4,-1.,4,2.5);
+		fm.StartGlyph('7');
+		fm.M(0,9);
+		fm.l(4,0);
+		fm.c(-2,-4,0,2,-2,-9);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['7'];
-		g.Init();
-		g.C(2,0,2,4,3,7,4,9);
-		g.l(-4,0);
+		fm.StartGlyph('8');
+		fm.M(2,9);
+		fm.c(-2.25,0,-2.25, 0,0,-4);
+		fm.c(-2.75,0,-2.75, 0,0,-5);
+		fm.c( 2.75,0, 2.75, 0,0, 5);
+		fm.c( 2.25,0, 2.25, 0,0, 4);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['8'];
-		g.Init();
-		g.C(2,9,-.25,9,-.25,5.,2,5.);
-		g.C(2,5.,-.75,5.,-.75,0,2,0);
-		g.C(2,9,4.25,9,4.25,5.,2,5.);
-		g.C(2,5.,4.75,5.,4.75,0,2,0);
+		fm.StartGlyph('9');
+		fm.M(4,6.5);
+		fm.c(0,-3.5, 0,-3.5,-4,0);
+		fm.c(0, 3.5, 0, 3.5, 4,0);
+		fm.c(0,-7.5, 1, -.5,-3.5,-6);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['9'];
-		g.Init();
-		g.C(0,6.5,0,10,4,10,4,6.5);
-		g.C(0,6.5,0,3,4,3.,4,6.5);
-		g.C(.5,.5,1.5,0,4,-1,4,6.5);
+		fm.StartGlyph(':');
+		fm.M(2,.75);
+		fm.l(0,.5);
+		fm.M(1.75,1);
+		fm.l(.5,0);
+		fm.M(2,4.75);
+		fm.l(0,.5);
+		fm.M(1.75,5);
+		fm.l(.5,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g[':'];
-		g.Init();
-		g.M(2,.75);
-		g.l(0,.5);
-		g.M(1.75,1);
-		g.l(.5,0);
-		g.M(2,4.75);
-		g.l(0,.5);
-		g.M(1.75,5);
-		g.l(.5,0);
+		fm.StartGlyph(';');
+		fm.M(2,1);
+		fm.l(0,-1);
+		fm.l(-1,-2);
+		fm.M(2,4.75);
+		fm.l(0,.5);
+		fm.M(1.75,5);
+		fm.l(.5,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g[';'];
-		g.Init();
-		g.M(2,1);
-		g.l(0,-1);
-		g.l(-1,-2);
-		g.M(2,4.75);
-		g.l(0,.5);
-		g.M(1.75,5);
-		g.l(.5,0);
+		fm.StartGlyph('<');
+		fm.M(3.5,2);
+		fm.l(-3.5,2);
+		fm.l(3.5,2);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['<'];
-		g.Init();
-		g.M(3.5,2);
-		g.l(-3.5,2);
-		g.l(3.5,2);
+		fm.StartGlyph('=');
+		fm.M(.5,3);
+		fm.l(3.5,0);
+		fm.M(.5,5);
+		fm.l(3.5,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['='];
-		g.Init();
-		g.M(.5,3);
-		g.l(3.5,0);
-		g.M(.5,5);
-		g.l(3.5,0);
+		fm.StartGlyph('>');
+		fm.M(.5,2);
+		fm.l(3.5,2);
+		fm.l(-3.5,2);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['>'];
-		g.Init();
-		g.M(.5,2);
-		g.l(3.5,2);
-		g.l(-3.5,2);
+		fm.StartGlyph('@');
+		fm.M(.5,4);
+		fm.c(2.,.5,0,1,1.5,-3);
+		fm.c(0,1.5,0,1.5,-2,0);
+		fm.c(0,-1.5,0,-1.5,2,0);
+		fm.c(0,-1.5,0,-1.5,2,0);
+		fm.c(0,1.5,3,0,-2.5,5.25);
+		fm.c(-.5,0,.5,.25,-1.5,-.25);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['@'];
-		g.Init();
-		g.C(4,2,4,5,3,6,1,6);
-		g.C(1,6,1,6,.5,6,0,5.75);
-		g.C(2,2,2,-.5,4,-.5,4,2);
-		g.C(0,1.5,0,  3,2,2,2,1.5);
-		g.C(0,1.5,0,-.5,2,0,2,1.5);
-		g.C(2,2,2.5,4,1,4.5,0,4);
+		fm.StartGlyph('A');
+		fm.M(0,0);
+		fm.l(2.,9);
+		fm.l(2.,-9);
+		fm.M(1,3);
+		fm.l(2.,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['A'];
-		g.Init();
-		g.M(0,0);
-		g.l(2.,9);
-		g.l(2.,-9);
-		g.M(1,3);
-		g.l(2.,0);
+		fm.StartGlyph('B');
+		fm.M(0,5);
+		fm.l(2,0);
+		fm.M(2,0);
+		fm.l(-2,0);
+		fm.l(0,9);
+		fm.l(1.75,0);
+		fm.c(2.75,0,2.75,0,0,-4);
+		fm.m(.25,0);
+		fm.c(3,0,3,0,0,-5);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['B'];
-		g.Init();
-		g.M(2,0);
-		g.l(-2,0);
-		g.l(0,9);
-		g.l(1,0);
-		g.M(0,5);
-		g.l(2,0);
-		g.C(1,9,4.75,9,4.75,5,1,5);
-		g.C(2,5,5,5,5,0,2,0);
+		fm.StartGlyph('C');
+		fm.M(4,7);
+		fm.c(-.5,   3,   0,   5,-4,-2.5);
+		fm.c(  0,-5.5, -.5,-3.5, 4,-2.5);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['C'];
-		g.Init();
-		g.C(0,5,0,-1,3.5,-1,4,2);
-		g.C(0,5,0,10,3.5,10,4,7);
+		fm.StartGlyph('D');
+		fm.M(1.5,0);
+		fm.l(-1.5,0);
+		fm.l(0,9);
+		fm.l(1.5,0);
+		fm.c(3.5,0,3.5,0,0,-9);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['D'];
-		g.Init();
-		g.M(2,0);
-		g.l(-2,0);
-		g.l(0,9);
-		g.l(2,0);
-		g.C(2,9,5,9,5,0,2,0);
+		fm.StartGlyph('E');
+		fm.M(4,0);
+		fm.l(-4,0);
+		fm.l(0,9);
+		fm.l(4,0);
+		fm.M(0,5);
+		fm.l(3,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['E'];
-		g.Init();
-		g.M(4,0);
-		g.l(-4,0);
-		g.l(0,9);
-		g.l(4,0);
-		g.M(0,5);
-		g.l(3,0);
+		fm.StartGlyph('F');
+		fm.M(0,0);
+		fm.l(0,9);
+		fm.l(4,0);
+		fm.M(0,5);
+		fm.l(3,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['F'];
-		g.Init();
-		g.M(0,0);
-		g.l(0,9);
-		g.l(4,0);
-		g.M(0,5);
-		g.l(3,0);
+		fm.StartGlyph('G');
+		fm.M(4,7);
+		fm.c(-.5,   3,   0,   5,-4,-2.5);
+		fm.c(  0,-5.5, -.5,-3.5, 4,-2.5);
+		fm.M(4,0);
+		fm.l(0,4);
+		fm.l(-2,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['G'];
-		g.Init();
-		g.C(0,5,0,-1,3,-1.5,4,2);
-		g.C(0,5,0,10,3.5,10,4,7);
-		g.M(4,0);
-		g.l(0,4);
-		g.l(-2,0);
+		fm.StartGlyph('H');
+		fm.M(0,0);
+		fm.l(0,9);
+		fm.M(4,0);
+		fm.l(0,9);
+		fm.M(0,5);
+		fm.l(4,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['H'];
-		g.Init();
-		g.M(0,0);
-		g.l(0,9);
-		g.M(4,0);
-		g.l(0,9);
-		g.M(0,5);
-		g.l(4,0);
+		fm.StartGlyph('I');
+		fm.M(1,0);
+		fm.l(2,0);
+		fm.M(1,9);
+		fm.l(2,0);
+		fm.M(2,0);
+		fm.l(0,9);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['I'];
-		g.Init();
-		g.M(1,0);
-		g.l(2,0);
-		g.M(1,9);
-		g.l(2,0);
-		g.M(2,0);
-		g.l(0,9);
+		fm.StartGlyph('J');
+		fm.M(1,9);
+		fm.l(3,0);
+		fm.M(4,9);
+		fm.l(0,-7);
+		fm.c(0,-2.75,0,-2.75,-4,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['J'];
-		g.Init();
-		g.M(1,9);
-		g.l(3,0);
-		g.M(4,9);
-		g.l(0,-7);
-		g.C(0,2,0,-.75,4,-.75,4,2);
+		fm.StartGlyph('K');
+		fm.M(0,0);
+		fm.l(0,9);
+		fm.M(0,4);
+		fm.l(3.5,5);
+		fm.M(1,5.5);
+		fm.l(3,-5.5);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['K'];
-		g.Init();
-		g.M(0,0);
-		g.l(0,9);
-		g.M(0,4);
-		g.l(3.5,5);
-		g.M(1,5.5);
-		g.l(3,-5.5);
+		fm.StartGlyph('L');
+		fm.M(0,9);
+		fm.l(0,-9);
+		fm.l(4,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['L'];
-		g.Init();
-		g.M(0,9);
-		g.l(0,-9);
-		g.l(4,0);
+		fm.StartGlyph('M');
+		fm.M(0,0);
+		fm.l(0,9);
+		fm.l(2,-6);
+		fm.l(2,6);
+		fm.l(0,-9);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['M'];
-		g.Init();
-		g.M(0,0);
-		g.l(0,9);
-		g.l(2,-6);
-		g.l(2,6);
-		g.l(0,-9);
+		fm.StartGlyph('N');
+		fm.M(0,0);
+		fm.l(0,9);
+		fm.l(4,-9);
+		fm.l(0,9);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['N'];
-		g.Init();
-		g.M(0,0);
-		g.l(0,9);
-		g.l(4,-9);
-		g.l(0,9);
+		fm.StartGlyph('O');
+		fm.M(2,9);
+		fm.c(-2.75,0,-2.75,0,0,-9);
+		fm.c( 2.75,0, 2.75,0,0, 9);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['O'];
-		g.Init();
-		g.C(2,9,-.75,9,-.75,0,2,0);
-		g.C(2,9,4.75,9,4.75,0,2,0);
+		fm.StartGlyph('P');
+		fm.M(0,4);
+		fm.l(2,0);
+		fm.M(0,0);
+		fm.l(0,9);
+		fm.l(2,0);
+		fm.c(2.75,0,2.75,0,0,-5);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['P'];
-		g.Init();
-		g.M(0,0);
-		g.l(0,9);
-		g.l(2,0);
-		g.M(0,4);
-		g.l(2,0);
-		g.C(2,9,5,9,5,4,2,4);
-	}
-	{
-		CGlyph& g=font.g['Q'];
-		g.Init();
-		g.C(2,9,-.75,9,-.75,0,2,0);
-		g.C(2,9,4.75,9,4.75,0,2,0);
-		g.C(2,2,2,1,3,-1,4,-1);
+		fm.StartGlyph('Q');
+		fm.M(2,9);
+		fm.c(-2.75,0,-2.75,0,0,-9);
+		fm.c( 2.75,0, 2.75,0,0, 9);
+		fm.M(2,2);
+		fm.c(0,-1,-1,0,2,-3);
 		
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['R'];
-		g.Init();
-		g.M(0,0);
-		g.l(0,9);
-		g.l(2,0);
-		g.M(0,4);
-		g.l(2,0);
-		g.C(2,9,4.5,9,4.5,4,2,4);
-		g.C(1.5,4,3.5,3.5,3,.5,5,0);
+		fm.StartGlyph('R');
+		fm.M(0,4);
+		fm.l(2,0);
+		fm.M(0,0);
+		fm.l(0,9);
+		fm.l(2,0);
+		fm.c(2.75,0,2.75,0,0,-5);
+		fm.M(1.5,4);
+		fm.c(1.5,-.5,-1.5,1,2.75,-4);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['S'];
-		g.Init();
-		g.C(0,7,0,9.5,3.,9.5,3.5,7.75);
-		g.C(0,7,0,5,4,5,4,2);
-		g.C(0,1.5,.5,-.5,4,-.5,4,2);
+		fm.StartGlyph('S');
+		fm.M(3.5,7.5);
+		fm.c(-0,2.,0,2,-3.5,0);
+		fm.c(0,-2.5,0,3,4,-5.5);
+		fm.c(-.5,-3.5,0,-1.5,-4,-.5);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['T'];
-		g.Init();
-		g.M(2,0);
-		g.l(0,9);
-		g.M(0,9);
-		g.l(4,0);
+		fm.StartGlyph('T');
+		fm.M(2,0);
+		fm.l(0,9);
+		fm.M(0,9);
+		fm.l(4,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['U'];
-		g.Init();
-		g.M(0,2.5);
-		g.l(0,6.5);
-		g.M(4,2.5);
-		g.l(0,6.5);
-		g.C(0,2.5,0,-1,4,-1,4,2.5);
+		fm.StartGlyph('U');
+		fm.M(0,9);
+		fm.l(0,-7);
+		fm.c(0,-2.75,0,-2.75,4,0);
+		fm.l(0,7);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['V'];
-		g.Init();
-		g.M(0,9);
-		g.l(2,-9);
-		g.l(2,9);
+		fm.StartGlyph('V');
+		fm.M(0,9);
+		fm.l(2,-9);
+		fm.l(2,9);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['W'];
-		g.Init();
-		g.M(0,9);
-		g.l(1,-9);
-		g.l(1,7);
-		g.l(1,-7);
-		g.l(1,9);
+		fm.StartGlyph('W');
+		fm.M(0,9);
+		fm.l(1,-9);
+		fm.l(1,7);
+		fm.l(1,-7);
+		fm.l(1,9);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['X'];
-		g.Init();
-		g.M(0,9);
-		g.l(4,-9);
-		g.M(0,0);
-		g.l(4,9);
+		fm.StartGlyph('X');
+		fm.M(0,9);
+		fm.l(4,-9);
+		fm.M(0,0);
+		fm.l(4,9);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['Y'];
-		g.Init();
-		g.M(0,9);
-		g.l(2,-5);
-		g.l(2,5);
-		g.M(2,4);
-		g.l(0,-4);
+		fm.StartGlyph('Y');
+		fm.M(0,9);
+		fm.l(2,-5);
+		fm.l(2,5);
+		fm.M(2,4);
+		fm.l(0,-4);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['Z'];
-		g.Init();
-		g.M(0,9);
-		g.l(4,0);
-		g.l(-4,-9);
-		g.l(4,0);
+		fm.StartGlyph('Z');
+		fm.M(0,9);
+		fm.l(4,0);
+		fm.l(-4,-9);
+		fm.l(4,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['['];
-		g.Init();
-		g.M(3,-1);
-		g.l(-2,0);
-		g.l(0,11);
-		g.l(2,0);
+		fm.StartGlyph('[');
+		fm.M(4,-1);
+		fm.l(-2,0);
+		fm.l(0,11);
+		fm.l(2,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['\\'];
-		g.Init();
-		g.M(4,0);
-		g.l(-4,9);
+		fm.StartGlyph('\\');
+		fm.M(4,0);
+		fm.l(-4,9);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['^'];
-		g.Init();
-		g.M(0,7);
-		g.l(2,2);
-		g.l(2,-2);
+		fm.StartGlyph('^');
+		fm.M(0,7);
+		fm.l(2,2);
+		fm.l(2,-2);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['_'];
-		g.Init();
-		g.M(0,0);
-		g.l(4,0);
+		fm.StartGlyph('_');
+		fm.M(0,0);
+		fm.l(4,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g[']'];
-		g.Init();
-		g.M(1,-1);
-		g.l(2,0);
-		g.l(0,11);
-		g.l(-2,0);
+		fm.StartGlyph(']');
+		fm.M(0,-1);
+		fm.l(2,0);
+		fm.l(0,11);
+		fm.l(-2,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['`'];
-		g.Init();
-		g.M(2,9);
-		g.l(0,-1);
-		g.l(1,-1);
+		fm.StartGlyph('`');
+		fm.M(2,9);
+		fm.l(0,-1);
+		fm.l(1,-1);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['a'];
-		g.Init();
-		g.C(0,5,1,6.5,4,6.5,4,4);
-		g.l(0,-3);
-		g.C(4,1,4,1,4.5,0,5,0);
-		g.C(0,1.75,0,5,4,4,4,2);
-		g.C(0,1.75,0,-1.,4,-.5,4,2);
+		fm.StartGlyph('a');
+		fm.M(0,5.5);
+		fm.c(1,1,0,2.5,4,-1.5);
+		fm.l(0,-2);
+		fm.c(0,-2.5,0,-3,-4,0);
+		fm.c(0,3,0,2.5,4,0);
+		fm.c(0,-1,-.5,-0,1,-2);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['b'];
-		g.Init();
-		g.M(0,0);
-		g.l(0,9);
-		g.C(0,3,0,7,4,7,4,3);
-		g.C(0,3,0,-1,4,-1,4,3);
+		fm.StartGlyph('b');
+		fm.M(0,0);
+		fm.l(0,9);
+		fm.M(0,3);
+		fm.c(0,4,0,4,4,0);
+		fm.c(0,-4,0,-4,-4,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['c'];
-		g.Init();
-		g.C(0,3,0,6.5,3.5,7.,4,4.5);
-		g.C(0,3,0,-.5,3.5,-1.,4,1.5);
+		fm.StartGlyph('c');
+		fm.M(4,5);
+		fm.c(-.5,1.5,0,3.5,-4,-2);
+		fm.c(0,-3.5,-.5,-2,4,-2);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['d'];
-		g.Init();
-		g.C(0,3,0,7,4,7,4,3);
-		g.C(0,3,0,-1,4,-1,4,3);
-		g.M(4,0);
-		g.l(0,9);
+		fm.StartGlyph('d');
+		fm.M(0,3);
+		fm.c(0,4,0,4,4,0);
+		fm.c(0,-4,0,-4,-4,0);
+		fm.M(4,0);
+		fm.l(0,9);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['e'];
-		g.Init();
-		g.C(0,3,0,7.5,4.5,6.5,4,3);
-		g.C(0,3,0,-.5,3.5,-.5,4,1.);
-		g.M(4,3);
-		g.l(-4,0);
+		fm.StartGlyph('e');
+		fm.M(0,3);
+		fm.l(4,0);
+		fm.c(0.5,4.,0,4.5,-4,0);
+		fm.c(0,-4,-1.,-1.5,4,-2);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['f'];
-		g.Init();
-		g.M(2,0);
-		g.l(0,8);
-		g.C(2,8,2,9.5,4.5,9.5,5,8);
-		g.M(1,6);
-		g.l(3,0);
+		fm.StartGlyph('f');
+		fm.M(1,6);
+		fm.l(3,0);
+		fm.M(2,0);
+		fm.l(0,8);
+		fm.c(0,1.5,-.5,1.5,3.,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['g'];
-		g.Init();
-		g.C(0,4,0,6.7,4,6.7,4,4);
-		g.C(0,4,0,1.3,4,1.3,4,4);
-		g.C(0,-1,0,.5,4,.5,4,-1);
-		g.C(0,-1,0,-2.5,4,-2.5,4,-1);
-		g.C(1,2,0,1.5,0,.5,1,0);
-		g.C(3.5,5.5,3.5,6.,4.,6.5,4.5,6);
+		fm.StartGlyph('g');
+		fm.M(0,4);
+		fm.c(0, 2.7, 0, 2.7, 4,0);
+		fm.c(0,-2.7, 0,-2.7,-4,0);
+		fm.M(0,-1);
+		fm.c(0, 1.5,0, 1.5, 4,0);
+		fm.c(0,-1.5,0,-1.5,-4,0);
+		fm.M(1,2.25);
+		fm.c(-1.5,0,-1.5,0,0,-2.25);
+		fm.M(3.75,5.25);
+		fm.c(.25,.5,-.5,.25,1.25,.5);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['h'];
-		g.Init();
-		g.M(0,0);
-		g.l(0,9);
-		g.C(0,4,1,6.5,4,7,4,4);
-		g.l(0,-4);
+		fm.StartGlyph('h');
+		fm.M(0,0);
+		fm.l(0,9);
+		fm.M(0,4);
+		fm.c(1,2.5,0,3,4,0);
+		fm.l(0,-4);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['i'];
-		g.Init();
-		g.M(2,0);
-		g.l(0,6);
-		g.M(1,0);
-		g.l(2,0);
-		g.M(1,6);
-		g.l(1,0);
-		g.M(2,7.75);
-		g.l(0,.5);
-		g.M(1.75,8);
-		g.l(.5,0);
-		//g.C(2,7.9,1.85,7.9,1.85,8.2,2,8.2);
-		//g.C(2,7.9,2.15,7.9,2.15,8.2,2,8.2);
-		//g.M(1.8,7.9);
-		//g.l( .2, .2);
-		//g.l( .2,-.2);
-		//g.l(-.2,-.2);
-		//g.l(-.2, .2);
+		fm.StartGlyph('i');
+		fm.M(2,0);
+		fm.l(0,6);
+		fm.M(1,0);
+		fm.l(2,0);
+		fm.M(1,6);
+		fm.l(1,0);
+		fm.M(2,7.75);
+		fm.l(0,.5);
+		fm.M(1.75,8);
+		fm.l(.5,0);
+		//fm.C(2,7.9,1.85,7.9,1.85,8.2,2,8.2);
+		//fm.C(2,7.9,2.15,7.9,2.15,8.2,2,8.2);
+		//fm.M(1.8,7.9);
+		//fm.l( .2, .2);
+		//fm.l( .2,-.2);
+		//fm.l(-.2,-.2);
+		//fm.l(-.2, .2);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['j'];
-		g.Init();
-		g.M(2,6);
-		g.l(2,0);
-		g.l(0,-6);
-		g.C(4,0,4,-2.75,0,-2.75,0,0);
-		g.M(4,7.75);
-		g.l(0,.5);
-		g.M(3.75,8);
-		g.l(.5,0);
+		fm.StartGlyph('j');
+		fm.M(2,6);
+		fm.l(2,0);
+		fm.l(0,-6);
+		fm.M(4,0);
+		fm.c(0,-2.75,0,-2.75,-4,0);
+		fm.M(4,7.75);
+		fm.l(0,.5);
+		fm.M(3.75,8);
+		fm.l(.5,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['l'];
-		g.Init();
-		g.M(2,0);
-		g.l(0,9);
-		g.M(0,0);
-		g.l(4,0);
-		g.M(0,9);
-		g.l(2,0);
+		fm.StartGlyph('l');
+		fm.M(2,0);
+		fm.l(0,9);
+		fm.M(0,0);
+		fm.l(4,0);
+		fm.M(0,9);
+		fm.l(2,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['k'];
-		g.Init();
-		g.M(0,0);
-		g.l(0,9);
-		g.M(0,2);
-		g.L(3.5,6);
-		g.M(1.5,3);
-		g.L(4,0);
+		fm.StartGlyph('k');
+		fm.M(0,0);
+		fm.l(0,9);
+		fm.M(0,2);
+		fm.L(3.5,6);
+		fm.M(1.5,3);
+		fm.L(4,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['m'];
-		g.Init();
-		g.M(0,0);
-		g.l(0,6);
-		g.C(0,5,0,6.35,2,6.35,2,5);
-		g.l(0,-5);
-		g.M(2,5);
-		g.C(2,5,2,6.35,4,6.35,4,5);
-		g.l(0,-5);
+		fm.StartGlyph('m');
+		fm.M(0,0);
+		fm.l(0,6);
+		fm.M(0,4.5);
+		fm.c(0,1.35,0,1.75,2,.5);
+		fm.l(0,-5);
+		fm.M(2,4.5);
+		fm.c(0,1.35,0,1.75,2,.5);
+		fm.l(0,-5);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['n'];
-		g.Init();
-		g.M(0,0);
-		g.l(0,6);
-		g.C(0,4,1,6.5,4,7,4,4);
-		g.l(0,-4);
+		fm.StartGlyph('n');
+		fm.M(0,0);
+		fm.l(0,6);
+		fm.M(0,4);
+		fm.c(1,2.5,0,3,4,0);
+		fm.l(0,-4);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['o'];
-		g.Init();
-		g.C(0,3,0,7,4,7,4,3);
-		g.C(0,3,0,-1,4,-1,4,3);
+		fm.StartGlyph('o');
+		fm.M(0,3);
+		fm.c(0, 4,0, 4, 4,0);
+		fm.c(0,-4,0,-4,-4,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['p'];
-		g.Init();
-		g.M(0,6);
-		g.l(0,-9);
-		g.C(0,3,0,7,4,7,4,3);
-		g.C(0,3,0,-1,4,-1,4,3);
+		fm.StartGlyph('p');
+		fm.M(0,6);
+		fm.l(0,-9);
+		fm.M(0,3);
+		fm.c(0, 4,0, 4, 4,0);
+		fm.c(0,-4,0,-4,-4,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['q'];
-		g.Init();
-		g.M(4,6);
-		g.l(0,-9);
-		g.C(0,3,0,7,4,7,4,3);
-		g.C(0,3,0,-1,4,-1,4,3);
+		fm.StartGlyph('q');
+		fm.M(4,6);
+		fm.l(0,-9);
+		fm.M(0,3);
+		fm.c(0, 4,0, 4, 4,0);
+		fm.c(0,-4,0,-4,-4,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['r'];
-		g.Init();
-		g.M(0,0);
-		g.l(0,6);
-		g.C(0,3,1,7,4,6,4,5);
+		fm.StartGlyph('r');
+		fm.M(0,0);
+		fm.l(0,6);
+		fm.M(0,3);
+		fm.c(.5,3,-1,2,4,2);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['s'];
-		g.Init();
-		g.C(0,4.5,0,6.5,3.5,6.5,4,5);
-		g.C(0,4.5,0,2.5,4,3.5,4,1.5);
-		g.C(0,1.,.5,-.5,4,-.5,4,1.5);
+		fm.StartGlyph('s');
+		fm.M(4,4.75);
+		fm.c(-.5,2.,0,2,-4,-.25);
+		fm.c(0,-1.75,0,2,4,-3);
+		fm.c(0,-2,0,-2,-4,-.25);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['t'];
-		g.Init();
-		g.M(1,9);
-		g.l(0,-8);
-		g.M(0,6);
-		g.l(4,0);
-		g.C(1,1,1,-.5,3.5,-.5,4,1);
+		fm.StartGlyph('t');
+		fm.M(1,6);
+		fm.l(3,0);
+		fm.M(2,9);
+		fm.l(0,-8);
+		fm.c(0,-1.5,-.5,-1.5,2.5,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['u'];
-		g.Init();
-		g.M(4,0);
-		g.l(0,6);
-		g.C(4,2,4,0,0,-1.5,0,2);
-		g.l(0,4);
+		fm.StartGlyph('u');
+		fm.M(0,6);
+		fm.l(0,-4);
+		fm.c(0,-3,0,-3,4,0);
+		fm.l(0,4);
+		fm.M(4,2);
+		fm.l(0,-2);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['v'];
-		g.Init();
-		g.M(0,6);
-		g.l(2,-6);
-		g.l(2,6);
+		fm.StartGlyph('v');
+		fm.M(0,6);
+		fm.l(2,-6);
+		fm.l(2,6);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['w'];
-		g.Init();
-		g.M(0,6);
-		g.l(.5,-6);
-		g.l(1.5,5);
-		g.l(1.5,-5);
-		g.l(.5,6);
+		fm.StartGlyph('w');
+		fm.M(0,6);
+		fm.l(.5,-6);
+		fm.l(1.5,5);
+		fm.l(1.5,-5);
+		fm.l(.5,6);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['x'];
-		g.Init();
-		g.M(0,6);
-		g.l(4,-6);
-		g.M(0,0);
-		g.l(4,6);
+		fm.StartGlyph('x');
+		fm.M(0,6);
+		fm.l(4,-6);
+		fm.M(0,0);
+		fm.l(4,6);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['y'];
-		g.Init();
-		g.M(0,6);
-		g.l(2,-6);
-		g.M(4,6);
-		g.l(-3,-9);
+		fm.StartGlyph('y');
+		fm.M(0,6);
+		fm.l(2,-6);
+		fm.M(4,6);
+		fm.l(-3,-9);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['z'];
-		g.Init();
-		g.M(0,6);
-		g.l(4,0);
-		g.l(-4,-6);
-		g.l(4,0);
+		fm.StartGlyph('z');
+		fm.M(0,6);
+		fm.l(4,0);
+		fm.l(-4,-6);
+		fm.l(4,0);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['{'];
-		g.Init();
-		g.C(4,-1,0,-1,4,5,0,5);
-		g.C(4,10,0,10,4,5,0,5);
+		fm.StartGlyph('{');
+		fm.M(4,-1);
+		fm.c(-4,0, 4,0,-4,5);
+		fm.c( 4,0,-4,0, 4,5);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['|'];
-		g.Init();
-		g.M(2,0);
-		g.l(0,4);
-		g.M(2,5);
-		g.l(0,4);
+		fm.StartGlyph('|');
+		fm.M(2,0);
+		fm.l(0,4);
+		fm.M(2,5);
+		fm.l(0,4);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['}'];
-		g.Init();
-		g.C(0,-1,4,-1,0,5,4,5);
-		g.C(0,10,4,10,0,5,4,5);
+		fm.StartGlyph('}');
+		fm.M(0,-1);
+		fm.c( 4,0,-4,0, 4,5);
+		fm.c(-4,0, 4,0,-4,5);
+		fm.EndGlyph();
 	}
 	{
-		CGlyph& g=font.g['~'];
-		g.Init();
-		g.C(0,7.5,1.5,12,2.5,4,4,8.5);
+		fm.StartGlyph('~');
+		fm.M(0,7.5);
+		fm.c(1.5,3,-1.5,-3,4,0);
+		fm.EndGlyph();
 	}
-
 }

@@ -5,7 +5,7 @@
 #else
 #define G_SCREEN_SCALE 4
 #endif
-#define G_SCREEN_MODE 1
+#define G_SCREEN_MODE 3
 
 #include "sound.h"
 #include "graphics.h"
@@ -71,14 +71,14 @@ int MakeShootSound(int len)
 			float l=sin(x)*v*sin(f*M_PI*14);
 			if(f<0.25)l=l+sin(x*8.)*bell_curve3(f/0.25)*0.25*cos(f*M_PI*14.);
 			snd_data(res,i,l,l);
-			t+=1./44100.*(f*f)*2.2;
+			t+=1./48000.*(f*f)*2.2;
 			f+=dlen;
 		}
 	}
 	return res;
 }
 
-int adseed=32845720983;
+int adseed=3284520983;
 
 void AddDing(int len, float* a, int p, float w, float V)
 {
@@ -391,8 +391,8 @@ struct MLFig
 MLFig mlfs[25];
 
 #define NREMLINES 6
-#define W 10
-#define H 20
+#define W 12
+#define H 24
 class Game
 {
 public:
@@ -474,6 +474,11 @@ public:
 		//}
 	}
 
+	void Restore()
+	{
+
+	}
+
 	void NewPiece()
 	{
 		falling=false;
@@ -507,21 +512,20 @@ public:
 	{
 		//nextPiece=irand(gseed)%MAXPIECE;
 		//nextcol=irand(gseed)%7;
-		gameOver=false;
 		pa=0;
 		NewPiece();
 		NewPiece();
 		t=0;
 		scores=0;
 		unPaused=true;
-		cellSize=10;
+		cellSize=8;
 		x=G_SCREEN_WIDTH/2 -W*cellSize/2+.5;
 		y=G_SCREEN_HEIGHT/2-H*cellSize/2+.5;
 		//field=(int*)malloc(sizeof(int)*W*H);
 		//fieldD=(float*)malloc(sizeof(float)*W*H);
 		ClearField();
-		InitFig();
 		lastRemLine=0;
+		gameOver=false;
 	}
 
 	void DrawChip(int j, int i, float d, int col)
@@ -909,8 +913,8 @@ public:
 		//}
 		else if(key==4008)
 		{
-			ClearField();
-			NewPiece();	
+//			Init();
+			Restore();
 		}
 		else if(key==5103)
 		{
@@ -1164,6 +1168,7 @@ int main()
 	float tframe0;
 	tframe0=Time();
 	game.Init();
+	game.InitFig();
 	while(true)
 	{
 		//game.piece=24;
@@ -1185,6 +1190,14 @@ int main()
 		//stext(s,10,10,0xffffffff);
 
 		if(!game.unPaused)stext("Paused",10,20,0xffff0000);
+		if(game.gameOver)
+		{
+			stext("Game Over",134,30,0xffffff00);
+			stext("Game Over",136,30,0xffffff00);
+			stext("Game Over",135,31,0xffffff00);
+			stext("Game Over",135,29,0xffffff00);
+			stext("Game Over",135,30,0xffff0000);
+		}
 		stext("Next",40,30,0xff00ffff);
 
 		int mb;
@@ -1218,6 +1231,10 @@ int main()
 				{
 					exit(0);
 				}
+				else if(key==2001)
+				{
+					game.unPaused=!game.unPaused;
+				}
 				else if(key=='a')
 				{
 					offsets[game.piece*8+ga*2]--;
@@ -1243,7 +1260,7 @@ int main()
 					game.Key(key);
 				}
 
-				//printf("Key pressed %i %i\n", key, press);
+				printf("Key pressed %i %i\n", key, press);
 			}
 		}
 
