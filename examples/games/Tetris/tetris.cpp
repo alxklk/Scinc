@@ -5,12 +5,14 @@
 #else
 #define G_SCREEN_SCALE 4
 #endif
-#define G_SCREEN_MODE 3
+#define G_SCREEN_MODE 1
 
 #include "sound.h"
 #include "graphics.h"
 #include "penta.h"
 #include "minos.h"
+#include "../../ui/menu/menu.h"
+
 int gseed=4734234;
 
 int MAXPIECE=25;
@@ -78,7 +80,7 @@ int MakeShootSound(int len)
 	return res;
 }
 
-int adseed=3284520983;
+int adseed=384520983;
 
 void AddDing(int len, float* a, int p, float w, float V)
 {
@@ -1163,14 +1165,81 @@ public:
 
 Game game;
 
+SMenu menu;
+int menuPauseIndex=-1;
+
+int Strcmp(char* l, char* r)
+{
+	for(int i=0;i<256;i++)
+	{
+		if(l[i]==r[i])
+		{
+			if(l[i]==0)
+				return 0;
+			continue;
+		}
+		if(l[i]!=0)return 1;
+		if(r[i]!=0)return -1;
+	}
+}
+
+int MenuCommand0(char* command, int arg)
+{
+	//printf(" Callback for menu '%s' %i\n", command, arg);
+	if(Strcmp(command, "game_pause")==0)
+	{
+		printf("pause %i\n", menuPauseIndex);
+		game.unPaused=!game.unPaused;
+		if(game.unPaused)
+			menu.mi[menuPauseIndex].name="Pause";
+		else
+			menu.mi[menuPauseIndex].name="Unpause";
+	}
+	else if(Strcmp(command, "game_new")==0)
+	{
+		printf("restart %i\n", menuPauseIndex);
+		game.Init();
+	}
+	return 0;
+}
+
 int main()
 {
+
+	menu.Init();
+	menu.bg=0x80ffffff;
+	menu.cmdHandler=&MenuCommand0;
+
+	menu.Create()
+	.P("=")
+		.M("About","about")
+		.M("Exit","exit")
+	.P("Game")
+		.M("New","game_new")
+		.M("Pause","game_pause").GetIndex(menuPauseIndex)
+	.P("Help")
+		.M("How to play","help")
+	;
+
 	float tframe0;
 	tframe0=Time();
 	game.Init();
 	game.InitFig();
 	while(true)
 	{
+
+		SScincEvent ev;
+		while(GetScincEvent(ev))
+		{
+			if(menu.MenuHandleEvent(0,0,640,20,ev))
+			{
+				printf(" Event %c%c%c%c handled by menu\n",
+					(ev.type&0xff000000)>>24,(ev.type&0xff0000)>>16,(ev.type&0xff00)>>8,(ev.type&0xff)
+				);
+				continue;
+			}
+		}
+
 		//game.piece=24;
 		float tframe1=Time();
 		float dt=tframe1-tframe0;
@@ -1282,6 +1351,7 @@ int main()
 			puts(sof);
 		}
 */
+		menu.MenuDraw(g,0,0,640,20);
 		Present();
 	}
 	return 0;
