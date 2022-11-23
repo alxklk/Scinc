@@ -1,8 +1,60 @@
 #include "PH_System2.h"
 
+#define G_SCREEN_WIDTH 960	
+#define G_SCREEN_HEIGHT 540
+#define G_SCREEN_SCALE 2
+
+#include "graphics.h"
+
+Graph g;
 int main()
 {
 	puts("Fish there!\n");
+	PH_System2 ph;
+	ph.Reset();
+	while(true)
+	{
+		float T=Time();
+		g.rgba32(0xff000040);
+		g.FillRT();
+		int mx;
+		int my;
+		int mb;
+		GetMouseState(mx,my,mb);
+		if(mb&1)
+		{
+			ph.nodes[0].xf.x=-(ph.nodes[0].p.x-mx)*150000;
+			ph.nodes[0].xf.y=-(ph.nodes[0].p.y-(530-my))*150000;
+		}
+		else
+		{
+			ph.nodes[0].xf.Zero();
+		}
+		for(int i=0;i<2;i++)
+		{
+			ph.Step(0.001);
+		}
+		g.rgba32(0xffffffff);
+		for(int i=0;i<ph.NLinks;i++)
+		{
+			PH_Node& n0=ph.nodes[ph.links[i].n0];
+			PH_Node& n1=ph.nodes[ph.links[i].n1];
+			PH_Num3 p0=n0.p;
+			PH_Num3 p1=n1.p;
+
+			//PH_Num3 p0=ph.nodes[i].p;
+			//PH_Num3 p1=ph.nodes[i+1].p;
+			//if((p1-p0).length()<100)
+			{
+				g.hairline(p0.x,530-p0.y,p1.x,530-p1.y);	
+			}
+		}
+		float l=ph.Length();
+		char s[64];
+		snprintf(s,64,"%f",l);
+		stext(s,10,10,0xff00ff00);
+		Present();
+	}
 	return 0;
 }
 
