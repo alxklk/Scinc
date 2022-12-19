@@ -1,7 +1,7 @@
 #include "PH_System2.h"
 
-#define G_SCREEN_WIDTH 960	
-#define G_SCREEN_HEIGHT 540
+#define G_SCREEN_WIDTH 1280	
+#define G_SCREEN_HEIGHT 720
 #define G_SCREEN_SCALE 2
 
 #include "graphics.h"
@@ -12,11 +12,13 @@ int main()
 	puts("Fish there!\n");
 	PH_System2 ph;
 	ph.Reset();
+	int floor_level=G_SCREEN_HEIGHT-10;
 	while(true)
 	{
 		float T=Time();
 		g.rgba32(0xff000040);
 		g.FillRT();
+		g.fillrect(0,floor_level,G_SCREEN_WIDTH,10,0xff606040);
 		int mx;
 		int my;
 		int mb;
@@ -24,7 +26,7 @@ int main()
 		if(mb&1)
 		{
 			ph.nodes[0].xf.x=-(ph.nodes[0].p.x-mx)*150000;
-			ph.nodes[0].xf.y=-(ph.nodes[0].p.y-(530-my))*150000;
+			ph.nodes[0].xf.y=-(ph.nodes[0].p.y-(floor_level-my))*150000;
 		}
 		else
 		{
@@ -35,6 +37,8 @@ int main()
 			ph.Step(0.001);
 		}
 		g.rgba32(0xffffffff);
+		g.clear();
+
 		for(int i=0;i<ph.NLinks;i++)
 		{
 			PH_Node& n0=ph.nodes[ph.links[i].n0];
@@ -46,9 +50,13 @@ int main()
 			//PH_Num3 p1=ph.nodes[i+1].p;
 			//if((p1-p0).length()<100)
 			{
-				g.hairline(p0.x,530-p0.y,p1.x,530-p1.y);	
+				g.M(p0.x,floor_level-p0.y);
+				g.L(p1.x,floor_level-p1.y);
 			}
 		}
+		g.fin();
+		g.width(2,2);
+		g.stroke();
 		float l=ph.Length();
 		char s[64];
 		snprintf(s,64,"%f",l);

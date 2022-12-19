@@ -2,7 +2,7 @@
 #include <match.h>
 #endif
 
-#define NSeg 32
+#define NSeg 48
 
 typedef float PH_Num;
 
@@ -141,6 +141,7 @@ class PH_System2
 {
 public:
 	float seg_len;
+	PH_Num dempf;
 
 	PH_Node nodes[256];
 	int NNodes;
@@ -170,6 +171,7 @@ public:
 	void Reset()
 	{
 		seg_len=10;
+		dempf=0.999998;
 		NNodes=NSeg;
 		for(int i=0;i<NNodes;i++)
 		{
@@ -239,25 +241,24 @@ public:
 
 		for(int i=0;i<NNodes;i++)
 		{
-			float line=0;
+			//float line=0;
 			PH_Node& n0=nodes[i];
 			
 			{
-				PH_Num dempf=0.999998;
-				PH_Num3 vd=(n0.p-n0.p0);
-				PH_Num v=vd.length();
-				
-				if(i<NNodes-1)
-				{
-					PH_Node& n1=nodes[i];
-					PH_Num3 dp=n1.p-n0.p;
-					if((dp.length()>=0.001f)&&(vd.length()>=0.001))
-					{
-						dp.normalize();
-						vd.normalize();
-						line=1-Fabs(vdot(dp,vd));
-					}
-				}
+				//PH_Num3 vd=(n0.p-n0.p0);
+				//PH_Num v=vd.length();
+				//
+				//if(i<NNodes-1)
+				//{
+				//	PH_Node& n1=nodes[i];
+				//	PH_Num3 dp=n1.p-n0.p;
+				//	if((dp.length()>=0.001f)&&(vd.length()>=0.001))
+				//	{
+				//		dp.normalize();
+				//		vd.normalize();
+				//		//line=1-Fabs(vdot(dp,vd));
+				//	}
+				//}
 
 				PH_Num3 np=n0.p+(n0.p-n0.p0)*dempf+n0.a*(dt*dt);
 				n0.p0=n0.p;
@@ -268,7 +269,7 @@ public:
 	
 		//length constraints
 		if(1)
-		for(int j=0;j<20;j++)
+		for(int j=0;j<7;j++)
 		{
 /*		for(int i=1;i<NLinks;i++)
 		{
@@ -283,7 +284,7 @@ public:
 				PH_Num3 dn=d.normalized();
 				//			d.normalize();
 				PH_Num f=d.length()-seg_len;
-				d=dn*f*0.9;
+				d=dn*f*0.5;
 				n0.p+=d;
 				n1.p-=d;
 			}
@@ -361,7 +362,7 @@ public:
 		}
 
 		// straighting force
-		if(1)
+		if(0)
 		{
 			for(int i=1;i<NNodes-2;i++)
 			{
