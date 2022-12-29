@@ -14,9 +14,224 @@ Graph g;
 #include "letters.h"
 #include "gtext.h"
 
+bool hoverEdit=false;
+int hoverData=-1;
+int hoverCmd =-1;
+int hoverItem= 0;
+int editData=-1;
+int editCmd =-1;
+int editItem =0;
+float editHX;
+float editHY;
+float editMX;
+float editMY;
+
+bool near(float x0, float y0, float x1, float y1)
+{
+	x1-=x0;
+	y1-=y0;
+	return sqrt(x1*x1+y1*y1)<5;
+}
+
+bool findHoverElement(int sym, CFont& font, float mx, float my, int& hCmd, int& hData, int& hI, float& hx, float& hy)
+{
+	float x=400;
+	float y=400;
+	float sx=14;
+	float sy=14;
+	float cx=x;
+	float cy=y;
+	CGlyph& gl=font.g[sym];
+	int* pc=&font.cmds[0];
+	float* pd=&font.data[0];
+	int c=gl.c0;
+	int d=gl.d0;
+	hI=0;
+	for(int i=0;i<gl.n;i++)
+	{
+		int C=pc[c];
+		if((C=='M')||(C=='L'))
+		{
+			float D0=pd[d];
+			float D1=pd[d+1];
+			if(C=='L')
+			{
+				//g.L(x+D0*sx,y+D1*sy);
+			}
+			cx=x+D0*sx;
+			cy=y+D1*sy;
+			if(near(mx,my,cx,cy)){hData=d;hCmd=c;hx=cx;hy=cy;return true;}
+			c+=1;d+=2;
+		}
+		else if((C=='m')||(C=='l'))
+		{
+			float D0=pd[d];
+			float D1=pd[d+1];
+			if(C=='l')
+			{
+				//g.M(.5+cx,.5+cy);
+				//g.l(D0*sx,D1*sy);
+			}
+			cx+=D0*sx;
+			cy+=D1*sy;
+			if(near(mx,my,cx,cy)){hData=d;hCmd=c;hx=cx;hy=cy;return true;}
+			c+=1;d+=2;
+		}
+		else if(C=='c')
+		{
+			float D0=pd[d];
+			float D1=pd[d+1];
+			float D2=pd[d+2];
+			float D3=pd[d+3];
+			float D4=pd[d+4];
+			float D5=pd[d+5];
+			//g.M(.5+cx,.5+cy);
+			//g.l(D0*sx,D1*sy);
+			if(near(mx,my,cx+D0*sx,cy+D1*sy)){hData=d;hCmd=c;hx=cx+D0*sx;hy=cy+D1*sy;return true;}
+			//g.M(.5+cx+D4*sx,.5+cy+D5*sy);
+			//g.L(.5+cx+D2*sx,.5+cy+D3*sy);
+			if(near(mx,my,cx+D2*sx,cy+D3*sy)){hData=d+2;hI=2;hCmd=c;hx=cx+D2*sx;hy=cy+D3*sy;return true;}
+			cx+=D4*sx;
+			cy+=D5*sy;
+			if(near(mx,my,cx,cy)){hData=d+4;hI=4;hCmd=c;hx=cx;hy=cy;return true;}
+			c+=1;d+=6;
+		}
+		else if(C=='z')
+		{
+			c+=1;
+		}
+		else if(C=='0')
+		{
+			c+=1;
+		}
+		else if(C=='/')
+		{
+			float D0=pd[d];
+			float D1=pd[d+1];
+			c+=1;d+=2;
+		}
+		else if(C=='f')
+		{
+			float D0=pd[d];
+			c+=1;d+=1;
+		}
+		else
+		{
+			//printf("Unknown command %c\n",C);
+			c++;
+		}
+	}
+	return false;
+}
+
+struct SWidget
+{
+	int type;
+	char* text;
+	int x0;
+	int y0;
+	int x1;
+	int y1;
+	int tag;
+	int sibling;
+	int firstChild;
+};
+
+void DrawRect(int rectX, int rectY, int rectW, int rectH, int col)
+{
+	if(rectW<0){rectW=-rectW;rectX-=rectW;}
+
+	g.lineH(rectX,rectY, rectW,col);
+	g.lineV(rectX,rectY, rectH,col);
+	g.lineH(rectX+rectW+1,rectY+rectH,-rectW-1,col);
+	g.lineV(rectX+rectW  ,rectY+rectH,-rectH,col);
+}
+
+class CGUI
+{
+public:
+	int nb;
+	SWidget widgets[64];
+	int hoverWidget;
+	int downButton;
+	void Init()
+	{
+		nb=0;
+		hoverWidget=-1;
+		downButton=-1;
+	}
+	void UpdateMousePos(int x, int y)
+	{
+		hoverWidget=-1;
+		for(int i=0;i<nb;i++)
+		{
+			if((x>widgets[i].x0)&&(x<widgets[i].x1))
+			{
+				if((y>widgets[i].y0)&&(y<widgets[i].y1))
+				{
+					hoverWidget=i;
+					break;
+				}
+			}
+		}
+	}
+	int MouseDown()
+	{
+		downButton=hoverWidget;
+		return hoverWidget;
+	}
+	int MouseUp()
+	{
+		if((hoverWidget!=-1)&&(downButton==hoverWidget))
+		{
+			downButton=-1;
+			return widgets[hoverWidget].tag;
+		}
+		else
+		{
+			downButton=-1;
+			return -1;
+		}
+	}
+	void Render()
+	{
+		for(int i=0;i<nb;i++)
+		{
+			SWidget& b=widgets[i];
+			g.Rect(b.x0, b.y0,b.x1-b.x0,b.y1-b.y0,0xff303740);
+			stext(b.text, b.x0+10, b.y1-15,0xffffffff);
+			if(downButton==i)
+			{
+				g.lineH(b.x0, b.y0,b.x1-b.x0,0xff202020);
+				g.lineH(b.x0, b.y1,b.x1-b.x0+1,0xff202020);
+				g.lineV(b.x0, b.y0,b.y1-b.y0,0xff202020);
+				g.lineV(b.x1, b.y0,b.y1-b.y0,0xff202020);
+			}
+			else if(hoverWidget==i)
+			{
+				g.lineH(b.x0, b.y0,b.x1-b.x0,0xffc0c0c0);
+				g.lineH(b.x0, b.y1,b.x1-b.x0+1,0xffc0c0c0);
+				g.lineV(b.x0, b.y0,b.y1-b.y0,0xffc0c0c0);
+				g.lineV(b.x1, b.y0,b.y1-b.y0,0xffc0c0c0);
+			}
+		}
+	}
+	void AddButton(char* text, int x, int y, int w, int h, int tag)
+	{
+		widgets[nb].text=text;
+		widgets[nb].x0=x;
+		widgets[nb].y0=y;
+		widgets[nb].x1=x+w;
+		widgets[nb].y1=y+h;
+		widgets[nb].tag=tag;
+		nb++;
+	}
+};
+
 
 int main()
 {
+	printf("Start\n");
 	CFont* pfont=(CFont*)malloc(sizeof(CFont));
 	CFont& font=*pfont;
 	CFontMaker fm;
@@ -188,15 +403,23 @@ int main()
 	char st[32];
 	//MLC_Typer t;
 	//t.Init();
-	int cx=-1;
-	int cy=-1;
+	int cx=0;
+	int cy=0;
 	//SetPresentWait(1);
 	cx=GetPersistentInt("cx",cx);
 	cy=GetPersistentInt("cy",cy);
+	if(cx<0)
+		cx=0;
+	if(cy<0)
+		cy=0;
 	int code=cx+cy*16;
 	char teststr[33]={};
 	int testcur=0;
-	for(int i=0;i<31;i++){teststr[i]='A'+i;}
+	for(int i=0;i<31;i++)
+	{
+		teststr[i]='A'+i;
+		printf("[%i]=%c\n",i,teststr[i]);
+	}
 
 	int mx=0;
 	int my=0;
@@ -205,18 +428,92 @@ int main()
 	{
 		SScincEvent ev;
 		WaitForScincEvent();
-		while(redraw||GetScincEvent(ev))
+		while(
+			redraw||
+			GetScincEvent(ev))
 		{
 			redraw=false;
 
-			bool clicked=false;
 
-			if(ev.type=='MLDN')
+			if(((ev.type&0xff000000)>>24)=='M')
 			{
+				hoverEdit=false;
+				if((ev._1>400.5-42)&&(ev._1<400.5-42+16*14))
+				{
+					hoverEdit=findHoverElement(code,font,ev._1,ev._2,hoverCmd,hoverData,hoverItem,editHX,editHY);
+				}
+				if(ev.type=='MMOV')
+				{
+					if((editData>=0)&&(ev._0&1))
+					{
+						float dx=float(ev._1-mx)/14.;
+						float dy=float(ev._2-my)/14.;
+						font.data[editData  ]+=dx;
+						font.data[editData+1]+=dy;
+						int ec=font.cmds[editCmd];
+						int ec0=font.cmds[editCmd-1];
+						int ec1=font.cmds[editCmd+1];
+						if(
+							(ec=='M')||(ec=='m')||(ec=='L')||(ec=='l')
+							||((ec=='c')&&(editItem==4))
+							)
+						{
+							if(ec1=='c')
+							{
+								font.data[editData+6]-=dx;
+								font.data[editData+7]-=dy;
+								font.data[editData+4]-=dx;
+								font.data[editData+5]-=dy;
+							}
+							else if((ec1=='l')||(ec1=='L'))
+							{
+								font.data[editData+2]-=dx;
+								font.data[editData+3]-=dy;
+							}
+						}
+						if(ec=='c')
+						{
+							if(editItem==4)
+							{
+								printf("h0\n");
+								font.data[editData-2]+=dx;
+								font.data[editData-1]+=dy;
+							}
+						}
+					}
+				}
 				mx=ev._1;
 				my=ev._2;
-				printf("mx=%i, my=%i\n", mx, my);
-				clicked=true;
+				if(ev.type=='MLDN')
+				{
+					if(hoverEdit)
+					{
+						editData=hoverData;
+						editCmd=hoverCmd;
+						editItem=hoverItem;
+					}
+					else
+					{
+						editData=-1;
+						editCmd=-1;
+						editItem=0;
+					}
+					{
+						int icx=(mx-10)/20;
+						int icy=(my-130)/20;
+						if((icx>=0)&&(icx<16)&&(icy>=0)&&(icy<16))
+						{
+							cx=icx;
+							cy=icy;
+							SetPersistentInt("cx",cx);
+							SetPersistentInt("cy",cy);
+							code=cx+cy*16;
+							teststr[testcur]=code;
+							testcur=(testcur+1)%32;
+							printf("Here!!!\n");
+						}
+					}
+				}
 			}
 
 
@@ -236,6 +533,12 @@ int main()
 				g.M(10.5,130.5+i*20);
 				g.l(320,0);
 			}
+			g.fin();
+			g.rgb(.6,.7,.8);
+			g.width(1,1);
+			g.stroke();
+
+			g.clear();
 			for(int i=0;i<=32;i++)
 			{
 				g.M(i*7+400.5-42,400.5+42);
@@ -289,89 +592,96 @@ int main()
 			DrawText(g,font,"the quick brown fox jumps over the lazy dog" ,0,10.5,100.5,1,1);
 			DrawText(g,font,"THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG" ,0,10.5,120.5,1,1);
 
+			g.Clip(0,0,80,100);
 			g.fin();
 			g.rgb(.3,.1,0);
+			g.width(2,1);
+			g.stroke();
+			g.UnClip();
 			g.width(1,1);
 			g.stroke();
 
-			if(clicked)
-			{
-				cx=(mx-10)/20;
-				cy=(my-130)/20;
-				SetPersistentInt("cx",cx);
-				SetPersistentInt("cy",cy);
-				code=cx+cy*16;
-				teststr[testcur]=code;
-				testcur=(testcur+1)%32;
-			}
-			if((cx>=0)&&(cx<16)&&(cy>=0)&&(cy<16))
+			g.clear();
+			char s0[32];
+			snprintf(s0,32,"%i %i code %i",cx,cy,code);
+			DrawText(g,font,s0,0,400.,110.,2,2);
+			g.fin();
+			g.rgb(.3,.1,0);
+			g.width(1.5,1.5);
+			g.stroke();
+
+			if(editCmd>-1)
 			{
 				g.clear();
-				char s0[32];
-				snprintf(s0,32,"%i %i code %i",cx,cy,code);
-				DrawText(g,font,s0,0,400.,160.,2,2);
+				snprintf(s0,32,"ec:[%i]='%c'  ed:[%i:%i]", editCmd,font.cmds[editCmd],editData,editItem);
+				DrawText(g,font,s0,0,400.,180.,1,1);
 				g.fin();
 				g.rgb(.3,.1,0);
-				g.width(1.5,1.5);
+				g.width(1.,1.);
 				g.stroke();
+			}
 
-				g.clear();
-				g.t_t(0,0,1,0,0,1);
-				//t.b0=Flt2(400,400);
-				//t.x=Flt2(14,0);
-				//t.y=Flt2(0,-14);
-				//t.Glyph(code);
-				DrawGlyph(g,font,code,400,400,14,14);
-				if(!font.g[code].col)
-				{
-					g.fin();
-					g.rgba(.3,.1,0,.5);
-					g.width(7.,7.);
-					g.stroke();
-				}
-
-				g.clear();
-				DrawText(g,font,teststr,0,220,30,2,2);
+			g.clear();
+			g.t_t(0,0,1,0,0,1);
+			//t.b0=Flt2(400,400);
+			//t.x=Flt2(14,0);
+			//t.y=Flt2(0,-14);
+			//t.Glyph(code);
+			DrawGlyph(g,font,code,400,400,14,14);
+			if(!font.g[code].col)
+			{
 				g.fin();
-				g.rgba(0,0,0,1);
-				g.width(3.5,1.);
+				g.rgba(.3,.1,0,.5);
+				g.width(7.,7.);
 				g.stroke();
-				g.rgb(.8,.9,1.);
-				g.width(1.5,1.5);
-				g.stroke();
-				DrawText(g,font,teststr,1,220,30,2,2);
+			}
 
-				g.clear();
-				DrawText(g,font,teststr,0,220.5,50.5,2,1);
-				g.fin();
-				g.rgba(.3,.1,0,1);
-				g.width(1,1);
-				g.stroke();
-				DrawText(g,font,teststr,1,220.5,50.5,2,1);
+			g.clear();
+			DrawText(g,font,teststr,0,220,30,2,2);
+			g.fin();
+			g.rgba(0,0,0,1);
+			g.width(3.5,1.);
+			g.stroke();
+			g.rgb(.8,.9,1.);
+			g.width(1.5,1.5);
+			g.stroke();
+			DrawText(g,font,teststr,1,220,30,2,2);
 
-				g.clear();
-				DrawText(g,font,teststr,0,320.5,70.5,1,1);
-				g.fin();
-				g.rgba(.3,.1,0,1);
-				g.width(1,1);
-				g.stroke();
-				DrawText(g,font,teststr,1,320.5,70.5,1,1);
+			g.clear();
+			DrawText(g,font,teststr,0,220.5,50.5,2,1);
+			g.fin();
+			g.rgba(.3,.1,0,1);
+			g.width(1,1);
+			g.stroke();
+			DrawText(g,font,teststr,1,220.5,50.5,2,1);
 
-				float testdx=0;
-				float testw=0;
-				for(int i=0;i<testcur;i++)
-				{
-					int s=teststr[i];
-					testw=font.g[s].w;
-					testdx+=testw;
-				}
-				g.clear();
-				g.M(320.5+testdx,73.5);
-				g.l(5,0);
-				g.fin();
-				g.width(2,10);
-				g.rgba32(0xffff8000);
-				g.stroke();
+			g.clear();
+			DrawText(g,font,teststr,0,320.5,70.5,1,1);
+			g.fin();
+			g.rgba(.3,.1,0,1);
+			g.width(1,1);
+			g.stroke();
+			DrawText(g,font,teststr,1,320.5,70.5,1,1);
+
+			float testdx=0;
+			float testw=0;
+			for(int i=0;i<testcur;i++)
+			{
+				int s=teststr[i];
+				testw=font.g[s].w;
+				testdx+=testw;
+			}
+			g.clear();
+			g.M(320.5+testdx,73.5);
+			g.l(5,0);
+			g.fin();
+			g.width(2,10);
+			g.rgba32(0xffff8000);
+			g.stroke();
+
+
+			if((cx>=0)&&(cx<16)&&(cy>=0)&&(cy<16))
+			{
 
 				{
 					float x=400;
@@ -401,6 +711,7 @@ int main()
 								g.L(x+D0*sx,y+D1*sy);
 								g.fin();
 								g.rgba(0,1,0,.5);
+								if(d==hoverData)g.gray(1);
 								g.width(1.,1.);
 								g.stroke();
 							}
@@ -420,6 +731,7 @@ int main()
 								g.l(D0*sx,D1*sy);
 								g.fin();
 								g.rgba(1,0,1,1);
+								if(d==hoverData)g.gray(1);
 								g.width(1.,1.);
 								g.stroke();
 							}
@@ -441,6 +753,7 @@ int main()
 							g.l(D0*sx,D1*sy);
 							g.fin();
 							g.rgba(1,0,0,1);
+							if(d==hoverData)g.gray(1);
 							g.width(1.,1.);
 							g.stroke();
 							g.clear();
@@ -448,6 +761,8 @@ int main()
 							g.L(.5+cx+D2*sx,.5+cy+D3*sy);
 							g.fin();
 							g.rgba(0,0,1,1);
+							if(d+2==hoverData)g.gray(1);
+							if(d+4==hoverData)g.gray(0);
 							g.width(1.,1.);
 							g.stroke();
 							cx+=D4*sx;
@@ -485,6 +800,12 @@ int main()
 						}
 					}
 				}
+			}
+
+			if(hoverEdit)
+			{
+				g.Circle(editHX,editHY,3,1,1,0xff000000);
+				g.Circle(editHX,editHY,3,0,1,0xffffffff);
 			}
 
 			g.alpha(1);

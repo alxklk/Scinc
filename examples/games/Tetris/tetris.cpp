@@ -270,12 +270,13 @@ void Background()
 	g.alpha(1);
 	g.clear();*/
 
-	for(int i=0;i<G_SCREEN_HEIGHT;i+=16)
+	#define STRIP_HEIGHT 16
+	for(int i=0;i<G_SCREEN_HEIGHT+STRIP_HEIGHT;i+=STRIP_HEIGHT)
 	{
-		int gr=int(sin(t*.147+i*.011-54)*40+48);
-		int gg=int(sin(t*.149-i*.017+13)*40+48);
-		int gb=int(sin(t*.141+i*.013-77)*40+48);
-		g.Rect(0,i,G_SCREEN_WIDTH,16,0xff000000|(gr<<16)|(gg<<8)|gb);
+		int gr=int(sin(t*.147+i*.011-54)*50+68);
+		int gg=int(sin(t*.149-i*.017+13)*50+68);
+		int gb=int(sin(t*.141+i*.013-77)*50+68);
+		g.Rect(0,i,G_SCREEN_WIDTH,STRIP_HEIGHT,0xff000000|(gr<<16)|(gg<<8)|gb);
 	}
 
 	float T=t*.5;
@@ -1188,17 +1189,17 @@ int MenuCommand0(char* command, int arg)
 	//printf(" Callback for menu '%s' %i\n", command, arg);
 	if(Strcmp(command, "game_pause")==0)
 	{
-		printf("pause %i\n", menuPauseIndex);
 		game.unPaused=!game.unPaused;
-		if(game.unPaused)
-			menu.mi[menuPauseIndex].name="Pause";
-		else
-			menu.mi[menuPauseIndex].name="Unpause";
 	}
 	else if(Strcmp(command, "game_new")==0)
 	{
 		printf("restart %i\n", menuPauseIndex);
 		game.Init();
+	}
+	else if(Strcmp(command, "exit")==0)
+	{
+		printf("exit %i\n", menuPauseIndex);
+		exit(0);
 	}
 	return 0;
 }
@@ -1239,6 +1240,10 @@ int main()
 				continue;
 			}
 		}
+		if(game.unPaused)
+			menu.mi[menuPauseIndex].name="Pause";
+		else
+			menu.mi[menuPauseIndex].name="Unpause";
 
 		//game.piece=24;
 		float tframe1=Time();
