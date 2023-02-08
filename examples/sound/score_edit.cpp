@@ -37,6 +37,10 @@ void MusicInit()
 		mel1[i]="0102030102030120"[i]-'0';
 		baz0[i]="0120421012034200"[i]-'0';
 		baz1[i]="2432342324323323"[i]-'0';
+		//mel0[i]="0000000000000000"[i]-'0';
+		//mel1[i]="0000005000000000"[i]-'0';
+		//baz0[i]="0000000000000000"[i]-'0';
+		//baz1[i]="5555555555555555"[i]-'0';
 	}
 }
 
@@ -57,16 +61,41 @@ float mod(float a, float b)
 	return a-b*r;
 }
 
-float sndVal(float t)
+void CalcNoteAndWeight(float t, float f1, float f2, float w, float d)
 {
-	t*=0.75;
-	int idx0=t/4096.;idx0=idx0&15;
-	int idx1=t/65536.;idx1=idx1&15;
-	int idx2=t/65536./2.;idx2=idx2&15;
 
-	float i1=(t*mel0[idx0]*baz0[idx1]);
-	float i2=(t*mel1[idx0]*baz1[idx2]);
-	return (s0(mod(i1,1024)/1024.)*.35-s0(mod(i1,256)/256.)*.17-s1(mod(i2,1024)/1024.)*.35);
+}
+
+float sndVal(float t0)
+{
+	t0*=0.75;
+	int N=2;
+	float v=0;
+	for(int i=0;i<N;i++)
+	{
+		float t=t0+4096.*i;
+		int idx0=t/4096.    ;idx0=idx0&15;
+		int idx1=t/65536.   ;idx1=idx1&15;
+		int idx2=t/65536./2.;idx2=idx2&15;
+
+		int f1=mel0[idx0 ]*baz0[idx1];
+		int f2=mel1[idx0 ]*baz1[idx2];
+		float i1=t*f1;
+		float i2=t*f2;
+
+		float w=t/(256.*4096.);
+		w-=float(int(w));
+		w=1.-w;
+		w=w/N+i/float(N);
+		//w=1;
+
+		v+=
+				 s0(mod(i1,1024)/1024.)*.35*w
+				+s0(mod(i1,256)/256.)*.17*w
+				+s1(mod(i2,1024)/1024.)*.35*w
+			;
+	}
+	return v;
 }
 
 Graph g;

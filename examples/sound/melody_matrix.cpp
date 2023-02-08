@@ -276,7 +276,7 @@ public:
 			notes[i].t1=-100;
 		}
 	}
-	void AddNote(int instr, double f, double len)
+	void AddNote(int instr, double f, double len, float delay)
 	{
 		for(int i=0;i<NN;i++)
 		{
@@ -284,8 +284,8 @@ public:
 			{
 				notes[i].instr=instr;
 				notes[i].f=f;
-				notes[i].t0=ns;
-				notes[i].t1=ns+len*48000;
+				notes[i].t0=ns+delay*48000;
+				notes[i].t1=ns+len*48000+delay*48000;
 				break;
 			}
 		}
@@ -317,7 +317,8 @@ public:
 						if(tact)
 							s=0;
 						else
-						 	s=sin(t*n.f*M_PI*2.*5.)*.3;
+						 	s=sin(t*n.f*M_PI*2.*5.)*.2;
+						if(t<0.01)s*=t*100.;
 					}
 					else
 					{
@@ -325,6 +326,8 @@ public:
 						if(cut)
 						{
 							if(s>0.4)s=0.4;else if(s<-0.4)s=-.4;
+							s*=0.5;
+
 							//s=s;
 						}
 						if(t<0.01)s*=t*100.;
@@ -405,8 +408,8 @@ public:
 			ns0/=48000.;
 			ns1/=48000.;
 
-			ns0*=(48000./4096./16.)*8/.75;
-			ns1*=(48000./4096./16.)*8/.75;
+			ns0*=(48000./4096./16./1.97)*16/.75;
+			ns1*=(48000./4096./16./1.97)*16/.75;
 
 			int t0=ns0;
 			int t1=ns1;
@@ -414,8 +417,14 @@ public:
 			{
 				float i1=(mel0[t1%16]*baz0[(t1/16)%16]);
 				float i2=(mel1[t1%16]*baz1[(t1/32)%16]);
-				notes.AddNote(1,i1*(48000./1024.)/.75/2.,6./16.);
-				notes.AddNote(2,i2*(48000./1024.)/.75/2.,3./16.);
+				if(i1!=0.0)
+				{
+					notes.AddNote(1,i1*(48000./1024.),6./16.,0.0);
+				}
+				if(i2!=0.0)
+				{
+					notes.AddNote(2,i2*(48000./1024.),4./16.,0.0);
+				}
 				if(t1-t0>1)
 					printf("Overflow\n");
 			}
@@ -544,6 +553,11 @@ int main()
 		{
 			0==0;
 		}
+
+		if(KeyPressed('1'))
+			notes.AddNote(2,440.,4./16.,0.0);
+		if(KeyPressed('2'))
+			notes.AddNote(2,880.,4./16.,0.0);
 
 		if(KeyPressed('t'))
 		{

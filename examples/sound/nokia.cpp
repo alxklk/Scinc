@@ -137,7 +137,7 @@ Graph g;
 
 Polyphony notes;
 
-#define EL 16000
+#define EL 16384
 
 #define ALMOST_ONE 0.9999999999999
 

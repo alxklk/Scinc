@@ -1,6 +1,7 @@
 #define SW 1024
 #define G_SCREEN_WIDTH SW
-#define G_SCREEN_SCALE 1
+#define G_SCREEN_SCALE 2
+#define G_SCREEN_MODE 1
 
 #define NFFT 1024
 
@@ -50,6 +51,11 @@ double frand(int& seed)
 	return a-b*r;
 }*/
 
+float fract(float a)
+{
+	return a-int(a);
+}
+
 double lega(double globalTime, double time, double t0, double t1, double f0, double f1)
 {
 	if(time<t0)
@@ -60,17 +66,13 @@ double lega(double globalTime, double time, double t0, double t1, double f0, dou
 
 	double t=(time-t0)/dt;
 
-
-	double gt0=(globalTime-time+t0);
-	double gt1=(globalTime+t1-time);
-
-	double p0=mod(gt0*f0,1.);
-	double p1=mod(gt1*f1,1.);
+	double p0=fract(t0*f0);
+	double p1=fract(t1*f1);
 
 	double y0=t0*f0;
-	y0+=-mod(y0,1.)+p0;
+	y0+=-fract(y0)+p0;
 	double y1=y0+(f1+f0)/2.*dt;
-	y1+=-mod(y1,1.)+p1;
+	y1+=-fract(y1)+p1;
 
 	double invt=1.-t;
 
@@ -79,7 +81,8 @@ double lega(double globalTime, double time, double t0, double t1, double f0, dou
 			+3.*(y1-dt/3.*f1)*invt*t*t
 			+y1*t*t*t;
 
-	double v=sin(y*2*M_PI);
+	y=y-double(int(y));
+	double v=sin(y*2.*M_PI);
 
 	return v;
 }
@@ -98,6 +101,12 @@ double Fabs(double x)
 double S_Curve(double x)
 {
 	return x*x*(-2.0*x+3.0);
+}
+
+float Bell_Curve(float t)
+{
+	float t2=t*t;
+	return t2*16.*(t2-2.*t+1.);
 }
 
 void FFT(double* in, double* o)
@@ -137,10 +146,37 @@ bool saw_on=false;
 bool square_on=false;
 bool oneliner_on=false;
 bool uprising_on=false;
+double upT[16]={};
 bool rawfile_on=false;
-bool mic_in=false;
+bool mic_in=true;
 
 FILE* rawf;
+
+#define HASH_K 1103515245
+
+int Hash(int x)
+{
+	x=((x>>8)^x)*HASH_K;
+	x=((x>>8)^x)*HASH_K;
+	x=((x>>8)^x)*HASH_K;
+	return x;
+}
+
+float GradNoise(float x)
+{
+	int x0=x;
+	int x1=x0+1;
+	float h0=float(Hash(x0))/float(0x7fffffff);
+	float h1=float(Hash(x1))/float(0x7fffffff);
+	float w0=(x-x0);
+	float w1=1.-w0;
+	return w0*w0*w1*h1-w1*w1*w0*h0;
+}
+
+float SndNoise(float t)
+{
+	return GradNoise(t/10.);
+}
 
 void GenerateSamples()
 {
@@ -167,11 +203,14 @@ void GenerateSamples()
 		}
 		if(mb&4)
 		{
-			double freq=1./48000.*mx*10.*2.*M_PI;
+			double freq=1./48000.*mx*10.;
 			for(int i=NFFT/2;i<NFFT;i++)
 			{
 				int s=curSample+i;
-				double l=sin(s*freq)*.3;
+				double a=s*freq;
+				a-=double(int(a));
+				a*=2.*M_PI;
+				double l=sin(a)*.3;
 				int idx=i+i;
 				echo[idx  ]+=l;
 				echo[idx+1]+=l;
@@ -197,7 +236,8 @@ void GenerateSamples()
 				double t=s/48000.;
 				double l=0;
 				int idx=i+i;
-				seed+=s;l+=.5*frand(seed);
+				//seed=s;l+=.5*frand(seed);
+				l=SndNoise(s);
 				echo[idx  ]+=l;
 				echo[idx+1]+=l;
 			}
@@ -209,8 +249,10 @@ void GenerateSamples()
 				int s=curSample+i;
 				double l=0;
 				int idx=i+i;
-				l=s/102.45;
+				l=s/102.4;
 				l=l-int(l)-.5;
+				if(l<0.)l=-l;
+				l-=0.25;
 				echo[idx  ]+=l;
 				echo[idx+1]+=l;
 			}
@@ -242,7 +284,7 @@ void GenerateSamples()
 				int s=curSample+i;
 				double l=0;
 				int idx=i+i;
-				l=(int(s/102.45)&1)-.5;
+				l=(int(s/102.4)&1)-.5;
 				echo[idx  ]+=l;
 				echo[idx+1]+=l;
 			}
@@ -255,27 +297,60 @@ void GenerateSamples()
 				double t=s/48000.;
 				double l=0;
 				int idx=i+i;
-				for(int k=0;k<12;k++)
-				{
-					double ti=t*.02+k/12.;
-					ti=ti-int(ti);
-					double w=.5-Fabs(ti-.5);
-					w=S_Curve(w*2.);
-					l+=sin(ti*3*440.*(3.+ti*600.))*.2*w;
+
+				for(int fi=0;fi<8;fi++)
+				{				
+					float t0=t*.01+fi/8.;
+					float s0=(t0-int(t0));
+					float f0=220.+220.*16.*s0;
+					float w0=Bell_Curve(s0);
+					upT[fi]+=1./48000.*2.*M_PI*f0;
+					l+=sin(upT[fi])*.1*w0;
 				}
+
 				echo[idx  ]+=l;
 				echo[idx+1]+=l;
 			}
 		}
 		if(music_on)
 		{
-			music.GenerateSamples(NFFT/2);
-			for(int i=0;i<NFFT/2;i++)
+			int nSamples=NFFT/2;
+			music.GenerateSamples(nSamples);
+
+			if(0)
 			{
-				float l=music.echo[(music.echoPos-NFFT/2+i)%11250*2];
-				int idx=i+i+NFFT;
+				int start=music.echoPos-nSamples;
+				int count=nSamples;
+				int start1=0;
+				if(start<0)
+				{
+					count+=start;
+					for(int i=0;i< -start;i++)
+					{
+						float l=music.echo[(12000+start+i)*2];
+						int idx=i+i+NFFT;
+						echo[idx  ]+=l;
+						echo[idx+1]+=l;
+					}
+					start1=-start;
+				}
+				for(int i=0;i<count;i++)
+				{
+					float l=music.echo[(start+i)*2];
+					int idx=start1*2+i+i+NFFT;
+					echo[idx  ]+=l;
+					echo[idx+1]+=l;
+				}
+			}
+
+			int idx=NFFT;
+			for(int i=-NFFT/2;i<0;i++)
+			{
+				float l=music.echo[(music.echoPos+i+12000)%12000*2];
+				//int idx=i+i+NFFT*2;
 				echo[idx  ]+=l;
 				echo[idx+1]+=l;
+				idx+=2;
 			}
 			
 			/*
@@ -366,6 +441,10 @@ int main()
 				else if(key=='i')
 				{
 					inv=!inv;
+				}
+				else if(key=='a')
+				{
+					mic_in=!mic_in;
 				}
 				else if(key=='s')
 				{
@@ -460,53 +539,59 @@ int main()
 				if(cut>NFFT/2)cut=NFFT/2;
 				if(cut<0)cut=0;
 				
-				// if(inv)
-				// {
-				// 	for(int i=0;i<cut;i++)
-				// 	{
-				// 		fftout[i*2]=0.;
-				// 		fftout[i*2+1]=0.;
-				// 		fftout[NFFT*2-i*2]=0.;
-				// 		fftout[NFFT*2-i*2-1]=0.;
-				// 	}
-				// }
-				// else
-				// {
-				// 	for(int i=cut;i<NFFT/2;i++)
-				// 	{
-				// 		fftout[i*2]=0.;
-				// 		fftout[i*2+1]=0.;
-				// 		fftout[NFFT*2-i*2]=0.;
-				// 		fftout[NFFT*2-i*2-1]=0.;
-				// 	}
-				// }
-				
-				float R=NFFT*.02;
-				int cut0=cut-R;if(cut0<0)cut0=0;
-				int cut1=cut+R;if(cut1>NFFT/2)cut1=NFFT/2;
-				for(int i=0;i<cut0;i++)
+				if(1)// low or high pass
 				{
-					fftout[i*2]=0.;
-					fftout[i*2+1]=0.;
-					fftout[NFFT*2-i*2]=0.;
-					fftout[NFFT*2-i*2-1]=0.;
+					if(inv)
+					{
+						for(int i=0;i<cut;i++)
+						{
+							fftout[i*2]=0.;
+							fftout[i*2+1]=0.;
+							fftout[NFFT*2-i*2]=0.;
+							fftout[NFFT*2-i*2-1]=0.;
+						}
+					}
+					else
+					{
+						for(int i=cut;i<NFFT/2;i++)
+						{
+							fftout[i*2]=0.;
+							fftout[i*2+1]=0.;
+							fftout[NFFT*2-i*2]=0.;
+							fftout[NFFT*2-i*2-1]=0.;
+						}
+					}
 				}
-				for(int i=cut1;i<=NFFT/2;i++)
+
+				if(0) // Band
 				{
-					fftout[i*2]=0.;
-					fftout[i*2+1]=0.;
-					fftout[NFFT*2-i*2]=0.;
-					fftout[NFFT*2-i*2-1]=0.;
+					float R=NFFT*.02;
+					int cut0=cut-R;if(cut0<0)cut0=0;
+					int cut1=cut+R;if(cut1>NFFT/2)cut1=NFFT/2;
+					for(int i=0;i<cut0;i++)
+					{
+						fftout[i*2]=0.;
+						fftout[i*2+1]=0.;
+						fftout[NFFT*2-i*2]=0.;
+						fftout[NFFT*2-i*2-1]=0.;
+					}
+					for(int i=cut1;i<=NFFT/2;i++)
+					{
+						fftout[i*2]=0.;
+						fftout[i*2+1]=0.;
+						fftout[NFFT*2-i*2]=0.;
+						fftout[NFFT*2-i*2-1]=0.;
+					}
+					for(int i=cut0;i<=cut1;i++)
+					{
+						float sc=S_Curve(1.-Fabs((i-cut)/R));
+						fftout[i*2]*=sc;
+						fftout[i*2+1]*=sc;
+						fftout[NFFT*2-i*2]*=sc;
+						fftout[NFFT*2-i*2+1]*=sc;
+					}
 				}
-				for(int i=cut0;i<=cut1;i++)
-				{
-					float sc=S_Curve(1.-Fabs((i-cut)/R));
-					fftout[i*2]*=sc;
-					fftout[i*2+1]*=sc;
-					fftout[NFFT*2-i*2]*=sc;
-					fftout[NFFT*2-i*2+1]*=sc;
-				}
-				
+
 				/*
 				int m=mx*2;
 				if(m<0)m=0;
@@ -527,7 +612,7 @@ int main()
 				//	fftout[NFFT*2-i]=0.;
 				//}
 				FFT(fftout,filtered);
-				double mul=1./(NFFT-1);
+				double mul=1./(NFFT);
 				for(int i=0;i<NFFT*2;i+=2)
 				{
 					//double tmp=filtered[i];
@@ -572,8 +657,8 @@ int main()
 			}
 			else
 			{
-				FFT(echo,fftlast);
 				Out(echo,NFFT/2);
+				FFT(echo,fftlast);
 			}
 
 			if(graph)
@@ -644,20 +729,26 @@ int main()
 		}
 		g.fin();
 		g.width(2.,1.);
-		g.rgb(1.0,0.5,0.0);
+		if(filter)
+			g.rgb(1.0,0.4,0.4);
+		else
+			g.rgb(1.0,0.7,0.0);
 		g.stroke();
 
-		g.clear();
-		for(int i=0;i<nG/2;i++)
+		if(filter)
 		{
-			double lvl=sliding[i*2];
-			g.L(i*2,lvl*100+240);
+			g.clear();
+			for(int i=0;i<nG/2;i++)
+			{
+				double lvl=sliding[i*2];
+				g.L(i*2,lvl*200+240);
+			}
+			g.fin();
+			g.width(1.,1.);
+			g.rgb(0.0,1.0,1.0);
+			g.stroke();
+			g.clear();
 		}
-		g.fin();
-		g.width(1.,1.);
-		g.rgb(0.0,1.0,1.0);
-		g.stroke();
-		g.clear();
 
 		g.clear();
 		for(int i=0;i<NFFT;i++)
@@ -673,7 +764,7 @@ int main()
 		}
 		g.fin();
 		g.rgb(1.,.2,.1);
-		g.width(6.,1.);
+		g.width(2.,1.);
 		g.stroke();
 		g.rgb(1.,.8,.5);
 		g.width(1.,1.);

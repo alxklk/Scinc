@@ -70,7 +70,10 @@ int MIC_In_Init(int buflen)
 		return -1;
 	}
 
-	error=snd_pcm_hw_params_set_rate_near(captureHandle, hwParams, &rate, 0);
+	printf("Needed rate: %i\n", rate);
+	//error=snd_pcm_hw_params_set_rate_near(captureHandle, hwParams, &rate, 0);
+	error=snd_pcm_hw_params_set_rate(captureHandle, hwParams, rate, 0);
+	printf("Actual rate: %i\n", rate);
 	if(error<0)
 	{
 		snprintf(errorText, 512,  "cannot set sample rate (%s)\n", snd_strerror(error));
@@ -123,20 +126,49 @@ int MIC_In_Init(int buflen)
 	return 1;
 }
 
+std::vector<int16_t>accum;
+
 int MIC_In_Record(double* buf)
 {
-	int error=snd_pcm_readi(captureHandle, buffer, bufferFrames);
-	if(error!=bufferFrames)
+	int error;
+	int iteration=0;
+	while(true)
 	{
-		snprintf(errorText, 512,  "read from audio interface failed (%s)\n", snd_strerror(error));
-		return -1;
+		int pos=accum.size();
+		accum.resize(accum.size()+bufferFrames);
+		int error=snd_pcm_readi(captureHandle, &accum[pos], bufferFrames);
+		if(error!=bufferFrames)
+		{
+			if(error>0)
+			{
+				accum.resize(pos+error);
+				break;
+			}
+			else
+			{
+				accum.resize(pos);
+				snprintf(errorText, 512,  "read from audio interface failed (%s)\n", snd_strerror(error));
+				break;
+			}
+		}
+		else break;
+		//if(iteration>100)return -1;
 	}
-	for(int i=0;i<bufferFrames;i++)
+	//printf("accum.size()=%i\n", accum.size());
+	if(accum.size()>bufferFrames*3)
+		accum.erase(accum.begin(),accum.begin()+(accum.size()-bufferFrames*3));
+	
+	if(accum.size()>=bufferFrames)
 	{
-		buf[i]=buffer[i]/32767.;
+		for(int i=0;i<bufferFrames;i++)
+		{
+			buf[i]=accum[i]/32767.;
+		}
+		accum.erase(accum.begin(),accum.begin()+bufferFrames);
+		snprintf(errorText, 512, "OK\n");
+		return error;
 	}
-	snprintf(errorText, 512, "OK\n");
-	return error;
+	return -1;
 }
 
 int MIC_In_Done()
