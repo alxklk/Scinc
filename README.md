@@ -11,7 +11,7 @@ Small and simple statically strong typed embeddable interpreted programming lang
 
 Syntactical and semantical subset of C++. Can be embedded in another applications or run by interpreter. Scinc program is correct C++ program and thus can be compiled into native code without changes.
 
-Current VM realization runs on own virtual processor and virtual address space. Speed is about 9-11 host CPU clock cycle per VM opcode. On modern 4.5 GHz desktop CPU it is ~500 million vm opcodes per second.
+Current VM realization runs on own virtual processor and virtual address space. Speed is about 9-11 host CPU clock cycle per VM opcode. On modern 4.5 GHz desktop CPU it is ~500 million vm opcodes per second. It is enough for realtime audio synthesis, or even for simple realtime sound processing (record from microphone -> FFT -> frequency domain manipulation -> reverse FFT -> playback), there are some examples in examples/sound folder. Performance critical and low level functionality can be developed as external  module (.so or .dll) and dynamically linked at runtime. As an example, see microphone input functionality in external dynamic libs.
 
 ## Motivation
 
@@ -49,11 +49,12 @@ Function member can be declared as `static` and then called with namespace resol
 
 Variable declarations support only one variable at a time: `int a; int b;` is OK, `int a,b;` will cause an error.
 
-Global variables can not be initialized.
-
 Local variable declarations support initialization, arrays can be initialized with initialization lists: `int x[3]={1,2,3};`, missing items are implicitly 0. Be aware of the fact, that list is stored in constant segment and event empty list will occupy space, for example, `int x[4]={};` will be compiled into 4*sizeof(int) zero bytes.
 
-Pointer and references are supported, but their usage in variable declarations is limited to one at a time, i.e. `int * ptrx;` is OK, `int ** ptrptrx;` is not.
+Pointer and references are supported, with some (reasonable, from author's sight) limitations:
+ * their usage in type and variable declarations is limited to one at a time, i.e. `int * ptrx;` is OK, `int ** ptrptrx;` is not. Need pointer to pointer? Declare intermediate type.
+ * multiple star is not supported, including implicit reference. Only one at a time. Need more? Use temporary variable. This is because one star pointer dereference is supported at the byte code level and adding additional indirection would bring significant complications. However, this feature may be implemented later.
+
 
 ## Preprocessor
 
