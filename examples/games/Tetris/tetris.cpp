@@ -3,9 +3,9 @@
 #ifdef __JS__
 #define G_SCREEN_SCALE 2
 #else
-#define G_SCREEN_SCALE 4
+#define G_SCREEN_SCALE 8
 #endif
-#define G_SCREEN_MODE 1
+#define G_SCREEN_MODE 2
 
 #include "sound.h"
 #include "graphics.h"

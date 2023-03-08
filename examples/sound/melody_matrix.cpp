@@ -21,23 +21,39 @@ char baz1[16];
 // 	float i1=(t*("0867604356602121"[idx0]-'0')*("0120421012034200"[idx1]-'0'));
 // 	float i2=(t*("0102030102030120"[idx0]-'0')*("2432342324323323"[idx2]-'0'));
 
-void MusicInit()
+void MusicInit(int n)
 {
+	n=n%3;
 	for(int i=0;i<16;i++)
 	{
-		// mel0[i]="0334566776503030"[i]-'0';
-		// mel1[i]="0120303021040400"[i]-'0';
-		// baz0[i]="0034231032423100"[i]-'0';
-		// baz1[i]="1212131213212312"[i]-'0';
-		// mel0[i]="0305423542305040"[i]-'0';
-		// mel1[i]="0400605004005040"[i]-'0';
-		// baz0[i]="0435430345340210"[i]-'0';
-		// baz1[i]="2300230340320300"[i]-'0';
-		mel0[i]="0867604356602121"[i]-'0';
-		mel1[i]="0102030102030120"[i]-'0';
-		baz0[i]="0120421012034200"[i]-'0';
-		baz1[i]="2432342324323323"[i]-'0';
+		if(n==0)
+		{
+			mel0[i]="0334566776503030"[i]-'0';
+			mel1[i]="0120303021040400"[i]-'0';
+			baz0[i]="0034231032423100"[i]-'0';
+			baz1[i]="1212131213212312"[i]-'0';
+		}
+		else if(n==1)
+		{
+			mel0[i]="0305423542305040"[i]-'0';
+			mel1[i]="0400605004005040"[i]-'0';
+			baz0[i]="0435430345340210"[i]-'0';
+			baz1[i]="2300230340320300"[i]-'0';
+		}
+		else if(n==2)
+		{
+			mel0[i]="0867604356602121"[i]-'0';
+			mel1[i]="0102030102030120"[i]-'0';
+			baz0[i]="0120421012034200"[i]-'0';
+			baz1[i]="2432342324323323"[i]-'0';
+		}
 	}
+}
+
+float Bell_Curve(float t)
+{
+	float t2=t*t;
+	return t2*16.*(t2-2.*t+1.);
 }
 
 
@@ -56,23 +72,6 @@ float mod(float a, float b)
 {
 	int r=a/b;
 	return a-b*r;
-}
-
-float sndVal(float t)
-{
-	t*=0.75;
-	int idx0=t/4096.;idx0=idx0&15;
-	int idx1=t/65536.;idx1=idx1&15;
-	int idx2=t/65536./2.;idx2=idx2&15;
-
-	float i1=(t*mel0[idx0]*baz0[idx1]);
-	float i2=(t*mel1[idx0]*baz1[idx2]);
-
-	float w=t/4096.;
-	w-=float(int(w));
-	w=1.-w;
-
-	return (s0(mod(i1,1024)/1024.)*.35*w-s0(mod(i1,256)/256.)*.17*w-s1(mod(i2,1024)/1024.)*.35*w);
 }
 
 Graph g;
@@ -101,7 +100,7 @@ int prevmb;
 int prevmx;
 int prevmy;
 
-//int cursnd;
+int cursample;
 
 #define NOTESIZE 14
 
@@ -198,7 +197,7 @@ public:
 		g.stroke();
 
 		g.clear();
-		float tpos=0;//mod(snd.sample/48000.,cycle)/cycle;
+		float tpos=mod(cursample/48000.,cycle)/cycle;
 		g.M(x+16*NOTESIZE*tpos,y);
 		g.l(0,10*NOTESIZE);
 		g.fin();
@@ -309,33 +308,35 @@ public:
 					double t=(cs-n.t0)/48000.;
 					//double s=sin((t+sin(cs*.0005)*0.0005)*n.f*M_PI*2);
 					if(vibratto)
-						t+=sin(t*M_PI*5.)*0.0007*t;
+						t+=sin(t*M_PI*5.)*0.001*t;
 					double s=0.;
 					if(n.instr==2)
 					{
-						int tact=int(t*n.f*5.)%5;
+						int tact=int(t*n.f*4.)%4;
 						if(tact)
 							s=0;
 						else
-						 	s=sin(t*n.f*M_PI*2.*5.)*.2;
-						if(t<0.01)s*=t*100.;
+						 	s=sin(t*n.f*M_PI*2.*4.)*.2;
+						//if(t<0.05)s*=t*20.;
+						//if(t<0.5)s*=t*2.;
 					}
 					else
 					{
 						s=(ss(t*n.f*M_PI*2.));//+ss(t*(n.f+2030.)*M_PI*2.)*.05+ss(t*(n.f+2730.)*M_PI*2.)*.126)*.5;
-						if(cut)
-						{
+						//if(cut)
+						//{
 							if(s>0.4)s=0.4;else if(s<-0.4)s=-.4;
-							s*=0.5;
-
-							//s=s;
-						}
-						if(t<0.01)s*=t*100.;
+							s*=0.4;
+						//}
+						//if(t<0.05)s*=t*20.;
+						//if(t<0.5)s*=t*2.;
 					}
 
 					if(fade)
 					{
 						s*=(1. -(cs-n.t0)/double(n.t1-n.t0));
+						//s*=(1-t)*(1-t)*(1-t)*(1-t);
+						//s*=Bell_Curve((cs-n.t0)/double(n.t1-n.t0));
 					}
 					else
 					{
@@ -419,11 +420,11 @@ public:
 				float i2=(mel1[t1%16]*baz1[(t1/32)%16]);
 				if(i1!=0.0)
 				{
-					notes.AddNote(1,i1*(48000./1024.),6./16.,0.0);
+					notes.AddNote(1,i1*(48000./1024.),12./16.,0.0);
 				}
 				if(i2!=0.0)
 				{
-					notes.AddNote(2,i2*(48000./1024.),4./16.,0.0);
+					notes.AddNote(2,i2*(48000./1024.),8./16.,0.0);
 				}
 				if(t1-t0>1)
 					printf("Overflow\n");
@@ -445,7 +446,10 @@ public:
 				snd_out_buf(&(echo[(EL+idx)*2]),-idx);
 				idx=0;
 			}
-			snd_out_buf(&(echo[idx*2]),count);
+			if(count)
+			{
+				snd_out_buf(&(echo[idx*2]),count);
+			}
 		}
 		echoPos=(echoPos+nSamples)%EL;
 		sample+=nSamples;
@@ -466,7 +470,7 @@ int main()
 	dt=0.;
 	prevmb=0;
 	rseed=21397862;
-	MusicInit();
+	MusicInit(0);
 	snd.Init();
 	echoVal=0.7;
 	cut=1;
@@ -484,6 +488,7 @@ int main()
 
 	while(true)
 	{
+		cursample=notes.ns;
 		g.t_0(0,0);
 		g.t_x(1,0);
 		g.t_y(0,1);
@@ -502,14 +507,21 @@ int main()
 		g.clear();
 
 		float t1=Time();
+		int tNo0=tframe/32;
 		tframe=t1;
+		int tNo1=tframe/32;
+		if(tNo0!=tNo1)
+		{
+			MusicInit(tNo1);
+		}
 
 		g.M(-1,240);
 		{
-			while(snd_bufhealth()<(1024*3+1024))
+			while(snd_bufhealth()<(1024*2+1024))
 			{
-				for(int i=0;i<8;i++)
-					snd.GenerateSamples(128);
+				//for(int i=0;i<8;i++)
+					//snd.GenerateSamples(128);
+				snd.GenerateSamples(1024);
 			}
 			for(int i=0;i<640;i++)
 			{

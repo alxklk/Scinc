@@ -1,6 +1,6 @@
 #include "sound.h"
 
-#define G_SCREEN_MODE 0
+#define G_SCREEN_MODE 1
 #include "graphics.h"
 
 #ifndef __SCINC__
@@ -77,7 +77,7 @@ int main()
 
 
 		tframe=Time();
-		while(snd_bufhealth()<(2000+NFFT))
+		while(snd_bufhealth()<(1000+NFFT))
 		{
 			music.GenerateSamples(NFFT);
 			FFT(music.echo,fftout,music.echoPos);
@@ -112,15 +112,15 @@ int main()
 			float lvl;
 			double re=fftout[i*2  ];
 			double im=fftout[i*2+1];
-			lvl=sqrt(sqrt(re*re+im*im));
+			lvl=(sqrt(re*re+im*im));
 			l[i/128]+=lvl;
-			lvl*=16.;
+			lvl*=4.;
 			if(lvl>240)lvl=240;
 			g.l(0,-lvl);
 		}
 		g.fin();
 		g.rgb(1.,.3,.0);
-		g.width(8.,.5);
+		g.width(4.,1.);
 		g.stroke();
 		g.rgb(.8,.6,.0);
 		g.width(1.,1.);
@@ -145,9 +145,9 @@ int main()
 		}
 		g.alpha(1);
 
-		//char ss[64];
-		//snprintf(ss,64,"Time %f %i %i %i", Time(), nSamples, music.echoPos, music.sample);
-		//stext(ss,10,10,0xffffffff);
+		char ss[64];
+		snprintf(ss,64,"Time % 8.4f % 8i % 8i % 8i", Time(), snd_bufhealth(), music.echoPos, music.sample);
+		stext(ss,10,10,0xffffffff);
 
 		Present();
 	}

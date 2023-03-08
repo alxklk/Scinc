@@ -14,7 +14,7 @@ int main()
 	int n=0;
 	for(;;)
 	{
-		g.gray(0);g.fill1();
+		//g.gray(0);g.fill1();
 		float cy=-120.;
 		for(int y=0;y<240;y++)
 		{

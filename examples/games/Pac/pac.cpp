@@ -7,7 +7,7 @@
 #define G_SCREEN_SCALE 3
 #endif
 
-#define G_SCREEN_MODE 1
+#define G_SCREEN_MODE 3
 
 #define M_PI 3.141592654
 

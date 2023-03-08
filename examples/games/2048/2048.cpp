@@ -2,7 +2,7 @@
 
 #define G_SCREEN_WIDTH 480
 #define G_SCREEN_HEIGHT 640
-#define G_SCREEN_SCALE 1
+#define G_SCREEN_SCALE 3
 #define G_SCREEN_MODE 1
 
 float CELL=84;

@@ -13,7 +13,7 @@
 #define G_SCREEN_HEIGHT SH
 #define G_SCREEN_MODE 1
 #define G_SCREEN_SCALE 4
-//#define USE_AA 3
+#define USE_AA 3
 
 #ifdef __SCINC__
 #define const

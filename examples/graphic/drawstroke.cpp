@@ -11,15 +11,16 @@ Graph g;
 #include "gtext.h"
 #include "Bezier.h"
 
-float* ppp;
-int* npp;
+float* ppx;
+float* ppy;
+int np;
 
 void PP(float x, float y, float dx, float dy, int col)
 {
 	//printf(" add point %f %f\n", x, y);
-	ppp[(*npp)*2]=x;
-	ppp[(*npp)*2+1]=y;
-	(*npp)++;
+	ppx[np]=x;
+	ppy[np]=y;
+	np++;
 	//printf(" count=%i\n", (*npp));
 }
 
@@ -50,10 +51,12 @@ void gCircle(float x, float y, float r, float w, float a, int col)
 
 int main()
 {
-	float p[NsP*2];
-	ppp=&p[0];
-	int np=0;
-	npp=&np;
+	float ax[NsP];
+	float ay[NsP];
+	ppx=&ax[0];
+	ppy=&ay[0];
+	np=0;
+	//npp=&np;
 
 	CFont* pfont=(CFont*)malloc(sizeof(CFont));
 	CFont& font=*pfont;
@@ -76,9 +79,9 @@ int main()
 	//g.l(0,-200);
 	//g.calclen();
 
-	ConvertLine(font,"*-----*-*-*-*-*------*",60, 50,4,4,2.5);
-	ConvertLine(font,"| Powered with SCINC |",60,100,4,4,2.5);
-	ConvertLine(font,"*------*-*-*-*-------*",60,150,4,4,2.5);
+	ConvertLine(font,"*-----*-*-*-*-*------*",60, 50,4,4,2.25);
+	ConvertLine(font,"| Powered with SCINC |",60,100,4,4,2.25);
+	ConvertLine(font,"*------*-*-*-*-------*",60,150,4,4,2.25);
 
 	printf(" NP=%i\n", np);
 
@@ -135,8 +138,8 @@ int main()
 				if((d>0)&&(d<1.))
 				{
 					float v=(1.-(sin(i*131.71)+1)*d*.5);
-					float x=p[i*2]+sin(i*131.155)*d*d*30+d*d*40;
-					float y=p[i*2+1]+d*d*18+cos(i*131.731)*d*d*30;
+					float x=ax[i]+sin(i*131.155)*d*d*30+d*d*40;
+					float y=ay[i]+d*d*18+cos(i*131.731)*d*d*30;
 					float a=(2+d*d*35)*.7;
 					int cr=1.*v*255.;
 					int cg=(1.-d)*v*255.;
@@ -148,8 +151,8 @@ int main()
 
 		if(N<np)
 		{
-			float px=p[N*2];
-			float py=p[N*2+1];
+			float px=ax[N];
+			float py=ay[N];
 
 			g.clear();
 			g.M(px,py);

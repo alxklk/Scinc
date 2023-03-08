@@ -1,7 +1,7 @@
 #define SW 1024
 #define G_SCREEN_WIDTH SW
 #define G_SCREEN_SCALE 2
-#define G_SCREEN_MODE 1
+#define G_SCREEN_MODE 2
 
 #define NFFT 1024
 
@@ -669,16 +669,17 @@ int main()
 					double re=fftlast[i];
 					double lvl;
 					double im=fftlast[i+1];
-					lvl=sqrt(sqrt(re*re+im*im))/4.;
-					//if(lvl<0)lvl=-lvl;
-					//lvl=lvl>1?1.:lvl;
+					lvl=(sqrt(re*re+im*im))/16.;
+					if(lvl<0)lvl=-lvl;
+					lvl=lvl>1?1.:lvl;
 					float lvlr=lvl*960.;lvlr=lvlr>255.?255.:lvlr;
 					float lvlg=lvl*420.;lvlg=lvlg>255.?255.:lvlg;
 					float lvlb=lvl*220.;lvlb=lvlb>255.?255.:lvlb;
 					int c=
 						((int(lvlb))<<16)|
 						((int(lvlg))<<8)|
-						int(lvlr);
+						int(lvlr)|
+						0xff000000;
 					PutPixel((frame)%SW,480-112-i/2,c);
 				}
 				frame++;

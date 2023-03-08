@@ -591,16 +591,16 @@ int main()
 			DrawText(g,font,"!\"#$%&\'()*+,-./:;<=>?@[\\]^_{|}~0123456789",0,10.5, 80.5,1,1);
 			DrawText(g,font,"the quick brown fox jumps over the lazy dog" ,0,10.5,100.5,1,1);
 			DrawText(g,font,"THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG" ,0,10.5,120.5,1,1);
-
-			g.Clip(0,0,80,100);
 			g.fin();
 			g.rgb(.3,.1,0);
+			g.width(1,1);
+			g.stroke();
+/*
+			g.Clip(0,0,80,100);
 			g.width(2,1);
 			g.stroke();
 			g.UnClip();
-			g.width(1,1);
-			g.stroke();
-
+*/
 			g.clear();
 			char s0[32];
 			snprintf(s0,32,"%i %i code %i",cx,cy,code);
@@ -639,10 +639,10 @@ int main()
 			g.clear();
 			DrawText(g,font,teststr,0,220,30,2,2);
 			g.fin();
-			g.rgba(0,0,0,1);
-			g.width(3.5,1.);
+			g.rgba(0,0,0.5,1);
+			g.width(2.5,2.5);
 			g.stroke();
-			g.rgb(.8,.9,1.);
+			g.rgb(.5,.9,1.);
 			g.width(1.5,1.5);
 			g.stroke();
 			DrawText(g,font,teststr,1,220,30,2,2);

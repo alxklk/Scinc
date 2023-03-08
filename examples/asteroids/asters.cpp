@@ -91,7 +91,7 @@ int collisI=0;
 
 #define N 12
 
-void Aster(float x, float y, float size, int seed, int hit, bool collis, int col)
+void Aster(float x, float y, float size, int seed, float hitt, bool collis, int col)
 {
 	int aseed=seed;
 
@@ -124,7 +124,7 @@ void Aster(float x, float y, float size, int seed, int hit, bool collis, int col
 	g.t_0(x,y);
 	for(int i=0;i<N;i++)
 	{
-		float isize=size*(.7+.3*frand(aseed));
+		float isize=size*(.95+.1*frand(aseed));
 		float a=i*2.*M_PI/N;
 		float xi=sin(a)*isize;
 		float yi=cos(a)*isize;
@@ -158,13 +158,22 @@ void Aster(float x, float y, float size, int seed, int hit, bool collis, int col
 	g.fill1();
 	aseed=oldSeed;
 
+	if((hitt<0)&&(hitt>-1))
+	{
+		g.alpha(1.+hitt);
+		g.rgb(0,.5,1);
+		g.fill1();
+		g.alpha(1);
+	}
+
+
 	g.clear();
 	g.t_0(x+4,y+4);
 	g.t_x(ax*.9, ay*.9);
 	g.t_y(ay*.9,-ax*.9);
 	for(int i=0;i<N;i++)
 	{
-		float isize=size*(.7+.3*frand(aseed));
+		float isize=size*(.95+.1*frand(aseed));
 		float a=i*2.*M_PI/N;
 		float xi=sin(a)*isize;
 		float yi=cos(a)*isize;
@@ -188,10 +197,7 @@ void Aster(float x, float y, float size, int seed, int hit, bool collis, int col
 
 	//g.rgba32(col);
 
-	g.alpha(1);
-	if(hit)
-		g.rgb(0,0,1);
-	//g.fill1();
+	g.Circle(x,y,0,0,1,0xff00ff00);
 	g.alpha(1);
 }
 
@@ -284,6 +290,19 @@ public:
 };
 
 CSpaceShip ship;
+
+#define cellSize 40
+// 640, 480 /cellSize
+#define cellsW (640/cellSize)
+#define cellsH (480/cellSize)
+
+ // cellsW*cellsH
+ #define nCells  (cellsW*cellsH)
+
+
+int cells[nCells];
+int cellcnt[nCells];
+
 class CAsteroid
 {
 public:
@@ -294,7 +313,13 @@ public:
 	float size;
 	int col;
 	int seed;
-	int hit;
+	bool hit;
+	float hitt;
+	float hvx;
+	float hvy;
+	float health;
+	int selfIndex;
+	int nextInCell;
 	void Set(float ix, float iy, float idx, float idy, float isize, int iseed)
 	{
 		x=ix;
@@ -302,19 +327,20 @@ public:
 		dx=idx;
 		dy=idy;
 		size=isize;
+		health=size;
 		seed=iseed;
 		col=(irand(iseed)&255)|((irand(iseed)&255)<<8)|((irand(iseed)&255)<<16)|0xff000000;
 	}
 	void Update(float dt)
 	{
-		hit=0;
+		hit=false;
+		hitt-=dt;
 		x+=dt*dx;
 		y+=dt*dy;
 
 		if(Len(fnear(x-ship.x,640),fnear(y-ship.y,640))<size+SSC*1.5)
 		{
 			shipHit++;
-			hit=1;
 			ship.vx=-ship.vx;
 			ship.vy=-ship.vy;
 		}
@@ -323,14 +349,29 @@ public:
 		if(x>640+size)x=x-640;
 		if(y<   -size)y=y+480;
 		if(y>480+size)y=y-480;
+
+		nextInCell=-1;
+		int xindex=int((x+6400)/cellSize);
+		int yindex=int((y+4800)/cellSize);
+		xindex=xindex%cellsW;
+		yindex=yindex%cellsH;
+		int cellIndex=xindex+yindex*cellsW;
+		if(cellIndex>=nCells)cellIndex=0;
+		else if(cellIndex<0)cellIndex=nCells-1;
+
+		int oldListHead=cells[cellIndex];
+		nextInCell=oldListHead;
+		cells[cellIndex]=selfIndex;
+		cellcnt[cellIndex]++;
+		
 	}
 	void Draw(bool collis)
 	{
-			if(x>640-size)Aster(x-640,y,size,seed,hit,collis,col);
-			if(x<  0+size)Aster(x+640,y,size,seed,hit,collis,col);
-			if(y>480-size)Aster(x,y-480,size,seed,hit,collis,col);
-			if(y<  0+size)Aster(x,y+480,size,seed,hit,collis,col);
-			Aster(x,y,size,seed,hit,collis,col);
+			if(x>640-size)Aster(x-640,y,size,seed,hitt,collis,col);
+			if(x<  0+size)Aster(x+640,y,size,seed,hitt,collis,col);
+			if(y>480-size)Aster(x,y-480,size,seed,hitt,collis,col);
+			if(y<  0+size)Aster(x,y+480,size,seed,hitt,collis,col);
+			Aster(x,y,size,seed,hitt,collis,col);
 			//if(collis)
 			//{
 			//	char buf[16];
@@ -396,42 +437,69 @@ public:
 		if(x>640)x-=640.;
 		if(y<0)y+=480.;
 		if(y>480)y-=480.;
-		int c=GetPixel(x+vx*0.015,y+vy*0.015);
-		int hitI=c&0x007fffff;
-		if((hitI>1)&&(hitI<=nl+1))
+
+		int xindex0=int((x+6400+32)/cellSize);
+		int yindex0=int((y+4800+24)/cellSize);
+
+		int realHit=-1;
+
+		for(int i=-1;i<=1;i++)
 		{
-			hitI-=2;
-			hitx=x;
-			hity=y;
-			hitt=T;
+			for(int j=-1;j<=1;j++)
+			{
+
+				int xindex1=(xindex0+j);
+				int yindex1=(yindex0+i);
+
+				int xindex=xindex1%cellsW;
+				int yindex=yindex1%cellsH;
+
+				float x0=x;
+				float y0=y;
+
+				int cellIndex=xindex+yindex*cellsW;
+				if(cellIndex>=nCells)cellIndex=0;
+				else if(cellIndex<0)cellIndex=nCells-1;
+
+				int hitI=cells[cellIndex];
+
+				while(1)
+				{
+					if((hitI>=0)&&(hitI<nl))
+					{
+						float dx=asts[hitI].x-x0;
+						float dy=asts[hitI].y-y0;
+						if(dy>240.)dy-=480.;else if(dy<-240.)dy+=480.;
+						if(dx>320.)dx-=640.;else if(dx<-320.)dx+=640.;
+
+						float sz=asts[hitI].size;
+						if(((dx*dx+dy*dy)<sz*sz))
+						{
+							hitx=x;
+							hity=y;
+							hitt=T;
+							realHit=hitI;
+							break;
+						}
+					}
+					else break;
+					hitI=asts[hitI].nextInCell;
+				}
+			}
+		}
+
+		if(realHit>=0)
+		{
 			snd_play(sndExplode);
-			int i=hitI;
-			asts[i].size*=0.6;
+			int i=realHit;
+			asts[i].health-=8.;
+			asts[i].hitt=0;
+			asts[i].hvx=vx;
+			asts[i].hvy=vy;
+			asts[i].dx+=vx*.5/asts[i].size;
+			asts[i].dy+=vy*.5/asts[i].size;
 			asts[i].seed=asts[i].seed+irand(eseed);
 			nHits++;
-			if(asts[i].size<6)
-			{
-				if(i<nl-1)
-				{
-					asts[i]=asts[nl-1];
-				}
-				nl--;
-			}
-			else
-			{
-				float aspeed=Len(asts[i].dx,asts[i].dy);
-				float bspeed=Len(vx,vy);
-				asts[i].dx=-vy/bspeed*aspeed+frand(eseed)*130;
-				asts[i].dy= vx/bspeed*aspeed+frand(eseed)*130;
-				if(nl<NA-1)
-				{
-					asts[nl]=asts[i];
-					asts[nl].dx=-asts[nl].dx+frand(eseed)*30;
-					asts[nl].dy=-asts[nl].dy+frand(eseed)*30;
-					asts[nl].seed=asts[nl].seed+irand(eseed);
-					nl++;
-				}
-			}
 			t-=10.;
 		}
 	}
@@ -452,6 +520,48 @@ public:
 	}
 };
 
+void AstersUpdateLife()
+{
+	int i=0;
+	while(1)
+	{
+		if(i>=nl)
+			break;
+		if(asts[i].health<=0.)
+		{
+			asts[i].size*=0.6;
+			nHits++;
+			if(asts[i].size<6)
+			{
+				if(i<nl-1)
+				{
+					asts[i]=asts[nl-1];
+				}
+				nl--;
+				continue;
+			}
+			else
+			{
+				asts[i].seed=asts[i].seed+irand(eseed);
+				asts[i].health=asts[i].size;
+				float aspeed=Len(asts[i].dx,asts[i].dy);
+				float bspeed=Len(asts[i].hvx,asts[i].hvy);
+				asts[i].dx=-asts[i].hvy/bspeed*aspeed+frand(eseed)*130;
+				asts[i].dy= asts[i].hvx/bspeed*aspeed+frand(eseed)*130;
+				if(nl<NA-1)
+				{
+					asts[nl]=asts[i];
+					asts[nl].dx=-asts[nl].dx+frand(eseed)*30;
+					asts[nl].dy=-asts[nl].dy+frand(eseed)*30;
+					asts[nl].seed=asts[nl].seed+irand(eseed);
+					nl++;
+				}
+			}
+		}
+		i++;
+	}
+}
+
 #define MAXB 40
 CBullet bullets[MAXB];
 int NB;
@@ -470,9 +580,9 @@ void ResetGame()
 {
 	NB=0;
 	nl=7;
-	asts[0].Set(640,280,0,0,25,gseed);
+	asts[0].Set(320,10,0,0,25,gseed);
 	for(int i=1;i<nl;i++)
-		asts[i].Set(640*frand(gseed),480*frand(gseed),frand(gseed)*30,frand(gseed)*30,25+frand(gseed)*12,gseed);
+		asts[i].Set(640*frand(gseed),480*frand(gseed),frand(gseed)*3,frand(gseed)*3,25+frand(gseed)*12,gseed);
 
 	t0=Time();
 	ship.x=320;
@@ -497,7 +607,7 @@ int main()
 	g.t_x(15,0);
 	g.t_y(5,-20);
 	g.clear();
-	gtext("LOADING");
+	//gtext("LOADING");
 	g.fin();
 	g.width(5,5);
 	g.rgb(1.0,.5,0.0);
@@ -518,7 +628,6 @@ int main()
 	int menuPos=0;
 	CMusic music;
 	music.Init();
-	int hitRT=g.CreateRT(640,480);
 
 	while(true)
 	{
@@ -542,9 +651,9 @@ int main()
 			g.t_x(10,0);
 			g.t_y(0,-10);
 			g.clear();
-			gtext("Press ENTER");
+			//gtext("Press ENTER");
 			g.t_0(320-200+cos(Time()*3.)*10,280);
-			gtext("to start");
+			//gtext("to start");
 			g.fin();
 			g.width(3,2);
 			g.alpha(1);
@@ -615,26 +724,25 @@ int main()
 				g.stroke();
 			}
 
+			for(int i=0;i<nCells;i++)
+			{
+				cells[i]=-1;
+				cellcnt[i]=0;
+			}
 
 			for(int i=0;i<nl;i++)
 			{
+				asts[i].selfIndex=i;
 				asts[i].Update(dt);
 			}
 
-			g.SetActiveRT(hitRT);
-			g.rgba32(0);
-			g.FillRT();
-			for(int i=0;i<nl;i++)
-			{
-				collisI=i+1;
-				asts[i].Draw(true);
-			}
 			for(int i=0;i<NB;i++)
 			{
 				bullets[i].Update(dt);
 			}
 
-			g.SetActiveRT(0);
+			AstersUpdateLife();
+
 			for(int i=0;i<nl;i++)
 			{
 				asts[i].Draw(false);
@@ -695,24 +803,60 @@ int main()
 			g.t_x(3.5,0);
 			g.t_y(0,-4.5);
 			g.clear();
-			gtext(ss);
+			//gtext(ss);
 
 			snprintf(ss,64,"%f", Time());
 			g.t_0(5,20);
-			gtext(ss);
+			//gtext(ss);
 
 			snprintf(ss,64,"%i asteroids", nl);
 			g.t_0(5,35);
-			gtext(ss);
+			//gtext(ss);
 
 			snprintf(ss,64,"ship health %5.2f %%", ship.health*100);
 			g.t_0(450,35);
-			gtext(ss);
+			//gtext(ss);
 
 			g.fin();
 			g.width(1.25,1.25);
 			g.rgb(.5,.8,1.0);
 			g.stroke();
+
+			g.t_0(0,0);
+			g.t_x(1,0);
+			g.t_y(0,1);
+			g.clear();
+			int index=0;
+			int nic=cellSize/8;
+			for(int i=0;i<cellsH;i++)
+			{
+				for(int j=0;j<cellsW;j++)
+				{
+					for(int indexInCell=0;indexInCell<cellcnt[index];indexInCell++)
+					{
+						int xi=indexInCell%nic;
+						int yi=indexInCell/nic;
+						g.M(j*cellSize+4+xi*8,i*cellSize+4+yi*8);
+						g.l(.1,.1);
+					}
+					index++;
+				}
+			}
+			g.fin();
+			g.width(2.,2.);
+			g.rgba(1,0,1,1);
+			g.stroke();
+			g.alpha(1);
+
+			for(int i=0;i<cellsH;i++)
+			{
+				g.lineH(0,i*cellSize,640,0x80ffffff);
+			}
+			for(int j=0;j<cellsW;j++)
+			{
+				g.lineV(j*cellSize,0,480,0x80ffffff);
+			}
+
 
 			if(nl==0)
 			{
@@ -720,7 +864,7 @@ int main()
 				g.t_0(50,200);
 				g.t_x(5.5,0);
 				g.t_y(0,-7.5);
-				gtext("All asteroids destroyed, press m for menu");
+				//gtext("All asteroids destroyed, press m for menu");
 				g.fin();
 				g.width(1.25,1.25);
 				g.rgb(.5,.2,1.0);

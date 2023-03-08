@@ -81,9 +81,9 @@ int main()
 
 			g.clear();
 			float d=0.85;
-			Circle(x+R*d,y+R*d,R*.3);
+			Circle(x+R*d,y+R*d,R*.1);
 			g.fin();
-			g.width(R*.5,1.);
+			g.width(R*.9,1.);
 			//g.stroke();
 			g.rgb(.5+cr*.5,.5+cg*.5,.5+cb*.5);
 			g.fill2();

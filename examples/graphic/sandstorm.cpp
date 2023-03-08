@@ -54,9 +54,9 @@ int main()
 		float T=t*25;
 		CalcTable(T);
 		{
-			for(int i=0;i<480;i+=5)
+			for(int i=0;i<480;i+=8)
 			{
-				for(int j=0;j<640;j+=5)
+				for(int j=0;j<640;j+=8)
 				{
 					float x=j;
 					float y=i;
@@ -67,7 +67,7 @@ int main()
 					{
 						int h=r*191+64;
 						int c=0xff000000|int(h)|(int(h*.5)<<8)|(int(h*.5+30)<<16);
-						g.Rect(j,i,10,10,c);
+						g.Rect(j,i,8,8,c);
 					}
 				}
 			}
