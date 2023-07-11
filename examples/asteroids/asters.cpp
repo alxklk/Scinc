@@ -10,6 +10,10 @@
 #include "asters_sounds.h"
 #include "asters_music.h"
 
+#include "../graphic/font.h"
+#include "../graphic/letters.h"
+#include "../graphic/gtext.h"
+
 Graph g;
 
 void BG()
@@ -602,6 +606,12 @@ void ResetGame()
 
 int main()
 {
+	CFont* pfont=(CFont*)malloc(sizeof(CFont));
+	CFont& font=*pfont;
+	CFontMaker fm;
+	fm.Init(font,6);
+	MakeLetters(fm);
+
 	BG();
 	g.t_0(320-7/2.*2.5*15,240);
 	g.t_x(15,0);
@@ -648,12 +658,12 @@ int main()
 			g.graduse(-1);
 
 			g.t_0(320-200+sin(Time()*3.)*10,240);
-			g.t_x(10,0);
-			g.t_y(0,-10);
+			g.t_x(3,0);
+			g.t_y(0,3);
 			g.clear();
-			//gtext("Press ENTER");
+			DrawText(g,font,"Press ENTER" ,0,0,0,1,1);
 			g.t_0(320-200+cos(Time()*3.)*10,280);
-			//gtext("to start");
+			DrawText(g,font,"to start" ,0,0,0,1,1);
 			g.fin();
 			g.width(3,2);
 			g.alpha(1);
@@ -799,23 +809,27 @@ int main()
 
 			char ss[64];
 			int len=snprintf(ss,64,"Hits %i of %i", nHits, nShots);
-			g.t_0(320-len/2.*2.5*6,20);
-			g.t_x(3.5,0);
-			g.t_y(0,-4.5);
+			g.t_0(int(320-len/2.*2.5*6)+.5,20.5);
+			g.t_x(1.,0);
+			g.t_y(0,1.);
 			g.clear();
 			//gtext(ss);
+			DrawText(g,font,ss,0,0,0,1,1);
 
 			snprintf(ss,64,"%f", Time());
-			g.t_0(5,20);
+			g.t_0(5.5,20.5);
 			//gtext(ss);
+			DrawText(g,font,ss,0,0,0,1,1);
 
 			snprintf(ss,64,"%i asteroids", nl);
-			g.t_0(5,35);
+			g.t_0(5.5,35.5);
 			//gtext(ss);
+			DrawText(g,font,ss,0,0,0,1,1);
 
 			snprintf(ss,64,"ship health %5.2f %%", ship.health*100);
-			g.t_0(450,35);
+			g.t_0(450.5,35.5);
 			//gtext(ss);
+			DrawText(g,font,ss,0,0,0,1,1);
 
 			g.fin();
 			g.width(1.25,1.25);
@@ -865,6 +879,7 @@ int main()
 				g.t_x(5.5,0);
 				g.t_y(0,-7.5);
 				//gtext("All asteroids destroyed, press m for menu");
+				DrawText(g,font,ss,0,0,0,1,1);
 				g.fin();
 				g.width(1.25,1.25);
 				g.rgb(.5,.2,1.0);

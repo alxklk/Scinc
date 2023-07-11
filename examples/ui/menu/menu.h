@@ -12,6 +12,9 @@ int Strlen(char* s)
 	return 0;
 }
 
+struct SMenuItem;
+typedef int(*TMenuItemCallback)(SMenuItem& item);
+
 struct SMenuItem
 {
 	int parent;
@@ -24,6 +27,7 @@ struct SMenuItem
 	int x;
 	int y;
 	int w; // width
+	TMenuItemCallback cb;
 };
 
 int Max(int x, int y){return x>y?x:y;}
@@ -87,9 +91,16 @@ struct SMenu
 		mi[misize].name=name;
 		mi[misize].parent=curPar;
 		mi[misize].cmd=cmd;
+		mi[misize].cb=0;
 		misize++;
 		return *this;
 	}
+	SMenu& C(TMenuItemCallback icb)
+	{
+		mi[misize-1].cb=icb;
+		return *this;
+	}
+
 	TMenuCommand cmdHandler;
 	int mh;
 	bool menuOpen;
@@ -330,6 +341,7 @@ struct SMenu
 						if(menuHover!=-1)
 						{
 							if(cmdHandler)cmdHandler(mi[menuHover].cmd,mi[menuHover].cmdArg);
+							if(mi[menuHover].cb)mi[menuHover].cb(mi[menuHover]);
 							//MenuCommand(mi[menuHover].cmd,mi[menuHover].cmdArg);
 							//printf(" Hit menu %i\n", menuHover);
 						}
@@ -425,6 +437,7 @@ struct SMenu
 		if((menuHover!=-1)&&(clickOnMenu))//if(cmd)
 		{
 			if(cmdHandler)cmdHandler(cmd,cmdArg);
+			if(mi[menuHover].cb)mi[menuHover].cb(mi[menuHover]);			
 			//MenuCommand(cmd,cmdArg);
 			return 1;
 		}

@@ -15,7 +15,7 @@ cplx I;
 #define CPLX_SUB(o,l,r) (o).re=(l).re-(r).re;(o).im=(l).im-(r).im;
 #define CPLX_SWAP(l,r) {double t=(l).re;(l).re=(r).re;(r).re=t;t=(l).im;(l).im=(r).im;(r).im=t;}
 
-int Log2(int x)
+int ILog2(int x)
 {
 	if(x<0)x=-x;
 	int i=-1;
@@ -32,7 +32,7 @@ int FFT_reversedBits[NFFT];
 
 void FFT_Init()
 {
-	int m = 32-Log2(NFFT);
+	int m = 32-ILog2(NFFT);
 	for(int i=0;i<NFFT;i++)
 	{
 		int b=i;

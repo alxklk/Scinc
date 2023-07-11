@@ -106,7 +106,7 @@ int main()
 				float w1=150.-w;
 				if(w1<0)w1=0;
 				w1*=.006;
-				g.alpha(w1*w1*w1);
+				g.alpha(w1*w1*w1*4.);
 				g.width(w*.2+3,(w*.1+2)*.5);
 				g.stroke();
 			}

@@ -12,6 +12,18 @@
 #define FIXED_FRACTS (FIXED_DIGITS/2)
 #endif
 
+char* stdDividers[9]=
+{
+"-999",
+"5.0"    ,
+"3.33333",
+"2.5"    ,
+"2.0"    ,
+"1.66666",
+"1.42857",
+"1.25"   ,
+"1.11111"
+};
 class fixed
 {
 public:
@@ -348,13 +360,28 @@ public:
 			int topdigit=d.digits[FIXED_FRACTS-1];
 			if(topdigit==9)
 				break;
-			if(topdigit==0)
+			else if(topdigit==0)
 			{
 				fixed inf;
 				inf.Sets("-99.99");
 				return inf;
 			}
 			fixed mul;
+			mul.Sets(stdDividers[topdigit]);
+			// switch(topdigit)
+			// {
+			// 	case 1:mul.Sets("5.0"    );break;
+			// 	case 2:mul.Sets("3.33333");break;
+			// 	case 3:mul.Sets("2.5"    );break;
+			// 	case 4:mul.Sets("2.0"    );break;
+			// 	case 5:mul.Sets("1.66666");break;
+			// 	case 6:mul.Sets("1.42857");break;
+			// 	case 7:mul.Sets("1.25"   );break;
+			// 	case 8:mul.Sets("1.11111");break;
+			// 	default:break;
+			// }
+
+#ifdef UNDEIN 
 			/* */if(topdigit==1){mul.Sets("5.0"    );}
 			else if(topdigit==2){mul.Sets("3.33333");}
 			else if(topdigit==3){mul.Sets("2.5"    );}
@@ -363,7 +390,7 @@ public:
 			else if(topdigit==6){mul.Sets("1.42857");}
 			else if(topdigit==7){mul.Sets("1.25"   );}
 			else if(topdigit==8){mul.Sets("1.11111");}
-
+#endif
 			d=d*mul;
 			n=n*mul;
 			iter++;
@@ -377,7 +404,7 @@ public:
 			d=d*mul;
 			n=n*mul;
 			iter++;
-			if(iter>3+pow_of_2(FIXED_FRACTS))
+			if(iter>5+pow_of_2(FIXED_FRACTS))
 				break;
 		}
 		n.sign=newsign;
@@ -432,7 +459,7 @@ public:
 			for(int i=0;i< shift/2;i++)
 				a.Div10();
 
-		int cnt=2+pow_of_2(FIXED_DIGITS);
+		int cnt=4+pow_of_2(FIXED_DIGITS);
 		for(int i=0;i<cnt;i++)
 		{
 			a=(x/a+a)*h;

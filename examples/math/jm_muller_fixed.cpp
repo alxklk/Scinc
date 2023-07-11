@@ -1,5 +1,5 @@
-#define FIXED_DIGITS 135
-#define FIXED_FRACTS 125
+#define FIXED_DIGITS 155
+#define FIXED_FRACTS 145
 
 #include "fixed.h"
 

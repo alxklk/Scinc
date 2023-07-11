@@ -18,11 +18,11 @@ void FFT(float* in, float* o, int j)
 	cplx buf[NFFT];
 	for(int i=0;i<NFFT;i++)
 	{
-		int idx=(-i*6+j+12000*2)%12000;
+		int idx=(-i*8+j+12000*2)%12000;
 		buf[i].re=in[idx];
 		buf[i].im=in[idx];
 	}
-	fft(buf, (cplx*)(void*)o, NFFT);
+	fft((cplx*)&(buf[0]), (cplx*)(void*)o, NFFT);
 
 /*	I.re=0;
 	I.im=1;
@@ -77,7 +77,7 @@ int main()
 
 
 		tframe=Time();
-		while(snd_bufhealth()<(1000+NFFT))
+		while(snd_bufhealth()<(3000+NFFT))
 		{
 			music.GenerateSamples(NFFT);
 			FFT(music.echo,fftout,music.echoPos);
@@ -127,21 +127,22 @@ int main()
 		g.stroke();
 
 		float col[12]={0,0,1, 0,1,1, 0,1,0, 1,.5,0};
+		int coli[4]={0xffff0000,0xffffff00,0xff00ff00,0xff4000ff};
 
 		for(int i=0;i<4;i++)
 		{
-			g.clear();
-			g.M(170+100*i,120);
-			g.l(0,0);
-			g.fin();
-			g.rgba(col[i*3],col[i*3+1],col[i*3+2],.5);
+			//g.clear();
+			//g.M(170+100*i,120);
+			//g.l(0,0);
+			//g.fin();
+			//g.rgba(col[i*3],col[i*3+1],col[i*3+2],.5);
 			//l[i]*=.08;
 			float a=l[i]*.005;
 			a=a>1.?1.:a;
-			a*=a;
-			g.alpha(a);
-			g.width(50,1);
-			g.stroke();
+			//a*=a;
+			//g.alpha(a);
+			g.Circle(170+100*i,120,0,1,50*a+10,coli[i]);
+			//g.stroke();
 		}
 		g.alpha(1);
 

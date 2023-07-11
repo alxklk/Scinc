@@ -757,9 +757,9 @@ void MakeLetters(CFontMaker& fm)
 	}
 	{
 		fm.StartGlyph('t');
-		fm.M(1,6);
+		fm.M(0,6);
 		fm.l(3,0);
-		fm.M(2,9);
+		fm.M(1,9);
 		fm.l(0,-8);
 		fm.c(0,-1.5,-.5,-1.5,2.5,0);
 		fm.EndGlyph();

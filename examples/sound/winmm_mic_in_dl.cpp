@@ -65,9 +65,9 @@ void CALLBACK waveInProc(
 				WAVEHDR* phdr=(WAVEHDR*)param0;
 				int size=phdr->dwBytesRecorded;
 				//printf("data %i bytes\n", size);
-				while(accum.size()>bufferFrames*8)
+				if(accum.size()>bufferFrames*3)
 				{
-					accum.erase(accum.begin(), accum.begin()+bufferFrames);
+					accum.erase(accum.begin(), accum.begin()+bufferFrames-bufferFrames*3);
 				}
 				int pos=accum.size();
 				accum.resize(pos+size/2);

@@ -1,13 +1,14 @@
 #define SW 1024
 #define G_SCREEN_WIDTH SW
 #define G_SCREEN_SCALE 2
-#define G_SCREEN_MODE 2
+#define G_SCREEN_MODE 1
 
-#define NFFT 1024
+#define NFFT 2048
 
 #include "sound.h"
 #include "graphics.h"
 #include "../asteroids/asters_music.h"
+#include "../ui/gui/GUI.h"
 
 #ifdef __SCINC__
 #define const
@@ -22,14 +23,6 @@
 
 #define M_PI 3.141592654
 
-int mx;
-int my;
-int mb;
-int prevmx;
-int prevmy;
-int prevmb;
-
-
 int seed=374693645;
 
 int irand(int& seed)
@@ -43,7 +36,7 @@ double frand(int& seed)
 	return (irand(seed)>>11)/65536.0;
 }
 
-#define ALMOST_ONE 0.9999999999999
+//#define ALMOST_ONE 0.9999999999999
 
 /*double mod(double a, double b)
 {
@@ -111,15 +104,15 @@ float Bell_Curve(float t)
 
 void FFT(double* in, double* o)
 {
-	//cplx buf[NFFT];
+	cplx buf[NFFT];
 	//cplx out[NFFT];
-	//for(int i=0;i<NFFT;i++)
-	//{
-	//	buf[i].re=in[i+i  ];
-	//	buf[i].im=in[i+i+1];
-	//}
+	for(int i=0;i<NFFT;i++)
+	{
+		buf[i].re=in[i+i  ];
+		buf[i].im=0;//in[i+i+1];
+	}
 	//memcpy(&buf[0],&in[0],sizeof(cplx)*NFFT);
-	fft((cplx*)(void*)in, (cplx*)(void*)o, NFFT);
+	fft((cplx*)(&buf[0]), (cplx*)(void*)o, NFFT);
 	//memcpy(&o[0],&out[0],sizeof(cplx)*NFFT);
 
 	//for(int i=0;i<NFFT;i++)
@@ -131,6 +124,11 @@ void FFT(double* in, double* o)
 
 }
 
+void revFFT(double* in, double* o)
+{
+	fft((cplx*)(void*)in, (cplx*)(void*)o, NFFT);
+}
+
 double fftout[NFFT*2];
 double filtered[NFFT*2];
 double sliding[NFFT*2];
@@ -140,15 +138,20 @@ int curSample=0;
 double echo[NFFT*2];
 
 CMusic music;
-bool music_on=false;
-bool noise_on=false;
-bool saw_on=false;
-bool square_on=false;
-bool oneliner_on=false;
-bool uprising_on=false;
+int music_on=false;
+int eq_on=false;
+int shift_on=false;
+int noise_on=false;
+int saw_on=false;
+int square_on=false;
+int sine_on=false;
+int sine_lega_on=false;
+int oneliner_on=false;
+int uprising_on=false;
 double upT[16]={};
-bool rawfile_on=false;
-bool mic_in=true;
+int rawfile_on=false;
+int mic_in=false;
+float shift=0.;
 
 FILE* rawf;
 
@@ -178,6 +181,10 @@ float SndNoise(float t)
 	return GradNoise(t/10.);
 }
 
+float mfreq=0.;
+float cfreq=0.;
+float prevmfreq=0.;
+
 void GenerateSamples()
 {
 	memcpy(&echo[0], &echo[NFFT], NFFT*sizeof(double));
@@ -186,12 +193,13 @@ void GenerateSamples()
 		echo[i]=0;
 	}
 	{
-		if(mb&1)
+		if(sine_lega_on)
 		{
 			for(int i=NFFT/2;i<NFFT;i++)
 			{
 				int s=curSample+i;
-				double l=lega(s/48000.,s/48000.,(curSample+NFFT/2)/48000.,(curSample+NFFT)/48000.,prevmx*10,mx*10)*.3;
+				float res=48000./NFFT;
+				double l=lega(s/48000.,s/48000.,(curSample+NFFT/2)/48000.,(curSample+NFFT)/48000.,prevmfreq,mfreq)*.3;
 				//double l=lega(s/48000.,s/48000.,(curSample+NFFT/2)/48000.,(curSample+NFFT)/48000.,
 				//	3000.+2500.*sin((curSample+NFFT/2)/48000.*M_PI),3000.+2500.*sin((curSample+NFFT)/48000.*M_PI)
 				//)*.3;
@@ -200,17 +208,17 @@ void GenerateSamples()
 				echo[idx  ]+=l;
 				echo[idx+1]+=l;
 			}
+			prevmfreq=mfreq;
 		}
-		if(mb&4)
+		if(sine_on)
 		{
-			double freq=1./48000.*mx*10.;
+			float res=48000./NFFT;
 			for(int i=NFFT/2;i<NFFT;i++)
 			{
 				int s=curSample+i;
-				double a=s*freq;
-				a-=double(int(a));
-				a*=2.*M_PI;
-				double l=sin(a)*.3;
+				double a=s/48000.*mfreq;
+				a=a-int(a);
+				double l=sin(a*2*M_PI)*.3;
 				int idx=i+i;
 				echo[idx  ]+=l;
 				echo[idx+1]+=l;
@@ -247,12 +255,9 @@ void GenerateSamples()
 			for(int i=NFFT/2;i<NFFT;i++)
 			{
 				int s=curSample+i;
-				double l=0;
+				double l=float(s)*mfreq/24000.;
+				l=(l-float(int(l))-.5)*.3;
 				int idx=i+i;
-				l=s/102.4;
-				l=l-int(l)-.5;
-				if(l<0.)l=-l;
-				l-=0.25;
 				echo[idx  ]+=l;
 				echo[idx+1]+=l;
 			}
@@ -282,9 +287,9 @@ void GenerateSamples()
 			for(int i=NFFT/2;i<NFFT;i++)
 			{
 				int s=curSample+i;
-				double l=0;
+				double l=float(s)*mfreq/24000.;
+				l=((l-float(int(l))<.5)-.5)*.3;
 				int idx=i+i;
-				l=(int(s/102.4)&1)-.5;
 				echo[idx  ]+=l;
 				echo[idx+1]+=l;
 			}
@@ -397,14 +402,102 @@ void Out(double* buf, int count)
 
 bool graph=false;
 int frame;
-bool filter=false;
-bool hipass=false;
-bool inv=false;
+int filter=false;
+int hipass=false;
+int inv=false;
+int cut_on=false;
+
+float interp(float y0, float y1, float t)
+{
+	t=(3.-2.*t)*t*t;
+	return y0+(y1-y0)*t;
+}
+
+float EQ[11]={1,1,1,1,1,1,1,1,1,1,1};
+int EQF[11] ={0,0,0,0,0,0,0,0,0,0,NFFT/2-1};
 
 int main()
 {
+	CGUI gui;
+	gui.Init();
+	int ctldy=18;
+	int ctly=5-ctldy;
+	gui.AddCheck("1lineR",  10,ctly+=ctldy,65,15,0,&oneliner_on);
+	gui.AddCheck("Music",   10,ctly+=ctldy,65,15,0,&music_on);
+	gui.AddCheck("Square",  10,ctly+=ctldy,65,15,0,&square_on);
+	gui.AddCheck("Sawtooth",10,ctly+=ctldy,65,15,0,&saw_on);
+	gui.AddCheck("Sine",    10,ctly+=ctldy,65,15,0,&sine_on);
+	gui.AddCheck("SineL",   10,ctly+=ctldy,65,15,0,&sine_lega_on);
+
+	ctly=5-ctldy;
+	gui.AddCheck("Filter",80,ctly+=ctldy,65,15,0,&filter);
+	gui.AddCheck("EQ"    ,80,ctly+=ctldy,65,15,0,&eq_on);
+	gui.AddCheck("Shift" ,80,ctly+=ctldy,65,15,0,&shift_on);
+	gui.AddCheck("Cut"   ,80,ctly+=ctldy,65,15,0,&cut_on);
+	gui.AddCheck("InvC"  ,80,ctly+=ctldy,65,15,0,&inv);
+
+	gui.AddSlide("Shift",   200,10,401,15,0,&shift, false,0,200);
+	gui.AddSlide("Freq",    200,30,401,15,0,&mfreq, false,0,48000./NFFT*100);
+	gui.AddSlide("Cut Freq",200,50,401,15,0,&cfreq, false,0,NFFT/2);
+
+	{
+		int cx0=710;
+		int dx=20;
+		gui.AddSlide("", cx0+=dx,10,15,101,'EQ[0]',&EQ[ 0],true,8,0);
+		gui.AddSlide("", cx0+=dx,10,15,101,'EQ[1]',&EQ[ 1],true,8,0);
+		gui.AddSlide("", cx0+=dx,10,15,101,'EQ[2]',&EQ[ 2],true,8,0);
+		gui.AddSlide("", cx0+=dx,10,15,101,'EQ[3]',&EQ[ 3],true,8,0);
+		gui.AddSlide("", cx0+=dx,10,15,101,'EQ[4]',&EQ[ 4],true,8,0);
+		gui.AddSlide("", cx0+=dx,10,15,101,'EQ[5]',&EQ[ 5],true,8,0);
+		gui.AddSlide("", cx0+=dx,10,15,101,'EQ[6]',&EQ[ 6],true,8,0);
+		gui.AddSlide("", cx0+=dx,10,15,101,'EQ[7]',&EQ[ 7],true,8,0);
+		gui.AddSlide("", cx0+=dx,10,15,101,'EQ[8]',&EQ[ 8],true,8,0);
+		gui.AddSlide("", cx0+=dx,10,15,101,'EQ[9]',&EQ[ 9],true,8,0);
+		gui.AddSlide("", cx0+=dx,10,15,101,'EQ[A]',&EQ[10],true,8,0);
+	}
+
+	printf("\nEQ bands calc:\n");
+	float eq0=128;
+	for(int i=1;i<10;i++)
+	{
+		printf(" %f %i", eq0, int(eq0/(48000./NFFT)));
+		EQF[i]=int(eq0/(48000./NFFT)*1.5)+1;
+		eq0+=eq0*.75;
+	}
+	printf("\n");
+
+	printf("\nEQ bands:\n");
+	for(int i=0;i<11;i++)
+	{
+		printf(" %i", EQF[i]);
+	}
+	printf("\n");
+
+	{
+		printf("-----------\n");
+		int i0=EQF[0];
+		for(int i=1;i<11;i++)
+		{
+			int i1=EQF[i];
+			printf("%i: %i %i \n", i, i0, i1);
+			for(int j=i0;j<i1;j++)
+			{
+				float t=(j-i0)/float(i1-i0);
+				float val=interp(EQ[i-1],EQ[i],t);
+				fftout[i*2         ]*=val;
+				fftout[i*2+1       ]*=val;
+				fftout[NFFT*2-i*2  ]*=val;
+				fftout[NFFT*2-i*2-1]*=val;
+			}
+			i0=i1;
+		}
+		printf("\n");
+	}
+
 	SetPresentWait(0);
-	open_dec("bensound-funnysong.mp3");
+	//open_dec("bensound-funnysong.mp3");
+	//open_dec("money.mp3");
+	open_dec("bear.mp3");
 	FFT_Init();
 	MIC_In_Init(NFFT/2);	
 //	StdFreqs();
@@ -423,6 +516,18 @@ int main()
 
 	while(true)
 	{
+		SScincEvent event;
+		while(GetScincEvent(event))
+		{
+			if(gui.Event(event))
+				continue;
+			if(IsMouseEvent(event.type))
+			{
+				// mx=event._1;
+				// my=event._2;
+				// mb=event._0;
+			}
+		}
 		int key;
 		int press;
 		if(GetKeyEvent(key,press))
@@ -450,9 +555,14 @@ int main()
 				{
 					saw_on=!saw_on;
 				}
-				else if(key=='q')
+				else if(key=='0')
 				{
-					square_on=!square_on;
+					close_dec();
+					open_dec("money.mp3");
+				}
+				else if(key=='d')
+				{
+					shift_on=!shift_on;
 				}
 				else if(key=='m')
 				{
@@ -488,20 +598,18 @@ int main()
 
 		double T0=Time();
 		bool didOut=false;
-		while(snd_bufhealth()<2000+NFFT)
+		int gscount=0;
+		while(snd_bufhealth()<1024*2+NFFT)
 		{
+			gscount++;
 			didOut=true;
-			prevmx=mx;
-			prevmy=my;
-			prevmb=mb;
-			GetMouseState(mx, my, mb);
 			GenerateSamples();
-			if(mic_in)
 			{
 				float mic_buf[NFFT/2];
 				int res=MIC_In_Record((float*)&(mic_buf[0]));
 				//fwrite((void*)&(mic_buf[0]), 1, sizeof(double)*NFFT/2,rawf);
 				//printf("Mic in: %i\n", res);
+				if(mic_in)
 				for(int i=0;i<NFFT/2;i++)
 				{
 					echo[NFFT+i*2]+=mic_buf[i];
@@ -515,17 +623,17 @@ int main()
 				//	echo[i+1]=0;
 				//}
 				FFT(echo,fftout);
-				if(mb&2)
-				{
-					int mp=int(mx/2.5)&0xfffffffe;
-					if(mp<NFFT)
-					{
-						fftout[mp]=NFFT/4.f;
-						fftout[mp+1]=1.;
-						//fftout[NFFT*2-mp]=NFFT/81f;
-						//fftout[NFFT*2-mp-1]=1.;
-					}
-				}
+				//if(mb&2)
+				//{
+				//	int mp=int(mx/2.5)&0xfffffffe;
+				//	if(mp<NFFT)
+				//	{
+				//		fftout[mp]=NFFT/4.f;
+				//		fftout[mp+1]=1.;
+				//		//fftout[NFFT*2-mp]=NFFT/81f;
+				//		//fftout[NFFT*2-mp-1]=1.;
+				//	}
+				//}
 				for(int i=0;i<NFFT*2;i+=2)
 				{
 					double tmp=fftout[i];
@@ -534,11 +642,43 @@ int main()
 					//fftout[i+1]=-fftout[i+1];
 				}
 
-				
-				int cut=mx;
+				if(eq_on)
+				{
+					int i0=EQF[0];
+					for(int i=1;i<11;i++)
+					{
+						int i1=EQF[i];
+						float dt=float(i1-i0);
+						for(int j=i0;j<i1;j++)
+						{
+							float t=(j-i0)/dt;
+							float val=interp(EQ[i-1],EQ[i],t);
+							fftout[j*2         ]*=val;
+							fftout[j*2+1       ]*=val;
+							fftout[NFFT*2-j*2  ]*=val;
+							fftout[NFFT*2-j*2-1]*=val;
+						}
+						i0=i1;
+					}
+					//for(int i=0;i<NFFT/2;i++)
+					//{
+					//	int idx=i/(NFFT/2/8);
+					//	float t=(i-idx*(NFFT/2/8))/float(NFFT/2/8);
+					//	float val=interp(EQ[idx],EQ[idx+1],t);
+					//	fftout[i*2         ]*=val;
+					//	fftout[i*2+1       ]*=val;
+					//	fftout[NFFT*2-i*2  ]*=val;
+					//	fftout[NFFT*2-i*2-1]*=val;
+					//}
+				}
+
+				int cut=100000;
 				if(cut>NFFT/2)cut=NFFT/2;
 				if(cut<0)cut=0;
-				
+				cut=cfreq;
+
+				if(cut_on)
+				{
 				if(1)// low or high pass
 				{
 					if(inv)
@@ -561,6 +701,7 @@ int main()
 							fftout[NFFT*2-i*2-1]=0.;
 						}
 					}
+				}
 				}
 
 				if(0) // Band
@@ -592,26 +733,28 @@ int main()
 					}
 				}
 
-				/*
-				int m=mx*2;
-				if(m<0)m=0;
-				for(int i=NFFT;i>m;i--)
+				if(shift_on)
 				{
-					fftout[i]=fftout[i-m];
-					fftout[(NFFT-1)*2-(i)]=fftout[(NFFT-1)*2-(i-m)];
+					int m=((int)(shift/4))*4;
+					if(m<0)m=0;
+					for(int i=NFFT;i>m;i--)
+					{
+						fftout[i]=fftout[i-m];
+						fftout[(NFFT-1)*2-(i)]=fftout[(NFFT-1)*2-(i-m)];
+					}
+					for(int i=0;i<m;i++)
+					{
+						fftout[i]=0;
+						fftout[(NFFT-1)*2-(i)]=0;
+					}
 				}
-				for(int i=0;i<m;i++)
-				{
-					fftout[i]=0;
-					fftout[(NFFT-1)*2-(i)]=0;
-				}*/
 				
 				//for(int i=0;i<200;i++)
 				//{
 				//	fftout[i]=0.;
 				//	fftout[NFFT*2-i]=0.;
 				//}
-				FFT(fftout,filtered);
+				revFFT(fftout,filtered);
 				double mul=1./(NFFT);
 				for(int i=0;i<NFFT*2;i+=2)
 				{
@@ -651,9 +794,9 @@ int main()
 				Out(sliding,NFFT/2);
 				for(int i=0;i<NFFT*2;i+=2)
 				{
-					filtered[i+1]=0;
+					filtered[i+1]=filtered[i];
 				}
-				FFT(filtered,fftlast);
+				revFFT(filtered,fftlast);
 			}
 			else
 			{
@@ -714,19 +857,19 @@ int main()
 		g.fill1();
 
 
-		double dT=Time()-T0;
-		char s[128];
-		snprintf(s,128,"Processing time: %f",dT);
-		stext(s,10,10,0xffffffff);
+		//double dT=Time()-T0;
+		//char s[128];
+		//snprintf(s,128,"Processing time: %f",dT);
+		//stext(s,10,10,0xffffffff);
 
 		g.clear();
 		g.miterlim(1.01);
 		int nG=SW;
 		if(nG>NFFT)nG=NFFT;
-		for(int i=0;i<nG/2;i++)
+		for(int i=0;i<nG;i++)
 		{
-			double lvl=echo[i*2];
-			g.L(i*2,lvl*200+240);
+			double lvl=echo[i+i];
+			g.L(i,lvl*200+240);
 		}
 		g.fin();
 		g.width(2.,1.);
@@ -739,10 +882,10 @@ int main()
 		if(filter)
 		{
 			g.clear();
-			for(int i=0;i<nG/2;i++)
+			for(int i=0;i<nG;i++)
 			{
-				double lvl=sliding[i*2];
-				g.L(i*2,lvl*200+240);
+				double lvl=sliding[i];
+				g.L(i,lvl*200+240);
 			}
 			g.fin();
 			g.width(1.,1.);
@@ -751,8 +894,9 @@ int main()
 			g.clear();
 		}
 
-		g.clear();
-		for(int i=0;i<NFFT;i++)
+		//g.clear();
+		g.rgb(1.,.8,.5);
+		for(int i=0;i<nG;i++)
 		{
 			double lvl=0;
 			double re=fftlast[i*2  ];
@@ -760,21 +904,52 @@ int main()
 			lvl=sqrt(sqrt(re*re+im*im));
 			lvl*=16.;
 			if(lvl>240)lvl=240;
-			g.M(i+.5,480);
-			g.l(0,-lvl);
+			//g.M(i+.5,480);
+			//g.l(0,-lvl);
+			g.hairline(i,480,i,480-lvl);
 		}
-		g.fin();
-		g.rgb(1.,.2,.1);
-		g.width(2.,1.);
-		g.stroke();
-		g.rgb(1.,.8,.5);
-		g.width(1.,1.);
-		g.stroke();
-		g.clear();
+		//g.fin();
+		//g.rgb(1.,.2,.1);
+		//g.width(2.,1.);
+		//g.stroke();
+		//g.rgb(1.,.8,.5);
+		//g.width(1.,1.);
+		//g.stroke();
+		//g.clear();
+
+
 
 		char ss[64];
-		snprintf(ss,64,"Buffer health: % 5i", snd_bufhealth());
+		snprintf(ss,64,"Buffer health: % 5i  gs:%i", snd_bufhealth(), gscount);
 		stext(ss,10,470,0xffffff00);
+		snprintf(ss,64,"mfreq: %f", mfreq);
+		stext(ss,10,460,0xffffff00);
+		gui.Render(g);
+
+		g.rgba32(0xffffffff);
+		g.clear();
+		for(int i=1;i<11;i++)
+		{
+			float y1=-EQ[i  ]*50+110;
+			float y0=-EQ[i-1]*50+110;
+			float x0=(i-1)*20+740;
+			float dj=1./10.;
+			float y=y0;
+			float x=x0;
+			g.M(x,y);
+			for(float j=dj;j<1.001;j=j+dj)
+			{
+				float yn=interp(y0,y1,j);
+				float xn=x+dj*20.;
+				g.L(xn,yn);
+				x=xn;
+				y=yn;
+			}
+		}
+		g.fin();
+		g.width(2.,2.);
+		g.stroke();
+
 		Present();
 	}
 	fclose(rawf);

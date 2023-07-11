@@ -154,9 +154,12 @@ int MIC_In_Record(double* buf)
 		else break;
 		//if(iteration>100)return -1;
 	}
-	//printf("accum.size()=%i\n", accum.size());
+	//fprintf(stderr, "accum.size()=%i\n", accum.size());
 	if(accum.size()>bufferFrames*3)
+	{
+		//fprintf(stderr, "Overflo %i\n", (accum.size()-bufferFrames*3));
 		accum.erase(accum.begin(),accum.begin()+(accum.size()-bufferFrames*3));
+	}
 	
 	if(accum.size()>=bufferFrames)
 	{

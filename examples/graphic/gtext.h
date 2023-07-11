@@ -1,5 +1,10 @@
 void DrawGlyph(Graph& g, CFont& f, int s, float x, float y, float sx, float sy)
 {
+	if(s<0)
+	{
+		printf("Negative s %i\n",s);
+		return;
+	}
 	CGlyph gl=f.g[s];
 	int c=gl.c0;
 	int d=gl.d0;
@@ -69,6 +74,11 @@ void DrawText(Graph& g, CFont& f, char* s, int col, float x, float y, float sx, 
 	while(true)
 	{
 		int c=s[i];
+		if(c<0)
+		{
+			printf(" c<0\n");
+			continue;
+		}
 		if(c==0)
 			break;
 		if(

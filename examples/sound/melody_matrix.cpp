@@ -13,10 +13,12 @@ int irand(int& seed)
 	return seed;
 }
 
-char mel0[16];
-char mel1[16];
+char mel0[32];
+char mel1[32];
 char baz0[16];
 char baz1[16];
+
+int nm;
 
 // 	float i1=(t*("0867604356602121"[idx0]-'0')*("0120421012034200"[idx1]-'0'));
 // 	float i2=(t*("0102030102030120"[idx0]-'0')*("2432342324323323"[idx2]-'0'));
@@ -24,29 +26,37 @@ char baz1[16];
 void MusicInit(int n)
 {
 	n=n%3;
-	for(int i=0;i<16;i++)
+	if(n==0)
 	{
-		if(n==0)
-		{
-			mel0[i]="0334566776503030"[i]-'0';
-			mel1[i]="0120303021040400"[i]-'0';
-			baz0[i]="0034231032423100"[i]-'0';
-			baz1[i]="1212131213212312"[i]-'0';
-		}
-		else if(n==1)
-		{
-			mel0[i]="0305423542305040"[i]-'0';
-			mel1[i]="0400605004005040"[i]-'0';
-			baz0[i]="0435430345340210"[i]-'0';
-			baz1[i]="2300230340320300"[i]-'0';
-		}
-		else if(n==2)
-		{
-			mel0[i]="0867604356602121"[i]-'0';
-			mel1[i]="0102030102030120"[i]-'0';
-			baz0[i]="0120421012034200"[i]-'0';
-			baz1[i]="2432342324323323"[i]-'0';
-		}
+		nm=16;
+		for(int i=0;i<nm;i++) mel0[i]="0334566776503030"[i]-'0';
+		for(int i=0;i<nm;i++) mel1[i]="0120303021040400"[i]-'0';
+		for(int i=0;i<16;i++) baz0[i]="0034231032423100"[i]-'0';
+		for(int i=0;i<16;i++) baz1[i]="1212131213212312"[i]-'0';
+	}
+	else if(n==1)
+	{
+		nm=16;
+		for(int i=0;i<nm;i++)mel0[i]="0305423542305040"[i]-'0';
+		for(int i=0;i<nm;i++)mel1[i]="0400605004005040"[i]-'0';
+		for(int i=0;i<16;i++)baz0[i]="0435430345340210"[i]-'0';
+		for(int i=0;i<16;i++)baz1[i]="2300230340320300"[i]-'0';
+	}
+	else if(n==2)
+	{
+		nm=16;
+		for(int i=0;i<nm;i++)mel0[i]="0867604356602121"[i]-'0';
+		for(int i=0;i<nm;i++)mel1[i]="0102030102030120"[i]-'0';
+		for(int i=0;i<16;i++)baz0[i]="0120421012034200"[i]-'0';
+		for(int i=0;i<16;i++)baz1[i]="2432342324323323"[i]-'0';
+	}
+	else if(n==3)
+	{
+		nm=32;
+		for(int i=0;i<nm;i++)mel0[i]="08676043566021210123456787654320"[i]-'0';
+		for(int i=0;i<nm;i++)mel1[i]="01020301020301201010101010101010"[i]-'0';
+		for(int i=0;i<16;i++)baz0[i]="0120421012034200"[i]-'0';
+		for(int i=0;i<16;i++)baz1[i]="2432342324323323"[i]-'0';
 	}
 }
 
@@ -308,7 +318,7 @@ public:
 					double t=(cs-n.t0)/48000.;
 					//double s=sin((t+sin(cs*.0005)*0.0005)*n.f*M_PI*2);
 					if(vibratto)
-						t+=sin(t*M_PI*5.)*0.001*t;
+						t+=sin(t*M_PI*15.)*0.0005*t;
 					double s=0.;
 					if(n.instr==2)
 					{
@@ -317,7 +327,7 @@ public:
 							s=0;
 						else
 						 	s=sin(t*n.f*M_PI*2.*4.)*.2;
-						//if(t<0.05)s*=t*20.;
+						if(t<0.005)s*=t*200.;
 						//if(t<0.5)s*=t*2.;
 					}
 					else
@@ -328,7 +338,7 @@ public:
 							if(s>0.4)s=0.4;else if(s<-0.4)s=-.4;
 							s*=0.4;
 						//}
-						//if(t<0.05)s*=t*20.;
+						if(t<0.005)s*=t*200.;
 						//if(t<0.5)s*=t*2.;
 					}
 
@@ -416,8 +426,8 @@ public:
 			int t1=ns1;
 			if(t0!=t1)
 			{
-				float i1=(mel0[t1%16]*baz0[(t1/16)%16]);
-				float i2=(mel1[t1%16]*baz1[(t1/32)%16]);
+				float i1=(mel0[t1%nm]*baz0[(t1/16)%16]);
+				float i2=(mel1[t1%nm]*baz1[(t1/32)%16]);
 				if(i1!=0.0)
 				{
 					notes.AddNote(1,i1*(48000./1024.),12./16.,0.0);
@@ -470,7 +480,7 @@ int main()
 	dt=0.;
 	prevmb=0;
 	rseed=21397862;
-	MusicInit(0);
+	MusicInit(2);
 	snd.Init();
 	echoVal=0.7;
 	cut=1;
@@ -512,7 +522,7 @@ int main()
 		int tNo1=tframe/32;
 		if(tNo0!=tNo1)
 		{
-			MusicInit(tNo1);
+			//MusicInit(tNo1);
 		}
 
 		g.M(-1,240);
@@ -544,6 +554,9 @@ int main()
 		
 		snprintf(ss,64,"Poly %i", notes.Count());
 		stext(ss,10,20,0xffffffff);
+
+		snprintf(ss,64,"nm=%i", nm);
+		stext(ss,10,30,0xffffffff);
 
 
 
