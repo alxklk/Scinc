@@ -103,7 +103,7 @@ int MakeExplodeSound(int len, int seed)
 	int res=snd_add(len);
 	//printf("E %i\n", len);
 	float* eSB;
-	eSB=malloc(sizeof(float)*len);
+	eSB=(float*)malloc(sizeof(float)*len);
 	//1printf("E %i\n", len);
 	for(int i=0;i<len;i++)
 	{
@@ -1234,9 +1234,9 @@ int main()
 		{
 			if(menu.MenuHandleEvent(0,0,640,20,ev))
 			{
-				printf(" Event %c%c%c%c handled by menu\n",
-					(ev.type&0xff000000)>>24,(ev.type&0xff0000)>>16,(ev.type&0xff00)>>8,(ev.type&0xff)
-				);
+				//printf(" Event %c%c%c%c handled by menu\n",
+				//	(ev.type&0xff000000)>>24,(ev.type&0xff0000)>>16,(ev.type&0xff00)>>8,(ev.type&0xff)
+				//);
 				continue;
 			}
 		}
@@ -1334,7 +1334,7 @@ int main()
 					game.Key(key);
 				}
 
-				printf("Key pressed %i %i\n", key, press);
+				//printf("Key pressed %i %i\n", key, press);
 			}
 		}
 
