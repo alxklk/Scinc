@@ -34,6 +34,8 @@ bool IsMouseEventCase(int eventType)
 #define CT_SELECT 3
 #define CT_HSLIDE 4
 #define CT_VSLIDE 5
+#define CT_STATIC 6
+#define CT_FRAME 7
 
 struct SButton;
 
@@ -53,10 +55,10 @@ struct SButton
 	float* fDest;
 	float f0;
 	float f1;
-	PFButtonPressCB pressCB;
-	SButton& OnPress(PFButtonPressCB newCB)
+	PFButtonPressCB CB;
+	SButton& SetCB(PFButtonPressCB newCB)
 	{
-		pressCB=newCB;
+		CB=newCB;
 		return *this;
 	}
 	SButton& SetTitle(char* title)
@@ -137,6 +139,10 @@ public:
 				if(v<0)v=0;
 				if(v>1)v=1;
 				*b.fDest=b.f0+(b.f1-b.f0)*v;
+				if(b.CB)
+				{
+					b.CB(&b);
+				}
 			}
 			else if(b.type==CT_HSLIDE)
 			{
@@ -144,9 +150,13 @@ public:
 				if(v<0)v=0;
 				if(v>1)v=1;
 				*b.fDest=b.f0+(b.f1-b.f0)*v;
+				if(b.CB)
+				{
+					b.CB(&b);
+				}
 			}
 		}
-		for(int i=0;i<nb;i++)
+		for(int i=nb-1;i>=0;i--)
 		{
 			if((x>buttons[i].x0)&&(x<buttons[i].x1))
 			{
@@ -188,16 +198,24 @@ public:
 			if(b.type==CT_SELECT)
 			{
 				*b.iDest=b.selVal;
+				if(b.CB)
+				{
+					ret=b.CB(&b);
+				}
 			}
 			else if(b.type==CT_CHECK)
 			{
 				*b.iDest=!*b.iDest;
+				if(b.CB)
+				{
+					ret=b.CB(&b);
+				}
 			}
 			else if(b.type==CT_BUTTON)
 			{
-				if(b.pressCB)
+				if(b.CB)
 				{
-					ret=b.pressCB(&b);
+					ret=b.CB(&b);
 				}
 			}
 			downButton=-1;
@@ -224,8 +242,8 @@ public:
 				col=0xff405750;
 			}
 			SButton& b=buttons[i];
-			g.Rect(b.x0, b.y0,b.x1-b.x0,b.y1-b.y0,0x30ff00ff);
-			g.Rect(b.x0+1, b.y0+1,b.x1-b.x0-2,b.y1-b.y0-2,0x3000ff00);
+			//g.Rect(b.x0, b.y0,b.x1-b.x0,b.y1-b.y0,0x30ff00ff);
+			//g.Rect(b.x0+1, b.y0+1,b.x1-b.x0-2,b.y1-b.y0-2,0x3000ff00);
 			g.Clip(b.x0, b.y0,b.x1-b.x0+1,b.y1-b.y0+1);
 			if(b.type==CT_BUTTON)
 			{
@@ -332,6 +350,15 @@ public:
 				int l=snprintf(s,128,"%s: %f", b.text, *b.fDest);
 				stext(s, b.x0+(b.x1-b.x0-l*6)/2, b.y0+(b.y1-b.y0-11)/2,0xffffffff);
 			}
+			else if(b.type==CT_STATIC)
+			{
+				int l=StrNLen(b.text,128);
+				stext(b.text, b.x0+(b.x1-b.x0-l*6)/2+1, b.y0+(b.y1-b.y0-11)/2,0xffffffff);
+			}
+			else if(b.type==CT_FRAME)
+			{
+				g.Rect(b.x0+1, b.y0+1, b.x1-b.x0-2,b.y1-b.y0-2,0xff404740);
+			}
 			g.UnClip();
 		}
 	}
@@ -343,12 +370,12 @@ public:
 		buttons[nb].x1=x+w;
 		buttons[nb].y1=y+h;
 		buttons[nb].tag=tag;
-		buttons[nb].pressCB=0;
+		buttons[nb].CB=0;
 		buttons[nb].text=text;
 		nb++;
 		return buttons[nb-1];
 	}
-	void AddCheck(char* text, int x, int y, int w, int h, int tag, int* dest)
+	SButton& AddCheck(char* text, int x, int y, int w, int h, int tag, int* dest)
 	{
 		buttons[nb].type=CT_CHECK;
 		buttons[nb].text=text;
@@ -358,9 +385,11 @@ public:
 		buttons[nb].y1=y+h;
 		buttons[nb].tag=tag;
 		buttons[nb].iDest=dest;
+		buttons[nb].CB=0;
 		nb++;
+		return buttons[nb-1];
 	}
-	void AddSelect(char* text, int x, int y, int w, int h, int tag, int value, int* dest)
+	SButton& AddSelect(char* text, int x, int y, int w, int h, int tag, int value, int* dest)
 	{
 		buttons[nb].type=CT_SELECT;
 		buttons[nb].text=text;
@@ -371,9 +400,11 @@ public:
 		buttons[nb].tag=tag;
 		buttons[nb].selVal=value;
 		buttons[nb].iDest=dest;
+		buttons[nb].CB=0;
 		nb++;
+		return buttons[nb-1];
 	}
-	void AddSlide(char* text, int x, int y, int w, int h, int tag, float* dest, bool vert, float f0, float f1)
+	SButton& AddSlide(char* text, int x, int y, int w, int h, int tag, float* dest, bool vert, float f0, float f1)
 	{
 		buttons[nb].type=vert?CT_VSLIDE:CT_HSLIDE;
 		buttons[nb].text=text;
@@ -385,6 +416,32 @@ public:
 		buttons[nb].fDest=dest;
 		buttons[nb].f0=f0;
 		buttons[nb].f1=f1;
+		buttons[nb].CB=0;
 		nb++;
+		return buttons[nb-1];
+	}
+	SButton& AddStatic(char* text, int x, int y, int w, int h)
+	{
+		buttons[nb].type=CT_STATIC;
+		buttons[nb].text=text;
+		buttons[nb].x0=x;
+		buttons[nb].y0=y;
+		buttons[nb].x1=x+w;
+		buttons[nb].y1=y+h;
+		buttons[nb].CB=0;
+		nb++;
+		return buttons[nb-1];
+	}
+	SButton& AddFrame(char* text, int x, int y, int w, int h)
+	{
+		buttons[nb].type=CT_FRAME;
+		buttons[nb].text=text;
+		buttons[nb].x0=x;
+		buttons[nb].y0=y;
+		buttons[nb].x1=x+w;
+		buttons[nb].y1=y+h;
+		buttons[nb].CB=0;
+		nb++;
+		return buttons[nb-1];
 	}
 };

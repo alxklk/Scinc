@@ -14,7 +14,7 @@ int main()
 	int ch1=1;
 	float val[5]={.5,.3,.7,0.,1.};
 
-	gui.AddButton("Go", 20,20,30,20,'go__').OnPress([](SButton*p)->int
+	gui.AddButton("Go", 20,20,30,20,'go__').SetCB([](SButton*p)->int
 	{
 		SButton& self=*p;
 		if(*(self.text)=='G')
@@ -32,15 +32,17 @@ int main()
 		return 1;
 	}).SetTitle("Stop");
 
-	gui.AddSelect("Select 0", 20,50,50,20,'sel0',1,&sel);
-	gui.AddSelect("Select 1", 20,80,50,20,'sel1',2,&sel);
-	gui.AddCheck("Check 0", 20,110,50,20,'ch_0',&ch0);
-	gui.AddCheck("Check 1", 20,140,50,20,'ch_1',&ch1);
+	gui.AddSelect("Select 0", 20,50,80,20,'sel0',1,&sel).SetCB([](SButton*p)->int{p->text="000";return 0;});
+	gui.AddSelect("Select 1", 20,80,80,20,'sel1',2,&sel);
+	gui.AddCheck("Check 0", 20,110,80,20,'ch_0',&ch0).SetCB([](SButton*p)->int{p->text="000";return 0;});
+	gui.AddCheck("Check 1", 20,140,80,20,'ch_1',&ch1);
 	gui.AddSlide("val0", 20,170,201,15,'val0',&val[0],false,0,100);
-	gui.AddSlide("", 130,10,15,100,'val1',&val[1],true,0,1);
-	gui.AddSlide("", 150,10,15,100,'val2',&val[2],true,0,1);
-	gui.AddSlide("", 170,10,15,100,'val3',&val[3],true,0,1);
-	gui.AddSlide("", 190,10,15,100,'val4',&val[4],true,0,1);
+	gui.AddFrame("", 120,10,95,130);
+	gui.AddStatic("Values", 140,10,50,20);
+	gui.AddSlide("", 130,30,15,100,'val1',&val[1],true,0,1).SetCB([](SButton*p)->int{printf("%f\n",*p->fDest);return 0;});
+	gui.AddSlide("", 150,30,15,100,'val2',&val[2],true,0,1);
+	gui.AddSlide("", 170,30,15,100,'val3',&val[3],true,0,1);
+	gui.AddSlide("", 190,30,15,100,'val4',&val[4],true,0,1);
 
 	SetPresentWait(true);
 

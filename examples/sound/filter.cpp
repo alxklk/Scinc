@@ -428,6 +428,8 @@ int main()
 	gui.AddCheck("Sawtooth",10,ctly+=ctldy,65,15,0,&saw_on);
 	gui.AddCheck("Sine",    10,ctly+=ctldy,65,15,0,&sine_on);
 	gui.AddCheck("SineL",   10,ctly+=ctldy,65,15,0,&sine_lega_on);
+	gui.AddCheck("MicIn",   10,ctly+=ctldy,65,15,0,&mic_in);
+	gui.AddCheck("MP3",     10,ctly+=ctldy,65,15,0,&rawfile_on);
 
 	ctly=5-ctldy;
 	gui.AddCheck("Filter",80,ctly+=ctldy,65,15,0,&filter);
@@ -872,7 +874,7 @@ int main()
 			g.L(i,lvl*200+240);
 		}
 		g.fin();
-		g.width(2.,1.);
+		g.width(2.,2.);
 		if(filter)
 			g.rgb(1.0,0.4,0.4);
 		else
@@ -884,11 +886,11 @@ int main()
 			g.clear();
 			for(int i=0;i<nG;i++)
 			{
-				double lvl=sliding[i];
+				double lvl=sliding[i+i];
 				g.L(i,lvl*200+240);
 			}
 			g.fin();
-			g.width(1.,1.);
+			g.width(2.,2.);
 			g.rgb(0.0,1.0,1.0);
 			g.stroke();
 			g.clear();
