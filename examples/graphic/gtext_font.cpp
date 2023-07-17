@@ -237,7 +237,7 @@ int main()
 	CFontMaker fm;
 	fm.Init(font,6);
 	MakeLetters(fm);
-	fm.StartGlyph(128);
+	fm.StartGlyph(1);
 	fm.Width(10);
 	fm.clear();
 	fm.M(4,5);
@@ -267,7 +267,7 @@ int main()
 	fm.fill(0xff80f000);
 	fm.EndGlyph();
 
-	fm.StartGlyph(129);
+	fm.StartGlyph(2);
 	fm.Width(10);
 	fm.clear();
 	fm.M(4,.5);
@@ -293,7 +293,7 @@ int main()
 	fm.fill(0xff800000);
 	fm.EndGlyph();
 
-	fm.StartGlyph(130);
+	fm.StartGlyph(3);
 	fm.Width(8);
 	fm.clear();
 	fm.M(3,.5);
@@ -305,7 +305,7 @@ int main()
 	fm.fill(0xffe80020);
 	fm.EndGlyph();
 
-	fm.StartGlyph(131);
+	fm.StartGlyph(4);
 	fm.Width(8);
 	fm.clear();
 	fm.M(0,4);
@@ -317,7 +317,7 @@ int main()
 	fm.fill(0xffe80020);
 	fm.EndGlyph();
 
-	fm.StartGlyph(132);
+	fm.StartGlyph(5);
 	fm.Width(8);
 	fm.clear();
 	fm.M(1,0);
@@ -339,7 +339,7 @@ int main()
 	fm.fill(0xff000000);
 	fm.EndGlyph();
 
-	fm.StartGlyph(133);
+	fm.StartGlyph(6);
 	fm.Width(8);
 	fm.clear();
 	fm.M(3,8.75);
@@ -356,7 +356,7 @@ int main()
 	fm.fill(0xff000000);
 	fm.EndGlyph();
 
-	fm.StartGlyph(134);
+	fm.StartGlyph(7);
 	fm.Width(6);
 	fm.clear();
 	fm.M(-0.5,-0.5);
@@ -376,7 +376,7 @@ int main()
 	fm.fill(0xff000000);
 	fm.EndGlyph();
 
-	fm.StartGlyph(135);
+	fm.StartGlyph(8);
 	fm.Width(6);
 	fm.clear();
 	fm.M(-0.5,-0.5);
@@ -813,7 +813,7 @@ int main()
 
 			for(int i=0;i<16;i++)
 			{
-				for(int j=0;j<16;j++)
+				for(int j=0;j<NGLYF/16;j++)
 				{
 					char s[2];
 					s[1]=0;
@@ -828,7 +828,7 @@ int main()
 			g.t_t(0,0,1,0,0,1);
 			for(int i=0;i<16;i++)
 			{
-				for(int j=0;j<16;j++)
+				for(int j=0;j<NGLYF/16;j++)
 				{
 					int c=i+j*16;
 					if(font.g[c].col==0)
@@ -842,7 +842,7 @@ int main()
 
 			for(int i=0;i<16;i++)
 			{
-				for(int j=0;j<16;j++)
+				for(int j=0;j<NGLYF/16;j++)
 				{
 					int c=i+j*16;
 					if(font.g[c].col!=0)

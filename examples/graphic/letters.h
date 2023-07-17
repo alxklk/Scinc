@@ -842,4 +842,10 @@ void MakeLetters(CFontMaker& fm)
 		fm.c(1.5,3,-1.5,-3,4,0);
 		fm.EndGlyph();
 	}
+	if(0){
+		fm.StartGlyph(160);
+		fm.M(0,7.5);
+		fm.c(1.5,3,-1.5,-3,4,0);
+		fm.EndGlyph();
+	}
 }

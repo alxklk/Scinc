@@ -11,16 +11,39 @@ public:
 	int d0;
 };
 
-#define NGLYF 256 
+#define NGLYF 128 // 
+#define NUGLYF 128 // 
 #define NCMDS (NGLYF*16) 
 #define NDATA (NGLYF*26*4)
+
+struct UniChar
+{
+	int code;
+	CGlyph g;
+};
 class CFont
 {
 public:
 	int cmds[NCMDS];
 	float data[NDATA];
 	CGlyph g[NGLYF];
+	UniChar u[NUGLYF];
 };
+
+CGlyph* FindGlyph(CFont& f, int g)
+{
+	if(g<NGLYF)
+		return &f.g[g];
+	for(int i=0;i<NUGLYF;i++)
+	{
+		if(f.u[i].code==g)
+		{
+			return &f.u[i].g;
+		}
+	}
+	return 0;
+}
+
 
 class CFontMaker
 {
@@ -33,6 +56,13 @@ public:
 			f.g[i].n=0;
 			f.g[i].w=w;
 			f.g[i].col=0;
+		}
+		for(int i=0;i<NUGLYF;i++)
+		{
+			f.u[i].code=-1;
+			f.u[i].g.n=0;
+			f.u[i].g.w=w;
+			f.u[i].g.col=0;
 		}
 		curCmd=0;
 		curData=0;
@@ -58,6 +88,23 @@ public:
 		font->data[curData]=d;
 		curData++;
 	}
+	int NewUGlyph(int uglyph)
+	{
+		int found=-1;
+		for(int i=0;i<NUGLYF;i++)
+		{
+			if(font->u[i].code==-1)
+			{
+				found=i;
+				font->u[found].code=uglyph;
+				font->u[found].g.c0=curCmd;
+				font->u[found].g.d0=curData;
+				font->u[found].g.n=0;
+				break;
+			}
+		}
+		return found;
+	}
 	void StartGlyph(int glyph)
 	{
 		if(curGlyph!=-1)
@@ -66,9 +113,16 @@ public:
 			return;
 		}
 		curGlyph=glyph;
-		font->g[glyph].c0=curCmd;
-		font->g[glyph].d0=curData;
-		font->g[glyph].n=0;
+		if(glyph<NGLYF)
+		{
+			font->g[glyph].c0=curCmd;
+			font->g[glyph].d0=curData;
+			font->g[glyph].n=0;
+		}
+		else
+		{
+			curUGlyphIdx=NewUGlyph(glyph);
+		}
 	}
 	void Width(float w)
 	{
@@ -150,6 +204,7 @@ public:
 	int curCmd;
 	int curData;
 	int curGlyph;
+	int curUGlyphIdx;
 	CFont* font;
 };
 

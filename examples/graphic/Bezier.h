@@ -1,4 +1,5 @@
-
+#ifndef BEZIER_H
+#define BEZIER_H
 class BezCalc3
 {
 public:
@@ -36,3 +37,4 @@ public:
 	float Calc(float t){return ((A*t+B)*t+C)*t+D;}
 	float Diff(float t){return DA+(DB+(DC)*t)*t;}
 };
+#endif

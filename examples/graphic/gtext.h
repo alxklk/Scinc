@@ -5,7 +5,10 @@ void DrawGlyph(Graph& g, CFont& f, int s, float x, float y, float sx, float sy)
 		printf("Negative s %i\n",s);
 		return;
 	}
-	CGlyph gl=f.g[s];
+	CGlyph* pgl=FindGlyph(f,s);
+	if(pgl!=0)
+		return;
+	CGlyph gl=*pgl;
 	int c=gl.c0;
 	int d=gl.d0;
 	float* fd=&f.data[0];
