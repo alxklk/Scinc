@@ -9,7 +9,7 @@
 struct SUtf8
 {
 	int p;
-	char* s;
+	const char* s;
 };
 
 int U8Next(SUtf8& S)
@@ -34,8 +34,8 @@ int U8Next(SUtf8& S)
 	else if(c0<0xF0)
 	{
 		int c1=s[p+1];
-		int c2=s[p+2];
 		if(!c1)return 0;
+		int c2=s[p+2];
 		if(!c2)return 0;
 		S.p+=2;
 		return ((c0&0x1f)<<12)|((c1&0x3f)<<6)|(c2&0x3f);
@@ -44,10 +44,10 @@ int U8Next(SUtf8& S)
 	{
 		c0=c0&0x07;
 		int c1=s[p+1];
-		int c2=s[p+2];
-		int c3=s[p+3];
 		if(!c1)return 0;
+		int c2=s[p+2];
 		if(!c2)return 0;
+		int c3=s[p+3];
 		if(!c3)return 0;
 		S.p+=3;
 		return ((c0&0x1f)<<18)|((c1&0x3f)<<12)|((c2&0x3f)<<6)|(c3&0x3f);
