@@ -108,7 +108,7 @@ int main()
 	setlocale(LC_ALL,"");
 #endif
 	CheckUtf("перевірка");
-	CheckUtf("AöЖ€𝄞 ❤ ➆ 🁂  🃗 ❓");
+	CheckUtf("AöЖ€𝄞 ❤ ➆ 🁂  🃗 ❓ ㏆ ㏆㏆㏆  ﬃ ﬃ 🀛");
 	CheckUtf("ПЕРЕВІРКА");
 	return 0;
 }
