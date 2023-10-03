@@ -24,11 +24,16 @@ float fy(float x)
 
 int main()
 {
-	int win0=SYS::CreateWindow(320,320,2,4,2);
-	SYS::MakeBorderless(win0);
-	int win1=SYS::CreateWindow(320,320,4,1,2);
+	int win0=SYS::CreateWindow(320,320,2,2,1);
+	int win1=SYS::CreateWindow(320,320,1,1,1);
 	while(true)
 	{
+		SScincEvent ev;
+		while(GetScincEvent(ev))
+		{
+			printf("w=%i\n", ev._w);
+		}
+
 		g.SetActiveRT(SYS::GetWindowRT(win0));
 		g.rgba32(0xff203040);
 		g.FillRT();
@@ -48,7 +53,6 @@ int main()
 			x0=x1;
 			y0=y1;
 		}
-		SYS::Present(win0);
 		g.SetActiveRT(SYS::GetWindowRT(win1));
 		g.rgba32(0xffa0a020);
 		g.FillRT();
@@ -65,6 +69,7 @@ int main()
 		g.alpha(1);
 		g.rgba32(0xffa000a0);
 		g.fill2();
+		SYS::Present(win0);
 		SYS::Present(win1);
 	}
 	return 0;
