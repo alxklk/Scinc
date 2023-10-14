@@ -15,24 +15,29 @@ Graph g;
 
 int sndSample;
 
+CWinSys ws;
+CSound snd;
+
 void GenerateSamples(int nSamples)
 {
 	for(int i=0;i<nSamples;i++)
 	{
 		float l=sndVal(sndSample);
 		sndSample++;
-		snd_out(l,l);
+		snd.snd_out(l,l);
 	}
 }	
 
 int main()
 {
+	int win0=ws.CreateWindow(640,480,2,2,1);
 	float t0=Time();
 	float tframe;
 	tframe=Time();
 	sndSample=0;
 	while(true)
 	{
+		snd.Poll();
 		g.t_0(0,0);
 		g.t_x(1,0);
 		g.t_y(0,1);
@@ -43,7 +48,7 @@ int main()
 
 		tframe=Time();
 		int nruns=0;
-		while(snd_bufhealth()<3000)
+		while(snd.snd_bufhealth()<3000)
 		{
 			GenerateSamples(1024);
 			nruns++;
@@ -76,7 +81,7 @@ int main()
 		g.width(1.25,1.25);
 		g.rgb(.5,.8,1.0);
 		g.stroke();
-		Present();
+		ws.Present(win0);
 	}
 	return 0;
 }

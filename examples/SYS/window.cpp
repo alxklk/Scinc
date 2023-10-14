@@ -31,7 +31,7 @@ int main()
 		SScincEvent ev;
 		while(GetScincEvent(ev))
 		{
-			printf("w=%i\n", ev._w);
+			//printf("w=%i\n", ev._w);
 		}
 
 		g.SetActiveRT(SYS::GetWindowRT(win0));

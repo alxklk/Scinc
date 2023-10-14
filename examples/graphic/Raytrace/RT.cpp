@@ -4,13 +4,15 @@
 #define SW 320
 #define SH 240
 #ifdef __SCINC__
+#warning "Scinc defined"
 #define NL 5
 #else
+#warning "Scinc not defined"
 #define NL SH
 #endif
 
-#define G_SCREEN_WIDTH SW
-#define G_SCREEN_HEIGHT SH
+#define G_SCREEN_WIDTH 320
+#define G_SCREEN_HEIGHT 240
 #define G_SCREEN_MODE 1
 #define G_SCREEN_SCALE 4
 #define USE_AA 3
@@ -546,10 +548,14 @@ float3 TraceRay(const Ray& ray, int depth)
 }
 
 
+CWinSys ws;
+
 int main()
 {
 	int x0;
 	int y0;
+	int win0=ws.CreateWindow(G_SCREEN_WIDTH,G_SCREEN_HEIGHT,4,4,1);
+	printf("NL=%i\n", NL);
 	if(0)while(true)
 	{
 		g.rgba32(0xff404050);
@@ -608,7 +614,7 @@ int main()
 		}
 
 
-		Present();
+		ws.Present(win0);
 	}
 
 
@@ -739,7 +745,7 @@ int main()
 
 		if(changed)
 		{
-			#define RS 12
+			#define RS 8
 			int nx=SW/RS;
 			int ny=SH/RS;
 			for(int i=0;i<ny;i++)
@@ -756,15 +762,25 @@ int main()
 					ray.d=(forward*2+up*((i+.5)/((ny-.5)*.5)-1.)+right*((j+.5)/((ny-.5)*.5)-1.333)).Normalized();
 					ocol+=TraceRay(ray,2);
 					ocol*=0.25;
-					g.rgb(
-						clamp(ocol.z,0.,1.),
-						clamp(ocol.y,0.,1.),
-						clamp(ocol.x,0.,1.)
-						);
+
+					ocol.z=clamp(ocol.z,0.,1.);
+					ocol.y=clamp(ocol.y,0.,1.);
+					ocol.x=clamp(ocol.x,0.,1.);
+
+					g.rgb(ocol.z, ocol.y, ocol.x);
 					g.fillrect(j*RS,i*RS,RS,RS);
+					{
+						char s[64];
+						snprintf(s,64,"\033[%i;%iH", i, j*2);
+						printf(s);
+						//snprintf(s,64,"\e[48;5;%im  ", 16+int(ocol.z*5.99)+int(ocol.y*5.99)*6+int(ocol.x*5.99)*36);
+						snprintf(s,64,"\e[48;2;%i;%i;%im  ",int(ocol.x*255.99),int(ocol.y*255.99),int(ocol.z*255.99));
+						printf(s);
+					}
+
 				}
 			}
-			Present();
+			ws.Present(win0);
 			changed=false;
 			fn=0;
 			continue;
@@ -812,9 +828,10 @@ int main()
 #ifdef __SCINC__
 		g.rgba32(0xffffffff);
 		g.lineH(0,fn+NL,SW);
+		//printf("Line %i\n",fn+NL);
 #endif
-		SetPresentWait(0);
-		Present();
+		//SetPresentWait(0);
+		ws.Present(win0);
 #ifdef __SCINC__
 		// prevent CPU overheating
 		//Wait(0.01);
