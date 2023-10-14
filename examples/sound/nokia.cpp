@@ -282,7 +282,7 @@ public:
 			for(int i=0;i<nSamples;i++)
 			{
 				int ep=(echoPos+i)%EL*2;
-				snd_out(echo[ep],echo[ep+1]);
+				CSound s; s.snd_out(echo[ep],echo[ep+1]);
 			}
 			echoPos=(echoPos+nSamples-1)%EL;
 			sample+=nSamples;
@@ -292,7 +292,7 @@ public:
 		for(int i=0;i<nSamples;i++)
 		{
 			int ep=(echoPos+i)%EL*2;
-			snd_out(echo[ep],echo[ep+1]);
+			CSound s; s.snd_out(echo[ep],echo[ep+1]);
 		}
 		echoPos=(echoPos+nSamples)%EL;
 		sample+=nSamples;
@@ -507,8 +507,12 @@ double fftout[NFFT];
 bool graph;
 int frame;
 
+CWinSys ws;
+
 int main()
 {
+	int win0=ws.CreateWindow(640,480,2,2,1);
+
 //	StdFreqs();
 	melody.Init(1);
 	notes.Init();
@@ -522,6 +526,10 @@ int main()
 
 	while(true)
 	{
+		{
+			CSound s;
+			s.Poll();
+		}
 		int key;
 		int press;
 		prevmx=mx;
@@ -566,7 +574,8 @@ int main()
 		//{
 		//	nSamples-=10;
 		//}
-		while(snd_bufhealth()<(2000+NFFT))
+		CSound s;
+		while(s.snd_bufhealth()<(2000+NFFT))
 		{
 			melody.Update(NFFT);
 			//notes.Update(snd.sample);
@@ -609,7 +618,7 @@ int main()
 			g.rgba(.2,0,0,1);
 			g.fill2();
 
-			Present();
+			ws.Present(win0);
 			continue;
 		}
 
@@ -653,7 +662,7 @@ int main()
 
 		melody.Render();
 		char ss[64];
-		snprintf(ss,64,"% 5i % 5i % 5i", NFFT, snd.echoPos, snd_bufhealth());
+		snprintf(ss,64,"% 5i % 5i % 5i", NFFT, snd.echoPos, s.snd_bufhealth());
 		stext(ss,10,470,0xffffff00);
 		snprintf(ss,64,"[%c] 'V'ibratto", " x"[vibratto]);
 		stext(ss,10,460,0xffffff00);
@@ -663,7 +672,7 @@ int main()
 		stext(ss,10,440,0xffffff00);
 		snprintf(ss,64,"[%c] 'F'ade", " x"[fade]);
 		stext(ss,10,430,0xffffff00);
-		Present();
+		ws.Present(win0);
 	}
 	return 0;
 }
