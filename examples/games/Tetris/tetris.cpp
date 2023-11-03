@@ -5,7 +5,7 @@
 #else
 #define G_SCREEN_SCALE 8
 #endif
-#define G_SCREEN_MODE 2
+#define G_SCREEN_MODE 3
 
 #include "sound.h"
 #include "graphics.h"
@@ -59,9 +59,11 @@ float bell_curve3(float x)
 
 #define M_PI 3.141592654
 
+CSound snd;
+
 int MakeShootSound(int len)
 {
-	int res=snd_add(len);
+	int res=snd.snd_add(len);
 	float dlen=1.0/len;
 	{
 		float t=0.;
@@ -72,7 +74,7 @@ int MakeShootSound(int len)
 			float x=t*440.*12.*M_PI;
 			float l=sin(x)*v*sin(f*M_PI*14);
 			if(f<0.25)l=l+sin(x*8.)*bell_curve3(f/0.25)*0.25*cos(f*M_PI*14.);
-			snd_data(res,i,l,l);
+			snd.snd_data(res,i,l,l);
 			t+=1./48000.*(f*f)*2.2;
 			f+=dlen;
 		}
@@ -100,7 +102,7 @@ void AddDing(int len, float* a, int p, float w, float V)
 
 int MakeExplodeSound(int len, int seed)
 {
-	int res=snd_add(len);
+	int res=snd.snd_add(len);
 	//printf("E %i\n", len);
 	float* eSB;
 	eSB=(float*)malloc(sizeof(float)*len);
@@ -131,14 +133,14 @@ int MakeExplodeSound(int len, int seed)
 	}
 	for(int i=0;i<len;i++)
 	{
-		snd_data(res,i,eSB[i],eSB[i]);
+		snd.snd_data(res,i,eSB[i],eSB[i]);
 	}
 	return res;
 }
 
 int MakeEngineSound(int len, int seed)
 {
-	int res=snd_add(len);
+	int res=snd.snd_add(len);
 	{
 		float t=0.;
 		float fr0=frand(seed);
@@ -151,7 +153,7 @@ int MakeEngineSound(int len, int seed)
 			float l=fr0*v*.125+frand(seed)*v*0.125;
 			if(!(i&64))
 				fr0=frand(seed);
-			snd_data(res,i,l,l);
+			snd.snd_data(res,i,l,l);
 			f+=dlen;
 		}
 	}
@@ -702,7 +704,7 @@ public:
 			else
 				i++;
 		}
-		if(moreLines)snd_play(sndExplode);
+		if(moreLines)snd.snd_play(sndExplode);
 
 		if(moreLines==1)
 		{
@@ -764,7 +766,7 @@ public:
 				{
 					if(Down())
 					{
-						snd_play(sndShoot);
+						snd.snd_play(sndShoot);
 						break;
 					}
 				}
@@ -891,7 +893,7 @@ public:
 			{
 				pa=newpa;
 				newpa++;
-				snd_play(sndRocket);
+				snd.snd_play(sndRocket);
 			}
 		}
 		else if(key==4004)
@@ -1228,15 +1230,12 @@ int main()
 	game.InitFig();
 	while(true)
 	{
-
 		SScincEvent ev;
 		while(GetScincEvent(ev))
 		{
 			if(menu.MenuHandleEvent(0,0,640,20,ev))
 			{
-				//printf(" Event %c%c%c%c handled by menu\n",
-				//	(ev.type&0xff000000)>>24,(ev.type&0xff0000)>>16,(ev.type&0xff00)>>8,(ev.type&0xff)
-				//);
+				//printf(" Event %c%c%c%c handled by menu\n",(ev.type&0xff000000)>>24,(ev.type&0xff0000)>>16,(ev.type&0xff00)>>8,(ev.type&0xff));
 				continue;
 			}
 		}
@@ -1287,9 +1286,9 @@ int main()
 		{
 			if(press>0)
 			{
-				if(key=='1'){puts("Explode");snd_play(game.sndExplode);}
-				if(key=='2'){puts("Rocket");snd_play(game.sndRocket);}
-				if(key=='3'){puts("Shoot");snd_play(game.sndShoot);}
+				if(key=='1'){puts("Explode");snd.snd_play(game.sndExplode);}
+				if(key=='2'){puts("Rocket");snd.snd_play(game.sndRocket);}
+				if(key=='3'){puts("Shoot");snd.snd_play(game.sndShoot);}
 				if(key=='4')
 				{
 					puts("BreakLine");
@@ -1357,6 +1356,7 @@ int main()
 		}
 */
 		menu.MenuDraw(g,0,0,640,20);
+		snd.Poll();
 		Present();
 	}
 	return 0;
