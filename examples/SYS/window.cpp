@@ -1,7 +1,7 @@
 
 #define G_SCREEN_WIDTH 320
 #define G_SCREEN_HEIGHT 320
-#define G_SCREEN_SCALE 4
+#define G_SCREEN_SCALE 3
 #define G_SCREEN_MODE 1
 
 #define M_PI 3.141592654
@@ -22,10 +22,12 @@ float fy(float x)
 	return (sin(x*13+T)*300*sin(T*1.1)+sin(x*27.5-T*.3)*250*sin(T*.9)+cos(x*3.1)*150*sin(T*.7))*.25;
 }
 
+CWinSys ws;
+
 int main()
 {
-	int win0=SYS::CreateWindow(320,320,2,2,1);
-	int win1=SYS::CreateWindow(320,320,1,1,1);
+	int win0=ws.CreateWindow(320,320,2,2,1);
+	int win1=ws.CreateWindow(320,320,1,1,1);
 	while(true)
 	{
 		SScincEvent ev;
@@ -34,7 +36,8 @@ int main()
 			//printf("w=%i\n", ev._w);
 		}
 
-		g.SetActiveRT(SYS::GetWindowRT(win0));
+		int rt0=ws.GetWindowRT(win0);
+		g.SetActiveRT(rt0);
 		g.rgba32(0xff203040);
 		g.FillRT();
 		T=Time();
@@ -53,7 +56,8 @@ int main()
 			x0=x1;
 			y0=y1;
 		}
-		g.SetActiveRT(SYS::GetWindowRT(win1));
+		int rt1=ws.GetWindowRT(win1);
+		g.SetActiveRT(rt1);
 		g.rgba32(0xffa0a020);
 		g.FillRT();
 		g.clear();
@@ -69,8 +73,8 @@ int main()
 		g.alpha(1);
 		g.rgba32(0xffa000a0);
 		g.fill2();
-		SYS::Present(win0);
-		SYS::Present(win1);
+		ws.Present(win0);
+		ws.Present(win1);
 	}
 	return 0;
 }
