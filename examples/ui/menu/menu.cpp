@@ -47,18 +47,17 @@ int main()
 		{
 			if(menu.MenuHandleEvent(0,0,640,20,ev))
 			{
-				printf(" Event %c%c%c%c handled by menu\n",
-					(ev.type&0xff000000)>>24,(ev.type&0xff0000)>>16,(ev.type&0xff00)>>8,(ev.type&0xff)
-				);
+				//printf(" Event %c%c%c%c handled by menu\n",(ev.type&0xff000000)>>24,(ev.type&0xff0000)>>16,(ev.type&0xff00)>>8,(ev.type&0xff));
+				//printf("      handled by menu\n");
 				continue;
 			}
 			if(ev.type=='MMDN')
 			{
-				printf("%i %i %i %i\n", ev.type, ev._0, ev._1, ev._2);
+				printf("%i %i %i %i\n", ev.type, ev.x, ev.y, ev.z);
 			}
 			if(ev.type=='KBDN')
 			{
-				printf("Key %i %i %i %i\n", ev.type, ev._0, ev._1, ev._2);
+				printf("Key %i %i %i %i\n", ev.type, ev.x, ev.y, ev.z);
 			}
 			if(((ev.type>>16)&0xffff)=='MW')
 			{

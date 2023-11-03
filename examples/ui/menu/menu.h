@@ -75,6 +75,7 @@ struct SMenu
 	{
 		mi[misize].name=name;
 		mi[misize].parent=-1;
+		mi[misize].cb=0;
 		curPar=misize;
 		misize++;
 		return *this;
@@ -221,7 +222,7 @@ struct SMenu
 		{
 			if((ev.type&0xffff)=='DN')
 			{
-				if((ev._0==3002)||(ev._0==3003))
+				if((ev.x==3002)||(ev.y==3003))
 				{
 					menuOpen=!menuOpen;
 					if(menuOpen)
@@ -240,13 +241,13 @@ struct SMenu
 				{
 					return 0;
 				}
-				if(ev._0==1000)
+				if(ev.x==1000)
 				{
 					menuOpen=false;
 					menuSelected=-1;
 					menuHover=-1;
 				}
-				if(ev._0==4003)
+				if(ev.x==4003)
 				{
 					if(menuOpen)
 					{
@@ -262,7 +263,7 @@ struct SMenu
 						menuHover=-1;
 					}
 				}
-				if(ev._0==4002)
+				if(ev.x==4002)
 				{
 					if(menuOpen)
 					{
@@ -280,7 +281,7 @@ struct SMenu
 						menuHover=-1;
 					}
 				}
-				if(ev._0==4000)
+				if(ev.x==4000)
 				{
 					if(menuOpen)
 					{
@@ -305,7 +306,7 @@ struct SMenu
 						}
 					}
 				}
-				if(ev._0==4001)
+				if(ev.x==4001)
 				{
 					if(menuOpen)
 					{
@@ -334,14 +335,18 @@ struct SMenu
 						}
 					}
 				}
-				if((ev._0==4013)||(ev._0==5013))
+				if((ev.x==4013)||(ev.x==5013))
 				{
 					if(menuOpen)
 					{
 						if(menuHover!=-1)
 						{
 							if(cmdHandler)cmdHandler(mi[menuHover].cmd,mi[menuHover].cmdArg);
-							if(mi[menuHover].cb)mi[menuHover].cb(mi[menuHover]);
+							if(mi[menuHover].cb)
+							{
+								printf(" Pointer %i\n", mi[menuHover].cb);
+								mi[menuHover].cb(mi[menuHover]);
+							}
 							//MenuCommand(mi[menuHover].cmd,mi[menuHover].cmdArg);
 							//printf(" Hit menu %i\n", menuHover);
 						}
@@ -353,11 +358,15 @@ struct SMenu
 			}
 		}
 
+		//printf("Event %c%c%c%c\n",(ev.type&0xff000000)>>24,(ev.type&0xff0000)>>16,(ev.type&0xff00)>>8,(ev.type&0xff));
+		//printf("(ev.type>>24)&0xff=%c\n",(ev.type>>24)&0xff);
 		if(((ev.type>>24)&0xff)!='M')
+		{
 			return 0;
+		}
 		Pnt me;
-		me.x=ev._1;
-		me.y=ev._2;
+		me.x=ev.x;
+		me.y=ev.y;
 
 		char* cmd="";
 		int cmdArg=0;
@@ -448,6 +457,8 @@ struct SMenu
 		if(clickOnMenu||(((ev.type&0xffff)=='DN')&&(me.y<mh)))
 			return 1;
 
+		if(menuHover!=-1)
+			return 1;
 		return 0;
 	}
 
