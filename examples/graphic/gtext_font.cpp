@@ -1,10 +1,13 @@
 #ifdef __JS__
 	#define G_SCREEN_SCALE 2
 #else
-	//#define G_SCREEN_WIDTH 1280
-	//#define G_SCREEN_HEIGHT 960
 	#define G_SCREEN_SCALE 4
 #endif
+
+#define G_SCREEN_SCALE 2
+//#define G_SCREEN_WIDTH 1280
+//#define G_SCREEN_HEIGHT 960
+
 
 #include "graphics.h"
 
@@ -413,12 +416,12 @@ int main()
 	if(cy<0)
 		cy=0;
 	int code=cx+cy*16;
-	char teststr[33]={};
+	char teststr[33];for(int i=0;i<32;i++)teststr[i]=' ';
 	int testcur=0;
 	for(int i=0;i<31;i++)
 	{
 		teststr[i]='A'+i;
-		printf("[%i]=%c\n",i,teststr[i]);
+		//printf("[%i]=%c\n",i,teststr[i]);
 	}
 
 	int mx=0;
@@ -438,16 +441,16 @@ int main()
 			if(((ev.type&0xff000000)>>24)=='M')
 			{
 				hoverEdit=false;
-				if((ev._1>400.5-42)&&(ev._1<400.5-42+16*14))
+				if((ev.x>400.5-42)&&(ev.x<400.5-42+16*14))
 				{
-					hoverEdit=findHoverElement(code,font,ev._1,ev._2,hoverCmd,hoverData,hoverItem,editHX,editHY);
+					hoverEdit=findHoverElement(code,font,ev.x,ev.y,hoverCmd,hoverData,hoverItem,editHX,editHY);
 				}
 				if(ev.type=='MMOV')
 				{
-					if((editData>=0)&&(ev._0&1))
+					if((editData>=0)&&(ev.z&1))
 					{
-						float dx=float(ev._1-mx)/14.;
-						float dy=float(ev._2-my)/14.;
+						float dx=float(ev.x-mx)/14.;
+						float dy=float(ev.y-my)/14.;
 						font.data[editData  ]+=dx;
 						font.data[editData+1]+=dy;
 						int ec=font.cmds[editCmd];
@@ -482,8 +485,8 @@ int main()
 						}
 					}
 				}
-				mx=ev._1;
-				my=ev._2;
+				mx=ev.x;
+				my=ev.y;
 				if(ev.type=='MLDN')
 				{
 					if(hoverEdit)
@@ -614,8 +617,11 @@ int main()
 			{
 				g.clear();
 				snprintf(s0,32,"ec:[%i]='%c'  ed:[%i:%i]", editCmd,font.cmds[editCmd],editData,editItem);
-				DrawText(g,font,s0,0,400.,180.,1,1);
+				DrawText(g,font,s0,0,400.5,180.5,1,1);
 				g.fin();
+				g.rgb(1,1,1);
+				g.width(2.,1.);
+				g.stroke();
 				g.rgb(.3,.1,0);
 				g.width(1.,1.);
 				g.stroke();
@@ -835,6 +841,24 @@ int main()
 						DrawGlyph(g,font,c,10.5+i*20,150.5+j*20,1,1);
 				}
 			}
+
+			for(int i=0;i<16;i++)
+			{
+				for(int j=NGLYF/16;j<NGLYF/16+NUGLYF/16;j++)
+				{
+					int c=i+(j-NGLYF/16)*16;
+					if(font.u[c].code)
+					{
+						char s[16];
+						snprintf(s,16,"%i",c);
+						stext(s,11+i*20,129+j*20,0xffffffff);
+						snprintf(s,16,"%i",font.u[c].code);
+						stext(s,11+i*20,140+j*20,0xffffffff);
+						DrawGlyph(g,font,font.u[c].code,10.5+i*20,150.5+j*20,1,1);
+					}
+				}
+			}
+
 			g.fin();
 			g.rgb(.3,.1,0);
 			g.width(1,1);

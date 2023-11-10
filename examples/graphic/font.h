@@ -11,10 +11,12 @@ public:
 	int d0;
 };
 
-#define NGLYF 128 // 
-#define NUGLYF 128 // 
-#define NCMDS (NGLYF*16) 
-#define NDATA (NGLYF*26*4)
+#define NGLYF 128
+#define NUGLYF 128
+//#define NCMDS (NGLYF*16) 
+//#define NDATA (NGLYF*26*4)
+#define NCMDS 2048
+#define NDATA 16384
 
 struct UniChar
 {
@@ -59,7 +61,7 @@ public:
 		}
 		for(int i=0;i<NUGLYF;i++)
 		{
-			f.u[i].code=-1;
+			f.u[i].code=0;
 			f.u[i].g.n=0;
 			f.u[i].g.w=w;
 			f.u[i].g.col=0;
@@ -90,10 +92,11 @@ public:
 	}
 	int NewUGlyph(int uglyph)
 	{
+		printf(" New UGlyph %i\n", uglyph);
 		int found=-1;
 		for(int i=0;i<NUGLYF;i++)
 		{
-			if(font->u[i].code==-1)
+			if(font->u[i].code==0)
 			{
 				found=i;
 				font->u[found].code=uglyph;
@@ -103,6 +106,7 @@ public:
 				break;
 			}
 		}
+		printf(" Found UGlyph %i\n", found);
 		return found;
 	}
 	void StartGlyph(int glyph)
@@ -131,7 +135,10 @@ public:
 			puts("Glyph not started for Width");
 			return;
 		}
-		font->g[curGlyph].w=w;
+		if(curGlyph<NGLYF)
+			font->g[curGlyph].w=w;
+		else
+			font->u[curUGlyphIdx].g.w=w;
 	}
 	void EndGlyph()
 	{
@@ -142,7 +149,10 @@ public:
 		}
 		//printf(" Defined glyph '%c' with %i cmds and %i data (%i/%i %i/%i)\n", curGlyph, curCmd-font->g[curGlyph].c0,
 		//curData-font->g[curGlyph].d0, curCmd, NCMDS, curData, NDATA);
-		font->g[curGlyph].n=curCmd-font->g[curGlyph].c0;
+		if(curGlyph<NGLYF)
+			font->g[curGlyph].n=curCmd-font->g[curGlyph].c0;
+		else
+			font->u[curUGlyphIdx].g.n=curCmd-font->u[curUGlyphIdx].g.c0;
 		curGlyph=-1;
 	}
 	void M(float x, float y)
@@ -185,19 +195,28 @@ public:
 	}
 	void clear()
 	{
-		font->g[curGlyph].col=1;
+		if(curGlyph<NGLYF)
+			font->g[curGlyph].col=1;
+		else
+			font->g[curUGlyphIdx].col=1;
 		Cmd('0');
 	}
 	void stroke(float w, int c)
 	{
-		font->g[curGlyph].col=1;
+		if(curGlyph<NGLYF)
+			font->g[curGlyph].col=1;
+		else
+			font->g[curUGlyphIdx].col=1;
 		Cmd('/');
 		Data(w);
 		Data(c);
 	}
 	void fill(int c)
 	{
-		font->g[curGlyph].col=1;
+		if(curGlyph<NGLYF)
+			font->g[curGlyph].col=1;
+		else
+			font->g[curUGlyphIdx].col=1;
 		Cmd('f');
 		Data(c);
 	}
