@@ -50,6 +50,7 @@ int main()
 	{
 		while(GetScincEvent(event))
 		{
+			//printf("event\n");
 			if(gui.Event(event))
 				continue;
 		}

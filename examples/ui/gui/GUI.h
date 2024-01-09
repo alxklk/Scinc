@@ -1,5 +1,6 @@
 bool IsMouseEvent(int eventType)
 {
+	//printf("event %c%c%c%c\n" ,(eventType>>24)&0xff,(eventType>>16)&0xff,(eventType>>8)&0xff,eventType&0xff);
 	if(eventType=='MMOV')return true;
 	if(eventType=='MLUP')return true;
 	if(eventType=='MLDN')return true;
@@ -7,6 +8,7 @@ bool IsMouseEvent(int eventType)
 	if(eventType=='MMDN')return true;
 	if(eventType=='MRUP')return true;
 	if(eventType=='MRDN')return true;
+	//printf("Not mouse\n");
 	return false;
 }
 
@@ -109,8 +111,8 @@ public:
 	{
 		if(IsMouseEvent(event.type))
 		{
-			int mx=event._1;
-			int my=event._2;
+			int mx=event.x;
+			int my=event.y;
 			UpdateMousePos(mx, my);
 			if(event.type=='MLDN')
 			{
@@ -128,10 +130,10 @@ public:
 	}
 	void UpdateMousePos(int x, int y)
 	{
+		//printf("mp %i %i\n", x,y);
 		hoverButton=-1;
 		if(downButton!=-1)
 		{
-			//printf("mp %i %i\n", x,y);
 			SButton& b=buttons[downButton];
 			if(b.type==CT_VSLIDE)
 			{
