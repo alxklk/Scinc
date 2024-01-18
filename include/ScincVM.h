@@ -1,5 +1,6 @@
 #include <vector>
 #include <cstdint>
+#include <cstring>
 #include "ScincBase.h"
 
 typedef uint_fast32_t VM_REG_TYPE;
@@ -27,7 +28,8 @@ public:
 	}
 	TFloat GetFloat(int addr) const
 	{
-		return (*((TFloat*)(&mem[addr])));
+		TFloat val; memcpy(&val, &mem[addr], sizeof(val)); return val;
+		//return (*((TFloat*)(&mem[addr])));
 	}
 	void PutInt(int addr, int val)
 	{
@@ -39,7 +41,22 @@ public:
 	}
 	void PutFloat(int addr, const TFloat& val)
 	{
-		(*((TFloat*)(&mem[addr])))=val;
+		memcpy(&mem[addr],&val, sizeof(val));
+		//(*((TFloat*)(&mem[addr])))=val;
 	}
-
+	// if different dlls want to exchange data
+	std::vector<unsigned char>hostdata;
+	int PutHostData(int size, const void* srcData)
+	{
+		hostdata.resize(size);
+		memcpy(hostdata.data(),srcData,size);
+		return size;
+	}
+	int GetHostData(int size, void* destData)
+	{
+		if(size!=hostdata.size())
+			return 0;
+		memcpy(destData,hostdata.data(), size);
+		return size;
+	}
 };

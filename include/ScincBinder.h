@@ -11,11 +11,6 @@
 
 // User type must include static const int field 'size_of'
 // Can contain native pointers and opaque pointers, structures, handles etc
-// template <int N>struct TUserType
-// {
-// 	static const int size_of=sizeof(TUserType<N>);
-// 	char content[N];
-// };
 
 // maps C++ types to corresponding sizes inside Scinc
 template<typename T>struct TSBSizeOf                {static const int size=T::size_of;};
@@ -29,7 +24,7 @@ template <>         struct TSBSizeOf<int*>          {static const int size=4;};
 template <>         struct TSBSizeOf<const int*>    {static const int size=4;};
 template <>         struct TSBSizeOf<double*>       {static const int size=4;};
 template <>         struct TSBSizeOf<const double*> {static const int size=4;};
-template <>         struct TSBSizeOf<void>          {static const int size=0;};
+template <>         struct TSBSizeOf<void>          {static const int size=0;}; // Unlike C++, Scinc allows types with zero size
 template <>         struct TSBSizeOf<void*>         {static const int size=4;};
 template <>         struct TSBSizeOf<const void*>   {static const int size=4;};
 

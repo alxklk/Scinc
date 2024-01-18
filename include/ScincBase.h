@@ -15,3 +15,9 @@ struct Type
 };
 
 typedef double TFloat;
+
+template <int N>struct __native__
+{
+	static const int size_of=N;
+	char content[N];
+};
