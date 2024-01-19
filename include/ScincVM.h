@@ -8,15 +8,7 @@ typedef uint_fast32_t VM_REG_TYPE;
 class ScincVM
 {
 public:
-	union{
-		struct
-		{
-			VM_REG_TYPE rsp;
-			VM_REG_TYPE rthis;
-			VM_REG_TYPE _glob;
-		};
-		VM_REG_TYPE segs[6];
-	};
+	VM_REG_TYPE segs[6];
 	std::vector<unsigned char>mem;
 	int GetInt(int addr)const
 	{
@@ -54,7 +46,7 @@ public:
 	}
 	int GetHostData(int size, void* destData)
 	{
-		if(size!=hostdata.size())
+		if(size!=(int)hostdata.size())
 			return 0;
 		memcpy(destData,hostdata.data(), size);
 		return size;

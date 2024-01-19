@@ -11,6 +11,11 @@
 
 // User type must include static const int field 'size_of'
 // Can contain native pointers and opaque pointers, structures, handles etc
+// template <int N>struct TUserType
+// {
+// 	static const int size_of=sizeof(TUserType<N>);
+// 	char content[N];
+// };
 
 // maps C++ types to corresponding sizes inside Scinc
 template<typename T>struct TSBSizeOf                {static const int size=T::size_of;};
@@ -24,61 +29,63 @@ template <>         struct TSBSizeOf<int*>          {static const int size=4;};
 template <>         struct TSBSizeOf<const int*>    {static const int size=4;};
 template <>         struct TSBSizeOf<double*>       {static const int size=4;};
 template <>         struct TSBSizeOf<const double*> {static const int size=4;};
-template <>         struct TSBSizeOf<void>          {static const int size=0;}; // Unlike C++, Scinc allows types with zero size
+template <>         struct TSBSizeOf<void>          {static const int size=0;};
 template <>         struct TSBSizeOf<void*>         {static const int size=4;};
 template <>         struct TSBSizeOf<const void*>   {static const int size=4;};
+
+#define SEG_SP 0
 
 template<typename I, typename T>class TSBGetter
 {
 public:
 	static void Get(I* pit, T& val, int offs)
 	{
-		memcpy(&val,&(pit->mem[pit->rsp-offs]),T::size_of);
+		memcpy(&val,&(pit->mem[pit->segs[SEG_SP]-offs]),T::size_of);
 	}
 };
 
-template<typename I>class TSBGetter<I, float>      {public:static void Get(I* pit, float & val, int offs){val=pit->GetFloat(pit->rsp-offs);}};
-template<typename I>class TSBGetter<I, double>     {public:static void Get(I* pit, double& val, int offs){val=pit->GetFloat(pit->rsp-offs);}};
-template<typename I>class TSBGetter<I, int>        {public:static void Get(I* pit, int   & val, int offs){val=pit->GetInt  (pit->rsp-offs);}};
-template<typename I>class TSBGetter<I, char>       {public:static void Get(I* pit, char  & val, int offs){val=pit->GetChar (pit->rsp-offs);}};
+template<typename I>class TSBGetter<I, float>      {public:static void Get(I* pit, float & val, int offs){val=pit->GetFloat(pit->segs[SEG_SP]-offs);}};
+template<typename I>class TSBGetter<I, double>     {public:static void Get(I* pit, double& val, int offs){val=pit->GetFloat(pit->segs[SEG_SP]-offs);}};
+template<typename I>class TSBGetter<I, int>        {public:static void Get(I* pit, int   & val, int offs){val=pit->GetInt  (pit->segs[SEG_SP]-offs);}};
+template<typename I>class TSBGetter<I, char>       {public:static void Get(I* pit, char  & val, int offs){val=pit->GetChar (pit->segs[SEG_SP]-offs);}};
 template<typename I>class TSBGetter<I, char*>      {public:static void Get(I* pit, char* & val, int offs)
 {
-	int ptr=pit->GetInt(pit->rsp-offs);
+	int ptr=pit->GetInt(pit->segs[SEG_SP]-offs);
 	val=(char*)&(pit->mem[ptr]);
 }};
 template<typename I>class TSBGetter<I, const char*>{public:static void Get(I* pit, const char*& val, int offs)
 {
-	int ptr=pit->GetInt(pit->rsp-offs);
+	int ptr=pit->GetInt(pit->segs[SEG_SP]-offs);
 	val=(const char*)&(pit->mem[ptr]);
 }};
 template<typename I>class TSBGetter<I, int*>{public:static void Get(I* pit, int*& val, int offs)
 {
-	int ptr=pit->GetInt(pit->rsp-offs);
+	int ptr=pit->GetInt(pit->segs[SEG_SP]-offs);
 	val=(int*)&(pit->mem[ptr]);
 }};
 template<typename I>class TSBGetter<I, const int*>{public:static void Get(I* pit, const int*& val, int offs)
 {
-	int ptr=pit->GetInt(pit->rsp-offs);
+	int ptr=pit->GetInt(pit->segs[SEG_SP]-offs);
 	val=(const int*)&(pit->mem[ptr]);
 }};
 template<typename I>class TSBGetter<I, double*>{public:static void Get(I* pit, double*& val, int offs)
 {
-	int ptr=pit->GetInt(pit->rsp-offs);
+	int ptr=pit->GetInt(pit->segs[SEG_SP]-offs);
 	val=(double*)&(pit->mem[ptr]);
 }};
 template<typename I>class TSBGetter<I, const double*>{public:static void Get(I* pit, const double*& val, int offs)
 {
-	int ptr=pit->GetInt(pit->rsp-offs);
+	int ptr=pit->GetInt(pit->segs[SEG_SP]-offs);
 	val=(const double*)&(pit->mem[ptr]);
 }};
 template<typename I>class TSBGetter<I, void*>      {public:static void Get(I* pit, void* & val, int offs)
 {
-	int ptr=pit->GetInt(pit->rsp-offs);
+	int ptr=pit->GetInt(pit->segs[SEG_SP]-offs);
 	val=(void*)&(pit->mem[ptr]);
 }};
 template<typename I>class TSBGetter<I, const void*>      {public:static void Get(I* pit, const void* & val, int offs)
 {
-	int ptr=pit->GetInt(pit->rsp-offs);
+	int ptr=pit->GetInt(pit->segs[SEG_SP]-offs);
 	val=(const void*)&(pit->mem[ptr]);
 }};
 
@@ -87,13 +94,13 @@ template<typename I, typename T>class TSBPutter
 public:
 	static void Put(I* pit, T& val, int offs)
 	{
-		memcpy(&(pit->mem[pit->rsp-offs]),&val,T::size_of);
+		memcpy(&(pit->mem[pit->segs[SEG_SP]-offs]),&val,T::size_of);
 	}
 };
-template<typename I>class TSBPutter<I, float> {public:static void Put(I* pit, float & val, int offs){pit->PutFloat(pit->rsp-offs,val);}};
-template<typename I>class TSBPutter<I, double>{public:static void Put(I* pit, double& val, int offs){pit->PutFloat(pit->rsp-offs,val);}};
-template<typename I>class TSBPutter<I, int>   {public:static void Put(I* pit, int   & val, int offs){pit->PutInt  (pit->rsp-offs,val);}};
-template<typename I>class TSBPutter<I, char>  {public:static void Put(I* pit, char  & val, int offs){pit->PutChar (pit->rsp-offs,val);}};
+template<typename I>class TSBPutter<I, float> {public:static void Put(I* pit, float & val, int offs){pit->PutFloat(pit->segs[SEG_SP]-offs,val);}};
+template<typename I>class TSBPutter<I, double>{public:static void Put(I* pit, double& val, int offs){pit->PutFloat(pit->segs[SEG_SP]-offs,val);}};
+template<typename I>class TSBPutter<I, int>   {public:static void Put(I* pit, int   & val, int offs){pit->PutInt  (pit->segs[SEG_SP]-offs,val);}};
+template<typename I>class TSBPutter<I, char>  {public:static void Put(I* pit, char  & val, int offs){pit->PutChar (pit->segs[SEG_SP]-offs,val);}};
 
 
 template<typename R, typename ...As>class Wrapper
@@ -155,11 +162,25 @@ template<typename C> class Binder
 		}
 	}
 public:
-	template<typename R, typename... As>static void Bind(C& ctx, const char* name, R(*function)(As...))
+	template<typename R, typename... As>static int Bind(C& ctx, const char* name, R(*function)(As...))
 	{
 		std::vector<long>argTypes;
 		IterateArgTypes<0,As...>(argTypes);
-		AddFunc(ctx, TSBType<R>::type, "", name, argTypes,&Wrapper<R,As...>::func,{},(void*)function);
+		return AddFunc(ctx, TSBType<R>::type, "", name, argTypes,&Wrapper<R,As...>::func,{},(void*)function);
+	}
+
+	template<typename R, typename... As>static int Bind(C& ctx, const std::vector<std::string>& props,
+		const char* className, const char* name, R(*function)(As...))
+	{
+		std::vector<long>argTypes;
+		IterateArgTypes<0,As...>(argTypes);
+		return AddFunc(ctx, TSBType<R>::type, className, name, argTypes,&Wrapper<R,As...>::func,props,(void*)function);
+	}
+
+	static int CreateClass(C& ctx, const char* className,
+									const std::vector<std::pair<const char*, const char*> >& fields={})
+	{
+		return AddClass(ctx,className,fields);
 	}
 };
 
@@ -169,5 +190,6 @@ template<typename I, typename R, typename... As>int ScincBoundCall(I*pit, R(*fun
 	return 1;
 }
 
+#undef SEG_SP
 
 #endif //SCRIP_SCINCBINDER_H
