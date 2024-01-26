@@ -16,7 +16,7 @@ struct FILE_ptr{
 
 #else
 
-typedef __native__(8) FILE_ptr;
+typedef __native__<8> FILE_ptr;
 
 #endif
 

@@ -1,8 +1,8 @@
 
 #define G_SCREEN_WIDTH 640
 #define G_SCREEN_HEIGHT 480
-#define G_SCREEN_SCALE 4
-#define G_SCREEN_MODE 1
+#define G_SCREEN_SCALE 3
+#define G_SCREEN_MODE 2
 
 #include "graphics.h"
 
@@ -42,6 +42,7 @@ int main()
 			x0=x1;
 			y0=y1;
 		}
+		Wait(1./60.-(Time()-T));
 		Present();
 	}
 	return 0;

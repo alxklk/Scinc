@@ -5,6 +5,6 @@
 
 int main()
 {
-	printf("'%s'\n", M1(2));
+	printf("'%s'\n", M1(-2));
 	return 0;
 }

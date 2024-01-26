@@ -1,9 +1,10 @@
-#define G_SCREEN_SCALE 2
+#define G_SCREEN_MODE 1
+#define G_SCREEN_SCALE 1
 #define G_SCREEN_WIDTH 1024
 #define G_SCREEN_HEIGHT 768
 
 #include "graphics.h"
-
+#include "../ws.h"
 Graph g;
 
 #define float double
@@ -187,11 +188,6 @@ void RenderTriangle(STriangle& t)
 
 }
 
-float tan(float x)
-{
-	return sin(x)/cos(x);
-}
-
 class STriangleStorage
 {
 public:
@@ -276,6 +272,8 @@ void RecRender(STriangle& t, int level, int endLevel)
 
 int main()
 {
+	InitWS();
+	//int mainWin=SYS::CreateWindow(G_SCREEN_WIDTH,G_SCREEN_HEIGHT,G_SCREEN_SCALE,G_SCREEN_SCALE,0);
 	gr=(1.+sqrt(5.))/2.;
 	printf("gr: %f %f\n", gr, gr*gr);
 	double T=0;
@@ -289,6 +287,7 @@ int main()
 	//STriangleStorage ta0;ta0.n=0;ta0.s=(STriangle*)malloc(sizeof(STriangle)*7000);
 	//RecSubdiv(t0,ta0,0,8);
 	//printf("%i triangles\n", ta0.n);
+	SetPresentWait(true);
 	while(true)
 	{
 		T=Time();
@@ -305,8 +304,14 @@ int main()
 		//	if(ta0.s[i].l==8)RenderTriangle(ta0.s[i]);
 		//}
 
+		//SYS::Present(mainWin);
+		SScincEvent event;
+		while(GetScincEvent(event))
+		{
+			printf("event\n");
+		}
 		Present();
-		Wait(.1);
+		//Wait(.1);
 	}
 	return 0;
 }
