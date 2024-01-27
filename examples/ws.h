@@ -29,7 +29,7 @@ int InitWS()
 		}
 		if(e.type=='WKIL')
 		{
-			fprintf(stderr, "Window killed\n");
+			fputs("Window killed\n",stderr);
 			exit(0);
 		}
 		return 0;

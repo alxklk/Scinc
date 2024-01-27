@@ -12,7 +12,7 @@ bool IsMouseEvent(int eventType)
 	return false;
 }
 
-
+/*
 bool IsMouseEventCase(int eventType)
 {
 	switch(eventType)
@@ -30,7 +30,7 @@ bool IsMouseEventCase(int eventType)
 	}
 	return false;
 }
-
+*/
 #define CT_BUTTON 1
 #define CT_CHECK 2
 #define CT_SELECT 3

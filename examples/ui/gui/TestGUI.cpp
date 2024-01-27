@@ -1,6 +1,8 @@
 #define G_SCREEN_SCALE 4
 #include "graphics.h"
 #include "GUI.h"
+#include <00out.h>
+#include "../../ws.h"
 
 int main()
 {
@@ -32,9 +34,9 @@ int main()
 		return 1;
 	}).SetTitle("Stop");
 
-	gui.AddSelect("Select 0", 20,50,80,20,'sel0',1,&sel).SetCB([](SButton*p)->int{p->text="000";return 0;});
-	gui.AddSelect("Select 1", 20,80,80,20,'sel1',2,&sel);
-	gui.AddCheck("Check 0", 20,110,80,20,'ch_0',&ch0).SetCB([](SButton*p)->int{p->text="000";return 0;});
+	gui.AddSelect("Select A", 20,50,80,20,'sel0',1,&sel).SetCB([](SButton*p)->int{p->text="002";return 0;});
+	gui.AddSelect("Select B", 20,80,80,20,'sel1',2,&sel);
+	gui.AddCheck("Check 0", 20,110,80,20,'ch_0',&ch0).SetCB([](SButton*p)->int{p->text="001";return 0;});
 	gui.AddCheck("Check 1", 20,140,80,20,'ch_1',&ch1);
 	gui.AddSlide("val0", 20,170,201,15,'val0',&val[0],false,0,100);
 	gui.AddFrame("", 120,10,95,130);
@@ -50,7 +52,7 @@ int main()
 	{
 		while(GetScincEvent(event))
 		{
-			//printf("event\n");
+			printf("event\n");
 			if(gui.Event(event))
 				continue;
 		}
