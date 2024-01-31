@@ -24,6 +24,8 @@
 #include "../../graphic/letters.h"
 #include "../../graphic/gtext.h"
 
+#include "../../ws.h"
+
 Graph g;
 float t;
 
@@ -1058,8 +1060,8 @@ int main()
 		{
 			if(ev.type=='MLDN')
 			{
-				mx=float(ev._1-fieldX)/cell+.5;
-				my=float(ev._2-fieldY)/cell+.5;
+				mx=float(ev.x-fieldX)/cell+.5;
+				my=float(ev.y-fieldY)/cell+.5;
 				if((mx>=0)&&(my>=0)&&(mx<fieldW)&&(my<fieldH))
 				{
 					if(wallBuf[mx+my*fieldW]==' ')
@@ -1082,9 +1084,9 @@ int main()
 			}
 			if(ev.type=='MMOV')
 			{
-				mx=float(ev._1-fieldX)/cell+.5;
-				my=float(ev._2-fieldY)/cell+.5;
-				if(ev._0&1)
+				mx=float(ev.x-fieldX)/cell+.5;
+				my=float(ev.y-fieldY)/cell+.5;
+				if(ev.z&1)
 				{
 					if((mx>=0)&&(my>=0)&&(mx<fieldW)&&(my<fieldH))
 					{
@@ -1103,7 +1105,7 @@ int main()
 			}
 			if(ev.type=='KBDN')
 			{
-				int key=ev._0;
+				int key=ev.x;
 				{
 					//printf("Key %i\n",key);
 					if(key==4002)

@@ -3,15 +3,17 @@
 #ifdef __JS__
 #define G_SCREEN_SCALE 2
 #else
-#define G_SCREEN_SCALE 8
+#define G_SCREEN_SCALE 4
 #endif
-#define G_SCREEN_MODE 3
+#define G_SCREEN_MODE 1
 
 #include "sound.h"
 #include "graphics.h"
 #include "penta.h"
 #include "minos.h"
 #include "../../ui/menu/menu.h"
+
+#include "../../ws.h"
 
 int gseed=4734234;
 
