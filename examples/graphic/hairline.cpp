@@ -5,6 +5,7 @@
 #define G_SCREEN_MODE 2
 
 #include "graphics.h"
+#include "../ws.h"
 
 Graph g;
 
