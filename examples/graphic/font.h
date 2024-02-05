@@ -193,6 +193,10 @@ public:
 	{
 		Cmd('z');
 	}
+	void close()
+	{
+		Cmd('z');
+	}
 	void clear()
 	{
 		if(curGlyph<NGLYF)

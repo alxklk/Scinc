@@ -10,6 +10,7 @@
 
 
 #include "graphics.h"
+#include "../ws.h"
 
 Graph g;
 
@@ -605,8 +606,8 @@ int main()
 			g.UnClip();
 */
 			g.clear();
-			char s0[32];
-			snprintf(s0,32,"%i %i code %i",cx,cy,code);
+			char s0[64];
+			snprintf(s0,64,"%i %i code %i",cx,cy,code);
 			DrawText(g,font,s0,0,400.,110.,2,2);
 			g.fin();
 			g.rgb(.3,.1,0);

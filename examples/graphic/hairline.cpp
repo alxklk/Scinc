@@ -1,6 +1,6 @@
 
-#define G_SCREEN_WIDTH 640
-#define G_SCREEN_HEIGHT 480
+#define G_SCREEN_WIDTH 800
+#define G_SCREEN_HEIGHT 600
 #define G_SCREEN_SCALE 3
 #define G_SCREEN_MODE 2
 

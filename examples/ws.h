@@ -1,5 +1,6 @@
 CWinSys wsys;
-int mainWin;
+int mainWin=-1;
+int quitReq=0;
 
 int InitWS()
 {
@@ -27,10 +28,15 @@ int InitWS()
 		{
 			//printf("%i,%i %ix%i\n",e.x,e.y,e.z,e.h);
 		}
-		if(e.type=='WKIL')
+		if(e.type=='WQIT')
 		{
-			fputs("Window killed\n",stderr);
-			exit(0);
+			//fputs("Window kill event\n",stderr);
+
+			//wsys.DeleteWindow(mainWin);
+			//mainWin=-1;
+			if(quitReq)
+				exit(0);
+			quitReq++;
 		}
 		return 0;
 	});
@@ -44,5 +50,22 @@ int dummy=InitWS();
 
 void Present()
 {
+	Poll();
+	if(quitReq)
+	{
+		stext(" ------------------------------------------------ ",10,10,0xffffffff);
+		stext("|   For quit press Q or click [X] button again   |",10,20,0xffffffff);
+		stext("|             Otherwise press esc                |",10,30,0xffffffff);
+		stext(" ------------------------------------------------ ",10,40,0xffffffff);
+		if(KeyPressed(1000))
+		{
+			printf("Esc\n");
+			quitReq=0;
+		}
+		if(KeyPressed('q')||KeyPressed('Q'))
+		{
+			exit(0);
+		}
+	}
 	wsys.Present(mainWin);
 }
