@@ -36,6 +36,8 @@ Name|example|meaning
 
 Arrays with compile time known sizes, structs, classes, pointers and references can be used to extend types. Struct can contain arrays or other structs, array can contain structs.
 
+Non capturing lambdas are supported, however not in all contexts: it is possible to init or assign variable or class member with compatible pointer to function type, passing lambda as an argument to a function also possible.
+
 Major type conversions between base types are supported, however, they can cause extra operations and sometimes buggy or missing. It is known issue and author works on fixes and improvements
 
 `struct`, `class` correspond to their C++ analogs. For now, there are some limitations:
@@ -58,7 +60,7 @@ Pointer and references are supported, with some (reasonable, from author's sight
 
 ## Preprocessor
 
-Preprocessor supports object-style and function-style macros, `__SCINC__` macro is defined, can be useful if someone needs conditional compilation
+Preprocessor supports object-style and function-style (with ...) macros, `__SCINC__` macro is defined, can be useful if someone needs conditional compilation. Stringification and token glueing works sometimes slightly differently comparing to c++.
 
 `#include <...>` is ignored, `#include "..."` works, but only in current folder. Some include directives can be handled separatedly, for example, `#include "graphics.h"` will not cause compiler to for this file in current folder, instead graphic window will be created and some bindings to native functions will be made.
 
@@ -79,6 +81,8 @@ There is experimental JS backend. VM bytecode is transformed into simplified Jav
 ## Runtime library
 
 Interpreter has some bindings to native functions, some kind of runtime library. This is not a part of the language and provided as an example. Can (and probably will) be changed in future.
+
+Following code can be automatically generated, for latter using on IDE for code completion. Run Scinc -hdr <source.cpp>
 
 ```c++
 // Predefined macros
