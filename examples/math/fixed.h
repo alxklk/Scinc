@@ -146,6 +146,7 @@ public:
 			else
 				break;
 		}
+		//printf(" >>>>>>End=%i\n", end);
 		return end;
 	}
 
@@ -411,8 +412,9 @@ public:
 		return n;
 	}
 
-	void Print()
+	void Print(CDigitStream& out)
 	{
+		out.begin();
 		int end=End();
 		int lead=Lead();
 		if(lead<end)
@@ -423,23 +425,22 @@ public:
 			lead=FIXED_FRACTS;
 		if(end>FIXED_FRACTS-2)end=FIXED_FRACTS-2;
 
-		char sd[FIXED_DIGITS+1];
 		int nc=0;
 		if(sign==-1)
 		{
-			sd[nc++]='-';
+			out.put('-');
 		}
 		for(int i=lead;i>end;i--)
 		{
 			int digit=digits[i];
-			sd[nc++]="0123456789"[digit];
+			out.put(int("0123456789"[digit]));
 			if(i==FIXED_FRACTS)
 			{
-				sd[nc++]='.';
+				out.put('.');
 			}
 		}
-		sd[nc++]=0;
-		printf("%s",sd);
+		out.end();
+		//printf("%i %i %s",lead, end, sd);
 	}
 
 	fixed Sqrt()
@@ -464,7 +465,7 @@ public:
 		{
 			a=(x/a+a)*h;
 			printf("Sqrt approx %i=",i);
-			a.Print();
+			//a.Print();
 			printf("\n");
 		}
 		return a;
@@ -514,7 +515,7 @@ public:
 			fixed termd16=term*pow16;
 			sum=sum+termd16;
 			pow16=pow16/bi16;
-			sum.Print();
+			//sum.Print();
 			printf("\n");
 		}
 		*this=sum;
@@ -530,7 +531,7 @@ public:
 			fixed bottom;bottom.Seti(2*n*(2*n+1));
 			nx=nx*top/bottom;
 			sum=sum+nx;
-			sum.Print();
+			//sum.Print();
 			printf("\n");
 		}
 		*this=sum;

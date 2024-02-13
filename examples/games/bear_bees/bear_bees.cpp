@@ -1,3 +1,5 @@
+#define G_SCREEN_SCALE 2
+
 #include "graphics.h"
 #include "svg.h"
 
@@ -97,6 +99,7 @@ int main()
 	flt2 offs[64];
 	for(int i=0;i<64;i++)
 	{
+		field[i]=0;
 		offs[i].Zero();
 	}
 
@@ -107,6 +110,10 @@ int main()
 	float t=Time();
 	while(true)
 	{
+		SScincEvent ev;
+		while(GetScincEvent(ev))
+		{
+		}
 		float t1=Time();
 		float dt=t1-t;
 		t=t1;

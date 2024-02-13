@@ -1,4 +1,6 @@
 #include <stdio.h>
+#define G_SCREEN_MODE 2
+#define G_SCREEN_SCALE 1
 
 #include "graphics.h"
 
@@ -77,6 +79,7 @@ int main()
 		g.width(8,1.0);
 		g.stroke();
 
+		Poll();
 		Present();
 		if(close)
 			break;

@@ -1,5 +1,6 @@
 #include "sound.h"
 #include "graphics.h"
+#include "../ws.h"
 
 #pragma STACK_SIZE 25600000
 
@@ -8,6 +9,8 @@
 #ifdef __SCINC__
 #define const
 #endif
+
+CSound snd;
 
 class flt2
 {
@@ -271,7 +274,7 @@ public:
 		for(int i=0;i<nSamples;i++)
 		{
 			int ep=(echoPos+i)%EL*2;
-			snd_out(echo[ep],echo[ep+1]);
+			snd.snd_out(echo[ep],echo[ep+1]);
 		}
 		echoPos=(echoPos+nSamples)%EL;
 		sample+=nSamples;
@@ -281,6 +284,7 @@ public:
 
 int main()
 {
+	InitWS();
 	float dt;
 	dt=0.;
 	cursnd=0;
@@ -294,10 +298,10 @@ int main()
 	walls[3].Set(50,250,60,60);
 	walls[4].Set(100,105,200,80);
 	walls[5].Set(100,105,80,200);
-	walls[6].Set(200,80,245,265);
-	walls[7].Set(245,265,80,200);
+	walls[6].Set(200,80,205,265);
+	walls[7].Set(205,265,80,200);
 
-	float bs=.8;
+	float bs=.6;
 	bullets[0].Set(170,60,55*bs,21*bs);
 	bullets[1].Set(120,60,36*bs,38*bs);
 	bullets[2].Set(60,120,21*bs,56*bs);
@@ -361,7 +365,8 @@ int main()
 		prevt=t;
 
 
-		while(snd_bufhealth()<3000)
+		snd.Poll();
+		while(snd.snd_bufhealth()<10000)
 		{
 			hs.GenerateSamples(512);
 		}
@@ -433,6 +438,7 @@ int main()
 		//g.fill1();
 
 		Present();
+		Wait(0.002);
 	}
 	return 0;
 }

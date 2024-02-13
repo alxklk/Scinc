@@ -15,7 +15,6 @@ Graph g;
 
 int sndSample;
 
-CWinSys ws;
 CSound snd;
 
 void GenerateSamples(int nSamples)
@@ -30,7 +29,7 @@ void GenerateSamples(int nSamples)
 
 int main()
 {
-	int win0=ws.CreateWindow(640,480,2,2,1);
+	//int win0=ws.CreateWindow(640,480,2,2,1);
 	float t0=Time();
 	float tframe;
 	tframe=Time();
@@ -81,7 +80,8 @@ int main()
 		g.width(1.25,1.25);
 		g.rgb(.5,.8,1.0);
 		g.stroke();
-		ws.Present(win0);
+		//ws.Present(win0);
+		Present();
 	}
 	return 0;
 }

@@ -40,8 +40,9 @@ int main()
 		//	continue;
 		//}
 		oldmx=mx;
-		float a=mx/60.;
+		float a;
 		a=t*.4;
+		if(mb)a=mx/60.;
 		//a=2;
 		float SXX= 7*S*cos(a);
 		float SYX= 7*S*sin(a);
@@ -101,7 +102,7 @@ int main()
 				g.fill1();
 				g.rgb((h0-h1)*.5+.5,(h0-h2)*.5+.5,0);
 				g.alpha(1);
-				//g.stroke();
+				g.stroke();
 			}
 		}
 		Present();

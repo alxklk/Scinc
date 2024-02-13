@@ -14,7 +14,7 @@ int main()
 	double T=0;
 	while(true)
 	{
-		T=Time();
+		T=Time()*.1;
 		g.rgba32(0xffc0c0c0);
 		g.FillRT();
 		g.miterlim(.1);

@@ -17,8 +17,8 @@ int main() {
 	int d;
 	int maxDiv = 0;
 	int count = 0;
-	printf("The first 20 anti-primes are:\n");
-	for (n = 1; count < 20; ++n) {
+	printf("The first 40 anti-primes are:\n");
+	for (n = 1; count < 40; ++n) {
 		d = countDivisors(n); 
 		if (d > maxDiv) {
 			printf("%d ", n);

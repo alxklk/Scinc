@@ -1,9 +1,25 @@
+class CDigitStream
+{
+public:
+	void begin(){};
+	void put(int c){printf("%c",c);}
+	void end(){};
+};
+
+/*
+
 #pragma STACK_SIZE 6553600
 
 #include <stdio.h>
 #define FIXED_DIGITS 2800
 #define FIXED_FRACTS 1
-#include "fixed_digistream.h"
+class CDigitStream
+{
+public:
+	void begin(){};
+	void put(int c){printf("%c",c);}
+	void end(){};
+};
 #include "fixed.h"
 
 
@@ -26,3 +42,4 @@ int argc, char** argv
 	}
 	return 0;
 }
+*/
