@@ -1,6 +1,6 @@
 #define SW 1024
 #define G_SCREEN_WIDTH SW
-#define G_SCREEN_SCALE 2
+#define G_SCREEN_SCALE 1
 #define G_SCREEN_MODE 1
 
 #define NFFT 2048
@@ -9,6 +9,7 @@
 #include "graphics.h"
 #include "../asteroids/asters_music.h"
 #include "../ui/gui/GUI.h"
+#include "../ws.h"
 
 #ifdef __SCINC__
 #define const
@@ -392,11 +393,12 @@ void Out(double* buf, int count)
 	for(int i=0;i<count2;i+=2)
 		buf[i+1]=buf[i];
 	curSample+=count;
-	snd_out_buf(buf, count);
+	CSound s;
+	s.snd_out_buf(buf, count);
 	return;
 	for(int i=0;i<count2;i+=2)
 	{
-		snd_out(buf[i],buf[i]);
+		s.snd_out(buf[i],buf[i]);
 	}
 }
 
@@ -601,7 +603,8 @@ int main()
 		double T0=Time();
 		bool didOut=false;
 		int gscount=0;
-		while(snd_bufhealth()<1024*2+NFFT)
+		CSound s;
+		while(s.snd_bufhealth()<1024*2+NFFT)
 		{
 			gscount++;
 			didOut=true;
@@ -922,7 +925,7 @@ int main()
 
 
 		char ss[64];
-		snprintf(ss,64,"Buffer health: % 5i  gs:%i", snd_bufhealth(), gscount);
+		snprintf(ss,64,"Buffer health: % 5i  gs:%i", s.snd_bufhealth(), gscount);
 		stext(ss,10,470,0xffffff00);
 		snprintf(ss,64,"mfreq: %f", mfreq);
 		stext(ss,10,460,0xffffff00);
@@ -953,6 +956,11 @@ int main()
 		g.stroke();
 
 		Present();
+		{
+			CSound s;
+			s.Poll();
+		}
+
 	}
 	fclose(rawf);
 	MIC_In_Done();	

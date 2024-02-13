@@ -1,6 +1,8 @@
 #include "sound.h"
 #include "graphics.h"
 
+#include "../ws.h"
+
 #ifdef __SCINC__
 #define const
 #endif
@@ -507,11 +509,8 @@ double fftout[NFFT];
 bool graph;
 int frame;
 
-CWinSys ws;
-
 int main()
 {
-	int win0=ws.CreateWindow(640,480,2,2,1);
 
 //	StdFreqs();
 	melody.Init(1);
@@ -618,7 +617,7 @@ int main()
 			g.rgba(.2,0,0,1);
 			g.fill2();
 
-			ws.Present(win0);
+			Present();
 			continue;
 		}
 
@@ -672,7 +671,7 @@ int main()
 		stext(ss,10,440,0xffffff00);
 		snprintf(ss,64,"[%c] 'F'ade", " x"[fade]);
 		stext(ss,10,430,0xffffff00);
-		ws.Present(win0);
+		Present();
 	}
 	return 0;
 }

@@ -75,15 +75,16 @@ public:
 		}
 		if(do_out)
 		{
+			CSound s;
 			int idx=echoPos-nSamples;
 			int count=nSamples;
 			if(idx<0)
 			{
 				count+=idx;
-				snd_out_buf(&(echo[(12000+idx)*2]),-idx);
+				s.snd_out_buf(&(echo[(12000+idx)*2]),-idx);
 				idx=0;
 			}
-			snd_out_buf(&(echo[idx*2]),count);
+			s.snd_out_buf(&(echo[idx*2]),count);
 		}
 	}	
 };

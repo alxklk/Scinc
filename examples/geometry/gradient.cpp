@@ -5,6 +5,7 @@
 #define G_SCREEN_SCALE 4
 
 #include "graphics.h"
+#include "../ws.h"
 
 #define __SCINC_STEPS__ 500
 

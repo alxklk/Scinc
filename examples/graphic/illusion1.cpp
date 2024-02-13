@@ -2,6 +2,7 @@
 #include "graphics.h"
 
 Graph g;
+#include "../ws.h"
 
 #define M_PI 3.141592654
 

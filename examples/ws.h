@@ -53,6 +53,8 @@ void Present()
 	Poll();
 	if(quitReq)
 	{
+		Graph g;
+		g.fillrect(10,10,6*50,10*4,0x80000000);
 		stext(" ------------------------------------------------ ",10,10,0xffffffff);
 		stext("|   For quit press Q or click [X] button again   |",10,20,0xffffffff);
 		stext("|             Otherwise press esc                |",10,30,0xffffffff);

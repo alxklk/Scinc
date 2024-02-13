@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "graphics.h"
+#include "../ws.h"
 
 Graph g;
 
