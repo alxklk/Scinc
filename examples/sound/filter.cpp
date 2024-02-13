@@ -1,6 +1,6 @@
 #define SW 1024
 #define G_SCREEN_WIDTH SW
-#define G_SCREEN_SCALE 1
+#define G_SCREEN_SCALE 3
 #define G_SCREEN_MODE 1
 
 #define NFFT 2048
@@ -419,39 +419,8 @@ float interp(float y0, float y1, float t)
 float EQ[11]={1,1,1,1,1,1,1,1,1,1,1};
 int EQF[11] ={0,0,0,0,0,0,0,0,0,0,NFFT/2-1};
 
-CWinSys wsys;
-int mainWin;
-
-int InitWS()
-{
-	//SetEventCallback([](SScincEvent e)->int
-	//{
-	//	if(e.type=='WMOV')
-	//	{
-	//		printf("%i,%i %ix%i\n",e.x,e.y,e.z,e.h);
-	//	}
-	//	if(e.type=='WKIL')
-	//	{
-	//		printf("Window killed\n");
-	//		exit(0);
-	//	}
-	//	return 0;
-	//});
-	mainWin=wsys.CreateWindow(640,480,3,3,1);
-	wsys.SetWindowPos(mainWin,200,200);
-	return 0;
-}
-
-//int dummy=InitWS();
-
-void Present()
-{
-	wsys.Present(mainWin);
-}
-
 int main()
 {
-	InitWS();
 	CGUI gui;
 	gui.Init();
 	int ctldy=18;
