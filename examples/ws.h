@@ -2,6 +2,11 @@ CWinSys wsys;
 int mainWin=-1;
 int quitReq=0;
 
+#ifdef __SCINC_HOTRELOAD__
+int mainWinPosX;
+int mainWinPosY;
+#endif
+
 int InitWS()
 {
 	int width=640;
@@ -22,13 +27,28 @@ int InitWS()
 	mode=G_SCREEN_MODE;
 #endif
 
+#ifdef __SCINC_HOTRELOAD__
+	printf("With hot reloading enabled\n");
+#endif
+
 	SetEventCallback([](SScincEvent e)->int
 	{
-		if(e.type=='WMOV')
+		if(e.type=='MLDN')
+		{
+			if(quitReq)printf("Quit cancelled\n");
+			quitReq=0;
+		}
+		else if(e.type=='WMOV')
 		{
 			//printf("%i,%i %ix%i\n",e.x,e.y,e.z,e.h);
+#ifdef __SCINC_HOTRELOAD__
+			mainWinPosX=e.x;
+			mainWinPosY=e.y;
+			SetPersistentInt("mainWinPosX", mainWinPosX);
+			SetPersistentInt("mainWinPosY", mainWinPosY);
+#endif
 		}
-		if(e.type=='WQIT')
+		else if(e.type=='WQIT')
 		{
 			//fputs("Window kill event\n",stderr);
 
@@ -38,11 +58,19 @@ int InitWS()
 				exit(0);
 			quitReq++;
 		}
+#ifdef __SCINC_HOTRELOAD__
+		else if(e.type=='HRLD')
+		{
+			printf("Hot Reload event\n");
+		}
+#endif
 		return 0;
 	});
 
 	mainWin=wsys.CreateWindow(width,height,scale,scale,mode);
-	wsys.SetWindowPos(mainWin,200,200);
+#ifdef __SCINC_HOTRELOAD__
+	wsys.SetWindowPos(mainWin,GetPersistentInt("mainWinPosX", 200),GetPersistentInt("mainWinPosY", 200));
+#endif
 	return 0;
 }
 
@@ -57,7 +85,7 @@ void Present()
 		g.fillrect(10,10,6*50,10*4,0x80000000);
 		stext(" ------------------------------------------------ ",10,10,0xffffffff);
 		stext("|   For quit press Q or click [X] button again   |",10,20,0xffffffff);
-		stext("|             Otherwise press esc                |",10,30,0xffffffff);
+		stext("|      Otherwise press esc or click anywhere     |",10,30,0xffffffff);
 		stext(" ------------------------------------------------ ",10,40,0xffffffff);
 		if(KeyPressed(1000))
 		{

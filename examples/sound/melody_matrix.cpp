@@ -1,9 +1,12 @@
 #include "sound.h"
 #include "graphics.h"
+#include "../ws.h"
 
 #pragma STACK_SIZE 4096
 
 #define M_PI 3.141592654
+
+CSound s;
 
 int rseed;
 
@@ -453,12 +456,12 @@ public:
 			if(idx<0)
 			{
 				count+=idx;
-				snd_out_buf(&(echo[(EL+idx)*2]),-idx);
+				s.snd_out_buf(&(echo[(EL+idx)*2]),-idx);
 				idx=0;
 			}
 			if(count)
 			{
-				snd_out_buf(&(echo[idx*2]),count);
+				s.snd_out_buf(&(echo[idx*2]),count);
 			}
 		}
 		echoPos=(echoPos+nSamples)%EL;
@@ -527,7 +530,7 @@ int main()
 
 		g.M(-1,240);
 		{
-			while(snd_bufhealth()<(1024*2+1024))
+			while(s.snd_bufhealth()<(1024*2+1024))
 			{
 				//for(int i=0;i<8;i++)
 					//snd.GenerateSamples(128);
@@ -607,6 +610,7 @@ int main()
 		}
 
 		Present();
+		s.Poll();
 	}
 	return 0;
 }
