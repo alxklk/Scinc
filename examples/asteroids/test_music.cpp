@@ -12,6 +12,7 @@
 #define NFFT 1024
 
 #include "../sound/FFT_rc.h"
+#include "../ws.h"
 
 void FFT(float* in, float* o, int j)
 {
@@ -77,7 +78,8 @@ int main()
 
 
 		tframe=Time();
-		while(snd_bufhealth()<(3000+NFFT))
+		CSound s;
+		while(s.snd_bufhealth()<(3000+NFFT))
 		{
 			music.GenerateSamples(NFFT);
 			FFT(music.echo,fftout,music.echoPos);
@@ -104,7 +106,7 @@ int main()
 		g.stroke();
 
 		g.clear();
-		float l[4]={};
+		float l[4]={0.,0.,0.,0.};
 		int N=NFFT/2;
 		for(int i=0;i<N;i++)
 		{
@@ -137,7 +139,7 @@ int main()
 			//g.fin();
 			//g.rgba(col[i*3],col[i*3+1],col[i*3+2],.5);
 			//l[i]*=.08;
-			float a=l[i]*.005;
+			float a=l[i]*0.01;
 			a=a>1.?1.:a;
 			//a*=a;
 			//g.alpha(a);
@@ -147,10 +149,11 @@ int main()
 		g.alpha(1);
 
 		char ss[64];
-		snprintf(ss,64,"Time % 8.4f % 8i % 8i % 8i", Time(), snd_bufhealth(), music.echoPos, music.sample);
+		snprintf(ss,64,"Time % 8.4f % 8i % 8i % 8i", Time(), s.snd_bufhealth(), music.echoPos, music.sample);
 		stext(ss,10,10,0xffffffff);
 
 		Present();
+		s.Poll();
 	}
 	return 0;
 }

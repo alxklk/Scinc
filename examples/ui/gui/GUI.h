@@ -1,4 +1,4 @@
-bool IsMouseEvent(int eventType)
+bool IsMouseEventIf(int eventType)
 {
 	//printf("event %c%c%c%c\n" ,(eventType>>24)&0xff,(eventType>>16)&0xff,(eventType>>8)&0xff,eventType&0xff);
 	if(eventType=='MMOV')return true;
@@ -12,8 +12,8 @@ bool IsMouseEvent(int eventType)
 	return false;
 }
 
-/*
-bool IsMouseEventCase(int eventType)
+
+bool IsMouseEvent(int eventType)
 {
 	switch(eventType)
 	{
@@ -30,7 +30,7 @@ bool IsMouseEventCase(int eventType)
 	}
 	return false;
 }
-*/
+
 #define CT_BUTTON 1
 #define CT_CHECK 2
 #define CT_SELECT 3

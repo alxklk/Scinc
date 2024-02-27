@@ -2,6 +2,7 @@
 
 #include "graphics.h"
 #include "svg.h"
+#include "../../ws.h"
 
 Graph g;
 

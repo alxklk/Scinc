@@ -2,6 +2,8 @@
 #include "graphics.h"
 #include "menu.h"
 
+#include "../../ws.h"
+
 Graph g;
 SMenu menu;
 
@@ -19,7 +21,7 @@ int main()
 	menu.Create()
 	.P("=")
 		.M("About","about")
-		.M("Exit","exit")
+		.M("Exit","exit").C([](SMenuItem&i)->int{exit(0);return 0;})
 	.P("File")
 		.M("New","file_new").C([](SMenuItem&i)->int{printf("Item %s\n", i.name);return 0;})
 		.M("Load","file_load")

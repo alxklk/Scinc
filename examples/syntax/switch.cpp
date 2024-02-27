@@ -13,6 +13,7 @@ int check1()
 			case 3:printf("Third clause no break\n");
 			default:b=3;
 		};
+		printf("a=%i b=%i\n",a,b);
 	}
 	return 0;
 }

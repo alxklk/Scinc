@@ -13,6 +13,7 @@
 #include "../graphic/font.h"
 #include "../graphic/letters.h"
 #include "../graphic/gtext.h"
+#include "../ws.h"
 
 Graph g;
 
@@ -228,7 +229,8 @@ public:
 		if(y>480)y-=480.;
 		if(fire&&(T-rocketT>0.1))
 		{
-			snd_play(sndRocket);
+			CSound s;
+			s.snd_play(sndRocket);
 			rocketT=T;
 		}
 	}
@@ -494,7 +496,8 @@ public:
 
 		if(realHit>=0)
 		{
-			snd_play(sndExplode);
+			CSound s;
+			s.snd_play(sndExplode);
 			int i=realHit;
 			asts[i].health-=8.;
 			asts[i].hitt=0;
@@ -626,6 +629,8 @@ int main()
 	g.rgb(1,1,1);
 	g.stroke();
 	Present();
+	CSound s;
+	s.Poll();
 
 	gseed=341199578;
 	eseed=7243456;
@@ -651,7 +656,8 @@ int main()
 			tframe=Time();
 			/*if(nsndsamples>2000)nsndsamples=2000;
 			music.GenerateSamples(nsndsamples);*/
-			while(snd_bufhealth()<(2000+1024))
+			CSound s;
+			while(s.snd_bufhealth()<(2000+1024))
 			{
 				music.GenerateSamples(1024);
 			}
@@ -673,6 +679,7 @@ int main()
 			g.rgb(1,1,1);
 			g.stroke();
 			Present();
+			s.Poll();
 
 			if(KeyPressed(4013))
 			{
@@ -708,7 +715,8 @@ int main()
 			{
 				if(T-fireT>1./8.)
 				{
-					snd_play(sndShoot);
+					CSound s;
+					s.snd_play(sndShoot);
 					nShots++;
 					bullets[NB].t=T;
 					bullets[NB].x=ship.x+ship.ax*SSC*2.;
@@ -888,6 +896,8 @@ int main()
 
 
 			Present();
+			CSound s;
+			s.Poll();
 		}
 	}
 	return 0;

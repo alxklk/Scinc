@@ -3,6 +3,7 @@
 #define G_SCREEN_HEIGHT 512
 #define G_SCREEN_SCALE 1
 #include "graphics.h"
+#include "../ws.h"
 
 #define M_PI 3.141592654
 

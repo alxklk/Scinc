@@ -2,7 +2,8 @@
 
 int MakeShootSound(int len)
 {
-	int res=snd_add(len);
+	CSound s;
+	int res=s.snd_add(len);
 	float dlen=1.0/len;
 	{
 		float t=0.;
@@ -13,7 +14,7 @@ int MakeShootSound(int len)
 			float x=t*440.*12.*M_PI;
 			float l=sin(x)*v*sin(f*M_PI*14);
 			if(f<0.25)l=l+sin(x*8.)*bell_curve3(f/0.25)*0.25*cos(f*M_PI*14.);
-			snd_data(res,i,l,l);
+			s.snd_data(res,i,l,l);
 			t+=1./44100.*(f*f)*2.2;
 			f+=dlen;
 		}
@@ -23,7 +24,8 @@ int MakeShootSound(int len)
 
 int MakeExplodeSound(int len, int seed)
 {
-	int res=snd_add(len);
+	CSound s;
+	int res=s.snd_add(len);
 	{
 		float t=0.;
 		float f=0.;
@@ -37,7 +39,7 @@ int MakeExplodeSound(int len, int seed)
 			if(!(i%128))fr0=frand(seed);
 			if(!(i%32))fr1=frand(seed);
 			if(f<0.07)l=l+fr0*bell_curve3(f/0.07)*0.4;
-			snd_data(res,i,l,l);
+			s.snd_data(res,i,l,l);
 			f+=dlen;
 		}
 	}
@@ -46,7 +48,8 @@ int MakeExplodeSound(int len, int seed)
 
 int MakeEngineSound(int len, int seed)
 {
-	int res=snd_add(len);
+	CSound s;
+	int res=s.snd_add(len);
 	{
 		float t=0.;
 		float fr0=frand(seed);
@@ -59,7 +62,7 @@ int MakeEngineSound(int len, int seed)
 			float l=fr0*v*.125+frand(seed)*v*0.125;
 			if(!(i%64))
 				fr0=frand(seed);
-			snd_data(res,i,l,l);
+			s.snd_data(res,i,l,l);
 			f+=dlen;
 		}
 	}
