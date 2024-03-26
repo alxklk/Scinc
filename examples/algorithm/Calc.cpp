@@ -12,13 +12,13 @@ struct SToken
 {
 	int type;
 	float value;
-	bool IsNum()
+	bool IsNumber()
 	{
 		if(type==NUM)
 			return true;
 		return false;
 	}
-	bool IsOp(int op){return (type==OP)&&(value==float(op));}
+	bool IsOperator(int op){return (type==OP)&&(value==float(op));}
 };
 
 #define NTOK 32
@@ -41,8 +41,8 @@ char* Status(int status)
 
 /*
 sum =  product ( "+" product | "-" product ) *;
-product = term ( "*" term | "/" term ) * ;
-term = "-" term | "(" sum ")" | number ;
+product = terminal ( "*" terminal | "/" terminal ) * ;
+terminal = "-" terminal | "(" sum ")" | number ;
 */
 
 struct Ctx
@@ -52,20 +52,20 @@ struct Ctx
 	bool Yes(){return status==YES;}
 	bool No(){return status==NO;}
 	bool Error(){return status==ERROR;}
-	Ctx IsProduct(float& val)
+	Ctx TryProduct(float& val)
 	{
 		STANDARD_CHECK
 		Ctx e;
 		float val0;
 		float val1;
-		e=IsTerm(val0);
+		e=TryTerminal(val0);
 		if(e.Yes())
 		{
 			Ctx e1=e;
 			val=val0;
 			while(true)
 			{
-				Ctx e2=e1.IsOp('*').IsTerm(val1);
+				Ctx e2=e1.TryOperator('*').TryTerminal(val1);
 				if(e2.Yes())
 				{
 					val=val*val1;
@@ -73,7 +73,7 @@ struct Ctx
 				}
 				else
 				{
-					Ctx e2=e1.IsOp('/').IsTerm(val1);
+					Ctx e2=e1.TryOperator('/').TryTerminal(val1);
 					if(e2.Yes())
 					{
 						val=val/val1;
@@ -89,20 +89,20 @@ struct Ctx
 		}
 		return {p,NO};
 	}
-	Ctx IsSum(float& val)
+	Ctx TrySum(float& val)
 	{
 		STANDARD_CHECK
 		Ctx e;
 		float val0;
 		float val1;
-		e=IsProduct(val0);
+		e=TryProduct(val0);
 		if(e.Yes())
 		{
 			Ctx e1=e;
 			val=val0;
 			while(true)
 			{
-				Ctx e2=e1.IsOp('+').IsProduct(val1);
+				Ctx e2=e1.TryOperator('+').TryProduct(val1);
 				if(e2.Yes())
 				{
 					val=val+val1;
@@ -110,7 +110,7 @@ struct Ctx
 				}
 				else
 				{
-					Ctx e2=e1.IsOp('-').IsProduct(val1);
+					Ctx e2=e1.TryOperator('-').TryProduct(val1);
 					if(e2.Yes())
 					{
 						val=val-val1;
@@ -126,24 +126,24 @@ struct Ctx
 		}
 		return {p,NO};
 	}
-	Ctx IsTerm(float& val)
+	Ctx TryTerminal(float& val)
 	{
 		STANDARD_CHECK
 		float val0;
 		Ctx e;
-		e=IsOp('(').IsSum(val0).IsOp(')');
+		e=TryOperator('(').TrySum(val0).TryOperator(')');
 		if(e.Yes())
 		{
 			val=val0;
 			return e;
 		}
-		e=IsOp('-').IsTerm(val0);
+		e=TryOperator('-').TryTerminal(val0);
 		if(e.Yes())
 		{
 			val=-val0;
 			return e;
 		}
-		e=IsValue(val0);
+		e=TryValue(val0);
 		if(e.Yes())
 		{
 			val=val0;
@@ -151,10 +151,10 @@ struct Ctx
 		}
 		return {p,NO};
 	}
-	Ctx IsValue(float& val)
+	Ctx TryValue(float& val)
 	{
 		STANDARD_CHECK
-		if(t[p].IsNum())
+		if(t[p].IsNumber())
 		{
 			val=t[p].value;
 			return {p+1, YES};
@@ -162,22 +162,22 @@ struct Ctx
 		// TODO: add variables
 		return {p,NO};
 	}
-	Ctx IsOp(int op)
+	Ctx TryOperator(int op)
 	{
 		STANDARD_CHECK
 		char c=char(op);
-		if(t[p].IsOp(op))
+		if(t[p].IsOperator(op))
 		{
 			return {p+1, YES};
 		}
 		return {p,NO};
 	}
-	Ctx IsExpr(float& result)
+	Ctx TryExpr(float& result)
 	{
 		STANDARD_CHECK
 		Ctx c=*this;
 		float op;
-		Ctx e=c.IsSum(op);
+		Ctx e=c.TrySum(op);
 		if(e.Yes())
 		{
 			result=op;
@@ -238,7 +238,6 @@ int main()
 		char g[256];
 		gets_s(g,256);
 		s=g;
-		printf("Got \"%s\"\n", g);
 		MakeTokens(t,s);
 		bool end=false;
 		for(int i=0;i<NTOK;i++)
@@ -259,7 +258,7 @@ int main()
 		Ctx c={0,YES};
 		//c.Print();
 		float res;
-		Ctx e=c.IsExpr(res);
+		Ctx e=c.TryExpr(res);
 		if(e.Yes())
 		{
 			printf("Result: %f\n", res);
