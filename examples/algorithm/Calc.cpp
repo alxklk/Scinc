@@ -1,3 +1,32 @@
+/**
+ * @file Calc.cpp
+ * @author klk
+ * @brief Simple calculator
+ * @version 0.1
+ * @date 2024-03-28
+ * 
+ * @copyright Copyright (c) 2024
+ * 
+ * Supports float values, - + / * operators, parenthesis, pi() and pow(x,y) built-in functions
+
+	Parser accepts following PEG and interprets expressions on the fly
+
+	sum =  product ( "+" product | "-" product ) * ;
+	product = terminal ( "*" terminal | "/" terminal ) * ;
+	terminal = "-" terminal | id "(" ")" | id "(" arguments ")" | "(" sum ")" | number ;
+	arguments =  sum ( "," sum ) * ;
+
+	Lexical analyser:
+	id = alpha ( alphanum ) *
+	fraction = "." ( digit ) *
+	float = digit + fraction 
+	number = int | float
+	operator = "-" | "+" | "/" | "*" | "(" | ")" | "," 
+
+ * 
+ */
+
+
 #include <math.h>
 #include <stdio.h>
 
@@ -83,13 +112,6 @@ char* Status(int status)
 		default: return "???";
 	}
 }
-
-/*
-sum =  product ( "+" product | "-" product ) * ;
-product = terminal ( "*" terminal | "/" terminal ) * ;
-terminal = "-" terminal | id "(" ")" | id "(" arguments ")" | "(" sum ")" | number ;
-arguments =  sum ( "," sum ) * ;
-*/
 
 // Syntax context
 struct Stx
