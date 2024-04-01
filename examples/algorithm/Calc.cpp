@@ -18,8 +18,9 @@
 
 	Lexical analyser:
 	id = alpha ( alphanum ) *
-	fraction = "." ( digit ) *
-	float = digit + fraction 
+	fraction = "." digit *
+	float = digit * fraction | fraction // This seem to accept single . as float constant, TODO: fix
+	int = digit +
 	number = int | float
 	operator = "-" | "+" | "/" | "*" | "(" | ")" | "," 
 
@@ -46,6 +47,19 @@ bool streq(char* l, char* r, int n)
 		}
 	}
 	return true;
+}
+
+void strcp(char* l, char* r, int n)
+{
+	for(int i=0;i<n;i++)
+	{
+		l[i]=r[i];
+		if(r[i]==0)
+		{
+			break;
+		}
+	}
+	l[n]=0;
 }
 
 #define END  0
@@ -91,6 +105,10 @@ struct SToken
 			return true;
 		return false;
 	}
+	bool IsEnd()
+	{
+		return (type==END);
+	}
 	float GetNumber(){return *((float*)value);}
 	bool IsOperator(int op){return (type==OP)&&(value[0]==op);}
 };
@@ -111,6 +129,28 @@ char* Status(int status)
 		case ERROR: return "ERROR"; break;
 		default: return "???";
 	}
+}
+
+struct SVariable
+{
+	char name[TOK_LEN];
+	float value;
+};
+
+#define NVARS 64
+SVariable vars[NVARS]={};
+
+int FindVariable(char* name)
+{
+	for(int i=0;i<NVARS;i++)
+	{
+		if(vars[i].name[0]==0)break;
+		if(streq(&(vars[i].name[0]),name,TOK_LEN))
+		{
+			return i;
+		}
+	}
+	return -1;
 }
 
 // Syntax context
@@ -297,7 +337,15 @@ struct Stx
 			val=t[p].GetNumber();
 			return {p+1, YES};
 		}
-		// TODO: add variables
+		if(t[p].IsId())
+		{
+			int n=FindVariable(&(t[p].value[0]));
+			if(n>=0)
+				val=vars[n].value;
+			else
+				printf("Variable %s not found\n", t[p].value);
+			return {p+1, YES};
+		}
 		return {p,NO};
 	}
 	Stx TryId(char* id)
@@ -340,6 +388,41 @@ struct Stx
 		}
 		return {p,ERROR};
 	}
+	Stx TryAssign(float& result)
+	{
+		STX_START_CHECK
+		Stx c=*this;
+		float val;
+		char id[TOK_LEN];
+		Stx e=c.TryId(id).TryOperator('=').TryExpr(val);
+		if(e.Yes())
+		{
+			int index=FindVariable(&id[0]);
+			if(index<0)
+			{
+				for(int i=0;i<NVARS;i++)
+				{
+					if(vars[i].name[0]==0)
+					{
+						index=i;
+						break;
+					}
+				}
+			}
+			if(index>=0)
+			{
+				strcp(&(vars[index].name[0]),id,TOK_LEN);
+				vars[index].value=val;
+			}
+			result=val;
+			return e;
+		}
+		if(e.No())
+		{
+			return {p,NO};
+		}
+		return {p,ERROR};
+	}
 };
 
 char* hs;
@@ -347,6 +430,9 @@ char* hs;
 // Lexical context
 
 #define LTX_START_CHECK if(!Yes()){return {p, status};}
+
+// Global state because multiline comments are multiline by definition
+bool multilineComment=false;
 
 struct Ltx
 {
@@ -398,7 +484,7 @@ struct Ltx
 	Ltx TryId(char* id)
 	{
 		LTX_START_CHECK
-		Ltx e=SkipSpaces();
+		Ltx e=*this;
 		int id0;
 		e=e.TryAlpha(id0);
 		if(e.Yes())
@@ -434,9 +520,51 @@ struct Ltx
 	{
 		LTX_START_CHECK
 		int i=p;
+		bool lineComment=false;
 		while(true)
 		{
 			int c=hs[i];
+			if(c==0)
+			{
+				break;
+			}
+			if((!lineComment)&&(c=='/')&&(hs[i+1]=='*'))
+			{
+				multilineComment=true;
+				i+=2;
+				continue;
+			}
+			if((!lineComment)&&multilineComment)
+			{
+				if((c=='*')&&((hs[i+1]=='/')))
+				{
+					multilineComment=false;
+					i+=2;
+				}
+				else
+				{
+					i++;
+				}
+				continue;
+			}
+			if((c=='/')&&(hs[i+1]=='/'))
+			{
+				lineComment=true;
+				i+=2;
+				continue;
+			}
+			if(lineComment)
+			{
+				if(c=='\n')
+				{
+					lineComment=false;
+				}
+				else
+				{
+					i++;
+				}
+				continue;
+			}
 			if((c==' ')||(c=='\t')||(c=='\n')){i++;}
 			else return {i, YES};
 		}
@@ -445,16 +573,24 @@ struct Ltx
 	Ltx TryOperator(int& op)
 	{
 		LTX_START_CHECK
-		Ltx e=SkipSpaces();
+		Ltx e=*this;
 		int c=hs[e.p];
-		if((c=='-')||(c=='+')||(c=='*')||(c=='/')||(c=='(')||(c==')')||(c==',')){op=c;return {e.p+1, YES};}
+		if(
+			(c=='-')||(c=='+')||
+			(c=='*')||(c=='/')||
+			(c=='(')||(c==')')||
+			(c==',')||(c=='='))
+		{
+			op=c;
+			return {e.p+1, YES};
+		}
 		return {p, NO};
 	}
 	Ltx TryInt(int& val)
 	{
 		LTX_START_CHECK
 		int digit;
-		Ltx e=SkipSpaces();
+		Ltx e=*this;
 		e=e.TryDigit(digit);
 		if(e.Yes())
 		{
@@ -489,7 +625,7 @@ struct Ltx
 	{
 		LTX_START_CHECK
 		int digit=0;
-		Ltx e=SkipSpaces();
+		Ltx e=*this;
 		e=e.TryDigit(digit);
 		if(e.Yes())
 		{
@@ -524,6 +660,7 @@ int MakeTokens(SToken*t, char* s)
 		{
 			int num;
 			float fnum=0.0;
+			c=c.SkipSpaces();
 			Ltx e;
 			e=c.TryFloat(fnum);
 			if(e.Yes())
@@ -567,13 +704,21 @@ int MakeTokens(SToken*t, char* s)
 
 int main()
 {
+	strcp(&(vars[0].name[0]),"pi",TOK_LEN);
+	vars[0].value=M_PI;
 	while(1)
 	{
 		char g[256];
+		printf(">");
 		if(fgets(g,256,stdin))
 		{
-			printf("Got line `%s`\n", g);
+			printf("Got line `%s`", g);
+			t[0].SetEnd();
 			MakeTokens(t,g);
+			if(t[0].IsEnd())
+			{
+				continue;
+			}
 			bool end=false;
 			for(int i=0;i<NTOK;i++)
 			{
@@ -593,7 +738,9 @@ int main()
 			}
 			Stx c={0,YES};
 			float res;
-			Stx e=c.TryExpr(res);
+			Stx e=c.TryAssign(res);
+			if(!e.Yes())
+				e=c.TryExpr(res);
 			if(e.Yes())
 			{
 				printf("Result: %f\n", res);
