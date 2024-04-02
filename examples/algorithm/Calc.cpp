@@ -11,10 +11,13 @@
 
 	Parser accepts following PEG and interprets expressions on the fly
 
+	expr:
 	sum =  product ( "+" product | "-" product ) * ;
 	product = terminal ( "*" terminal | "/" terminal ) * ;
-	terminal = "-" terminal | id "(" ")" | id "(" arguments ")" | "(" sum ")" | number ;
+	terminal = "-" terminal | id "(" ")" | id "(" arguments ")" | "(" sum ")" | number | id;
 	arguments =  sum ( "," sum ) * ;
+
+	id = expr
 
 	Lexical analyser:
 	id = alpha ( alphanum ) *
@@ -22,7 +25,7 @@
 	float = digit * fraction | fraction // This seem to accept single . as float constant, TODO: fix
 	int = digit +
 	number = int | float
-	operator = "-" | "+" | "/" | "*" | "(" | ")" | "," 
+	operator = "-" | "+" | "/" | "*" | "(" | ")" | "," | "=" 
 
  * 
  */
@@ -295,9 +298,21 @@ struct Stx
 			if(e0.Yes())
 			{
 				printf("Function call %s()\n", id);
-				if(streq(id,"pi",8))
+				if(streq(id,"pi",TOK_LEN))
 				{
 					val=M_PI;
+				}
+				if(streq(id,"vars",TOK_LEN))
+				{
+					int cnt=0;
+					for(int i=0;i<NVARS;i++)
+					{
+						if(vars[i].name[0]==0)
+							break;
+						printf("  %s=%f\n", vars[i].name, vars[i].value);
+						cnt++;
+					}
+					val=cnt;
 				}
 				return e0;
 			}
@@ -313,7 +328,7 @@ struct Stx
 					printf("%f", args[i]);
 				}
 				printf(")\n");
-				if(streq(id,"pow",8)&&(nargs==2))
+				if(streq(id,"pow",TOK_LEN)&&(nargs==2))
 				{
 					val=pow(args[0],args[1]);
 				}
@@ -696,7 +711,7 @@ int MakeTokens(SToken*t, char* s)
 				c=e;
 				continue;
 			}
-			printf("End of stream\n");
+			//printf("End of stream\n");
 			break;
 		}
 	return 0;
@@ -709,16 +724,17 @@ int main()
 	while(1)
 	{
 		char g[256];
-		printf(">");
+		printf("\n>");
 		if(fgets(g,256,stdin))
 		{
-			printf("Got line `%s`", g);
+			//printf("Got line `%s`", g);
 			t[0].SetEnd();
 			MakeTokens(t,g);
 			if(t[0].IsEnd())
 			{
 				continue;
 			}
+			/*
 			bool end=false;
 			for(int i=0;i<NTOK;i++)
 			{
@@ -735,7 +751,7 @@ int main()
 				{
 					break;
 				}
-			}
+			}*/
 			Stx c={0,YES};
 			float res;
 			Stx e=c.TryAssign(res);
@@ -747,7 +763,7 @@ int main()
 			}
 			else
 			{
-				printf("No expr or error\n");
+				// printf("No expr or error\n");
 			}
 		}else return 0;
 	}
