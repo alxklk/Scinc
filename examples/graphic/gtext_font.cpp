@@ -151,88 +151,6 @@ void DrawRect(int rectX, int rectY, int rectW, int rectH, int col)
 	g.lineV(rectX+rectW  ,rectY+rectH,-rectH,col);
 }
 
-class CGUI
-{
-public:
-	int nb;
-	SWidget widgets[64];
-	int hoverWidget;
-	int downButton;
-	void Init()
-	{
-		nb=0;
-		hoverWidget=-1;
-		downButton=-1;
-	}
-	void UpdateMousePos(int x, int y)
-	{
-		hoverWidget=-1;
-		for(int i=0;i<nb;i++)
-		{
-			if((x>widgets[i].x0)&&(x<widgets[i].x1))
-			{
-				if((y>widgets[i].y0)&&(y<widgets[i].y1))
-				{
-					hoverWidget=i;
-					break;
-				}
-			}
-		}
-	}
-	int MouseDown()
-	{
-		downButton=hoverWidget;
-		return hoverWidget;
-	}
-	int MouseUp()
-	{
-		if((hoverWidget!=-1)&&(downButton==hoverWidget))
-		{
-			downButton=-1;
-			return widgets[hoverWidget].tag;
-		}
-		else
-		{
-			downButton=-1;
-			return -1;
-		}
-	}
-	void Render()
-	{
-		for(int i=0;i<nb;i++)
-		{
-			SWidget& b=widgets[i];
-			g.Rect(b.x0, b.y0,b.x1-b.x0,b.y1-b.y0,0xff303740);
-			stext(b.text, b.x0+10, b.y1-15,0xffffffff);
-			if(downButton==i)
-			{
-				g.lineH(b.x0, b.y0,b.x1-b.x0,0xff202020);
-				g.lineH(b.x0, b.y1,b.x1-b.x0+1,0xff202020);
-				g.lineV(b.x0, b.y0,b.y1-b.y0,0xff202020);
-				g.lineV(b.x1, b.y0,b.y1-b.y0,0xff202020);
-			}
-			else if(hoverWidget==i)
-			{
-				g.lineH(b.x0, b.y0,b.x1-b.x0,0xffc0c0c0);
-				g.lineH(b.x0, b.y1,b.x1-b.x0+1,0xffc0c0c0);
-				g.lineV(b.x0, b.y0,b.y1-b.y0,0xffc0c0c0);
-				g.lineV(b.x1, b.y0,b.y1-b.y0,0xffc0c0c0);
-			}
-		}
-	}
-	void AddButton(char* text, int x, int y, int w, int h, int tag)
-	{
-		widgets[nb].text=text;
-		widgets[nb].x0=x;
-		widgets[nb].y0=y;
-		widgets[nb].x1=x+w;
-		widgets[nb].y1=y+h;
-		widgets[nb].tag=tag;
-		nb++;
-	}
-};
-
-
 int main()
 {
 	printf("Start\n");
@@ -431,7 +349,7 @@ int main()
 	while(true)
 	{
 		SScincEvent ev;
-		WaitForScincEvent();
+		WaitForScincEvent(0.1);
 		while(
 			redraw||
 			GetScincEvent(ev))

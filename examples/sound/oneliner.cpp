@@ -1,4 +1,5 @@
 #include "sound.h"
+#include "../ws.h"
 #include "graphics.h"
 
 #define M_PI 3.141592654
@@ -72,7 +73,7 @@ int main()
 		g.clear();
 		snprintf(ss,64,"Time %f nr % i", Time(), nruns);
 		g.t_0(5,20);
-		gtext(ss);
+		stext(ss,10,10,0xffffffff);
 
 		stext("((t*(\"16164289\"[(t>>13)&7]&15))/12&128)+(((((t>>12)^(t>>12)-2)%11*t)/4|t>>13)&127)",10,30,0xff80ffe0);
 

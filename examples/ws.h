@@ -87,6 +87,10 @@ void Present()
 		stext("|   For quit press Q or click [X] button again   |",10,20,0xffffffff);
 		stext("|      Otherwise press esc or click anywhere     |",10,30,0xffffffff);
 		stext(" ------------------------------------------------ ",10,40,0xffffffff);
+#ifdef __SCINC_HOTRELOAD__
+		stext("|             NOTE: Hotreload enabled            |",10,50,0xffffffff);
+		stext(" ------------------------------------------------ ",10,60,0xffffffff);
+#endif
 		if(KeyPressed(1000))
 		{
 			printf("Esc\n");

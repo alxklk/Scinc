@@ -1,9 +1,10 @@
 #define G_SCREEN_MODE 1
-#define G_SCREEN_SCALE 1
+#define G_SCREEN_SCALE 2
 #define G_SCREEN_WIDTH 1024
 #define G_SCREEN_HEIGHT 768
 
 #include "graphics.h"
+#include "flt2.h"
 #include "../ws.h"
 Graph g;
 
@@ -15,108 +16,6 @@ float sh=G_SCREEN_HEIGHT;
 
 #define M_PI 3.141592654
 
-struct flt2
-{
-	float x;
-	float y;
-	float length()
-	{
-		return sqrt(x*x+y*y);
-	}
-	static flt2 New(float x, float y)
-	{
-		flt2 result;
-		result.x=x;
-		result.y=y;
-		return result;
-	}
-	flt2 normalized()
-	{
-		float r=1.0/length();
-		flt2 result;
-		result.x=x*r;
-		result.y=y*r;
-		return result;
-	}
-	flt2 perp()
-	{
-		flt2 result;
-		result.x=y;
-		result.y=-x;
-		return result;
-	}
-	void normalize()
-	{
-		float r=1.0/length();
-		x*=r;
-		y*=r;
-	}
-	void Zero()
-	{
-		x=0;
-		y=0;
-	}
-	flt2 operator- ()
-	{
-		flt2 result;
-		result.x=-x;
-		result.y=-y;
-		return result;
-	}
-	flt2 operator- (flt2 r)
-	{
-		flt2 result;
-		result.x=x-r.x;
-		result.y=y-r.y;
-		return result;
-	}
-	flt2 operator+ (flt2 r)
-	{
-		flt2 result;
-		result.x=x+r.x;
-		result.y=y+r.y;
-		return result;
-	}
-	flt2 operator+= (flt2 r)
-	{
-		flt2 result;
-		result.x=x=x+r.x;
-		result.y=y=y+r.y;
-		return result;
-	}
-	flt2 operator-= (flt2 r)
-	{
-		flt2 result;
-		result.x=x=x-r.x;
-		result.y=y=y-r.y;
-		return result;
-	}
-	flt2 operator* (float r)
-	{
-		flt2 result;
-		result.x=x*r;
-		result.y=y*r;
-		return result;
-	}
-	flt2 operator/ (float r)
-	{
-		float rr=1.0/r;
-		flt2 result;
-		result.x=x*rr;
-		result.y=y*rr;
-		return result;
-	}
-	flt2 operator/= (float r)
-	{
-		float rr=1.0/r;
-		flt2 result;
-		result.x=x*rr;
-		result.y=y*rr;
-		*this=result;
-		return result;
-	}
-
-};
 
 struct STriangle
 {
@@ -272,10 +171,8 @@ void RecRender(STriangle& t, int level, int endLevel)
 
 int main()
 {
-	InitWS();
-	//int mainWin=SYS::CreateWindow(G_SCREEN_WIDTH,G_SCREEN_HEIGHT,G_SCREEN_SCALE,G_SCREEN_SCALE,0);
 	gr=(1.+sqrt(5.))/2.;
-	printf("gr: %f %f\n", gr, gr*gr);
+	//printf("gr: %f %f\n", gr, gr*gr);
 	double T=0;
 	g.width(1.25,1.25);
 	STriangle t0;
@@ -288,6 +185,7 @@ int main()
 	//RecSubdiv(t0,ta0,0,8);
 	//printf("%i triangles\n", ta0.n);
 	SetPresentWait(true);
+	RecRender(t0,0,9);
 	while(true)
 	{
 		T=Time();
@@ -297,7 +195,6 @@ int main()
 		//RenderTriangle(t0);
 		//RenderTriangle(t1);
 
-		RecRender(t0,0,9);
 
 		//for(int i=0;i<ta0.n;i++)
 		//{
@@ -305,13 +202,9 @@ int main()
 		//}
 
 		//SYS::Present(mainWin);
-		SScincEvent event;
-		while(GetScincEvent(event))
-		{
-			printf("event\n");
-		}
 		Present();
-		//Wait(.1);
+		Poll();
+		Wait(.01);
 	}
 	return 0;
 }

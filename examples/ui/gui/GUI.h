@@ -38,6 +38,7 @@ bool IsMouseEvent(int eventType)
 #define CT_VSLIDE 5
 #define CT_STATIC 6
 #define CT_FRAME 7
+#define CT_LINEEDIT 8
 
 struct SButton;
 
@@ -52,7 +53,7 @@ struct SButton
 	int x1;
 	int y1;
 	int tag;
-	int selVal;
+	int cur;
 	int* iDest;
 	float* fDest;
 	float f0;
@@ -69,6 +70,83 @@ struct SButton
 		return *this;
 	}
 };
+
+#define MAX_TEXT_LEN 512
+
+int LineTextEvent(SButton& b, SScincEvent& ev)
+{
+	// TODO: sometimes b.text[b.cur] behaves strangely
+	//printf("Event %c%c%c%c\n",(ev.type&0xff000000)>>24,(ev.type&0xff0000)>>16,(ev.type&0xff00)>>8,(ev.type&0xff));
+	char* text=b.text;
+	int cur=b.cur;
+	//printf(" Cur %i text before: <%s>\n", cur, text);
+	if(ev.type=='CHAR')
+	{
+		if((ev.x>=' ')&&(ev.x<127))
+		{
+			int old=text[cur];
+			for(int i=cur+1;i<MAX_TEXT_LEN;i++)
+			{
+				int oldold=old;
+				old=text[i];
+				text[i]=oldold;
+				if(oldold==0)
+				{
+					//printf(" Exit at %i\n", i);
+					break;
+				}
+			}
+			text[cur++]=ev.x;
+		}
+	}
+	if(ev.type=='KBDN')
+	{
+		//printf("key %i\n", ev.x);
+		if(ev.x==4002)
+		{
+			int c=text[cur];
+			//printf("Char under cursor %i %i %i\n", cur, c);
+			if(cur>0)cur--;
+		}
+		if(ev.x==4003)
+		{
+			int c=text[cur];
+			//printf("Char under cursor %i %i\n", cur, c);
+			if(text[cur])cur++;
+		}
+		if(ev.x==4008)
+		{
+			if(cur>0)
+			{
+				cur--;
+				for(int i=cur;i<MAX_TEXT_LEN;i++)
+				{
+					text[i]=text[i+1];
+					if(text[i]==0)
+					{
+						//printf(" Exit at %i\n", i);
+						break;
+					}
+				}
+			}
+		}
+		if(ev.x==4011)
+		{
+			for(int i=cur;i<MAX_TEXT_LEN;i++)
+			{
+				text[i]=text[i+1];
+				if(text[i]==0)
+				{
+					//printf(" Exit at %i\n", i);
+					break;
+				}
+			}
+		}
+	}
+	//printf(" Cur %i text after: <%s>\n", cur, text);
+	b.cur=cur;
+	return 0;
+}
 
 //void DrawRect(Graph g, int rectX, int rectY, int rectW, int rectH, int col)
 //{
@@ -124,6 +202,17 @@ public:
 			if(event.type=='MLUP')
 			{
 				int but=MouseUp();
+			}
+		}
+		if((event.type=='CHAR')||(event.type=='KBDN'))
+		{
+			for(int i=0;i<nb;i++)
+			{
+				if(buttons[i].type==CT_LINEEDIT)
+				{
+					LineTextEvent(buttons[i], event);
+					break;
+				}
 			}
 		}
 		return false;
@@ -199,7 +288,7 @@ public:
 			SButton& b=buttons[hoverButton];
 			if(b.type==CT_SELECT)
 			{
-				*b.iDest=b.selVal;
+				*b.iDest=b.cur;
 				if(b.CB)
 				{
 					ret=b.CB(&b);
@@ -283,7 +372,7 @@ public:
 				int h=b.y1-b.y0;
 				g.Circle((float)b.x0+9,(float)(b.y0+h/2),0,8,1,0xffc0c0c0);
 				g.Circle((float)b.x0+9,(float)(b.y0+h/2),8,0,1,col);
-				if(*b.iDest==b.selVal)
+				if(*b.iDest==b.cur)
 				{
 					g.Circle((float)b.x0+9  ,(float)b.y0+h/2,0,4,1,0xff000000);
 					g.Circle((float)b.x0+9-2,(float)b.y0+h/2-2,0,0,2,0xffffffff);
@@ -361,6 +450,25 @@ public:
 			{
 				g.Rect(b.x0+1, b.y0+1, b.x1-b.x0-2,b.y1-b.y0-2,0xff404740);
 			}
+			else if(b.type==CT_LINEEDIT)
+			{
+				int x=b.x0;
+				int y=b.y0;
+				int w=b.x1-x;
+				int h=b.y1-y;
+				g.Rect(x+1,y+1, w-2, h-2, 0xfff0e0d0);
+				g.rgba32(0xff404040);
+				g.lineV(x,y,h);
+				g.lineH(x+1,y,w-2);
+				g.rgba32(0xffc0c0c0);
+				g.lineH(x+1,y+h-1,w-2);
+				g.lineV(x+w-1,y,h);
+				stexts(b.text, x+2, y+h-16, 0xff000000,1);
+				if(int(Time()*2)%2)
+					g.Rect(x+b.cur*9+2,y+h-18,2,17,0xff008000);
+				else
+					g.Rect(x+b.cur*9+2,y+h-18,2,17,0xffff80ff);
+			}
 			g.UnClip();
 		}
 	}
@@ -400,7 +508,7 @@ public:
 		buttons[nb].x1=x+w;
 		buttons[nb].y1=y+h;
 		buttons[nb].tag=tag;
-		buttons[nb].selVal=value;
+		buttons[nb].cur=value;
 		buttons[nb].iDest=dest;
 		buttons[nb].CB=0;
 		nb++;
@@ -443,6 +551,19 @@ public:
 		buttons[nb].x1=x+w;
 		buttons[nb].y1=y+h;
 		buttons[nb].CB=0;
+		nb++;
+		return buttons[nb-1];
+	}
+	SButton& AddLineEdit(char* text, int x, int y, int w, int h)
+	{
+		buttons[nb].type=CT_LINEEDIT;
+		buttons[nb].text=text;
+		buttons[nb].x0=x;
+		buttons[nb].y0=y;
+		buttons[nb].x1=x+w;
+		buttons[nb].y1=y+h;
+		buttons[nb].CB=0;
+		buttons[nb].cur=0;
 		nb++;
 		return buttons[nb-1];
 	}

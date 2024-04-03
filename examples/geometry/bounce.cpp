@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include "graphics.h"
 
+#include "../ws.h"
+
 #define M_PI 3.141592654
 
 float Fabs(float x)

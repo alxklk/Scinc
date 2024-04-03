@@ -1,0 +1,9 @@
+*.exe
+*.dll
+*.so
+*.out
+*.cnt
+cmake-build-*
+.idea
+.vscode
+*.log

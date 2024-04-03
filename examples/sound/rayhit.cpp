@@ -1,6 +1,7 @@
 #include "sound.h"
 #include "graphics.h"
 #include "../ws.h"
+#include "../graphic/flt2.h"
 
 #pragma STACK_SIZE 25600000
 
@@ -12,39 +13,7 @@
 
 CSound snd;
 
-class flt2
-{
-public:
-	float x;
-	float y;
-	flt2 operator+=(const flt2& r){x+=r.x;y+=r.y;return *this;}
-	flt2 operator*(float r)const{flt2 res;res.x=x*r;res.y=y*r;return res;}
-	flt2 operator-(const flt2& r)const{flt2 res;res.x=x-r.x;res.y=y-r.y;return res;}
-	flt2 operator+(const flt2& r) {flt2 res;res.x=x+r.x;res.y=y+r.y;return res;}
-	flt2 perp()const{flt2 res;res.x=y;res.y=-x;return res;}
-	float length()const{return sqrt(x*x+y*y);}
-	flt2 norm()const
-	{
-		flt2 res;
-		res.x=0;res.y=0;
-		float l=length();
-		if(l!=0)
-		{
-			res.x=x/l;
-			res.y=y/l;
-		}
-		return res;
-	}
-};
-
 flt2 Flt2(float x, float y){flt2 res;res.x=x;res.y=y;return res;}
-
-float vdot(const flt2& l,const flt2& r){return l.x*r.x+l.y*r.y;}
-
-flt2 reflect(const flt2& r, const flt2& n)
-{
-	return n*vdot(n,r)*2.0f-r;
-}
 
 class Wall
 {
@@ -351,7 +320,7 @@ int main()
 					b.p+=b.v*bdt*nearestT;
 					bt+=nearestT*bdt;
 					bdt-=nearestT*bdt;
-					b.v=reflect(b.v,(w.p0-w.p1).norm());
+					b.v=reflect(b.v,(w.p0-w.p1).normalized());
 					b.p+=b.v*0.00001;
 					hits.AddHit(b.p.x,b.p.y);
 				}
