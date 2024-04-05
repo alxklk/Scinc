@@ -116,12 +116,39 @@ struct SToken
 	bool IsOperator(int op){return (type==OP)&&(value[0]==op);}
 };
 
-#define NTOK 64
 
-SToken t[NTOK]={};
+struct SVariable
+{
+	char name[TOK_LEN];
+	float value;
+};
 
-#define STX_START_CHECK if(!Yes()){return {p, status};}
-//printf("%s %i\n", __func__, p);
+struct Calc
+{
+	#define NTOK 64
+	SToken t[NTOK];
+	#define NVARS 64
+	SVariable vars[NVARS];
+	void Init()
+	{
+		for(int i=0;i<NTOK;i++)t[i].type=END;
+		for(int i=0;i<NVARS;i++)vars[i].name[0]=0;
+	}
+	int FindVariable(char* name)
+	{
+		for(int i=0;i<NVARS;i++)
+		{
+			if(vars[i].name[0]==0)break;
+			if(streq(&(vars[i].name[0]),name,TOK_LEN))
+			{
+				return i;
+			}
+		}
+		return -1;
+	}
+};
+
+#define STX_START_CHECK if(!Yes()){return {calc, p, status};}
 
 char* Status(int status)
 {
@@ -134,31 +161,10 @@ char* Status(int status)
 	}
 }
 
-struct SVariable
-{
-	char name[TOK_LEN];
-	float value;
-};
-
-#define NVARS 64
-SVariable vars[NVARS]={};
-
-int FindVariable(char* name)
-{
-	for(int i=0;i<NVARS;i++)
-	{
-		if(vars[i].name[0]==0)break;
-		if(streq(&(vars[i].name[0]),name,TOK_LEN))
-		{
-			return i;
-		}
-	}
-	return -1;
-}
-
 // Syntax context
 struct Stx
 {
+	Calc* calc;
 	int p;
 	int status;
 	bool Yes(){return status==YES;}
@@ -197,9 +203,9 @@ struct Stx
 					}
 				}
 			}
-			return {e1.p, YES};
+			return {calc, e1.p, YES};
 		}
-		return {p,NO};
+		return {calc, p, NO};
 	}
 	Stx TrySum(float& val)
 	{
@@ -234,9 +240,9 @@ struct Stx
 					}
 				}
 			}
-			return {e1.p, YES};
+			return {calc, e1.p, YES};
 		}
-		return {p,NO};
+		return {calc, p, NO};
 	}
 	Stx TryArguments(float* values, int& n)
 	{
@@ -262,12 +268,12 @@ struct Stx
 					}
 					else
 					{
-						return {p, ERROR};
+						return {calc, p, ERROR};
 					}
 				}
 				else
 				{
-					return {e0.p, YES};
+					return {calc, e0.p, YES};
 				}
 			}
 		}
@@ -297,7 +303,7 @@ struct Stx
 			Stx e0=e.TryOperator(')');
 			if(e0.Yes())
 			{
-				printf("Function call %s()\n", id);
+				// printf("Function call %s()\n", id);
 				if(streq(id,"pi",TOK_LEN))
 				{
 					val=M_PI;
@@ -307,9 +313,9 @@ struct Stx
 					int cnt=0;
 					for(int i=0;i<NVARS;i++)
 					{
-						if(vars[i].name[0]==0)
+						if(calc->vars[i].name[0]==0)
 							break;
-						printf("  %s=%f\n", vars[i].name, vars[i].value);
+						printf("  %s=%f\n", calc->vars[i].name, calc->vars[i].value);
 						cnt++;
 					}
 					val=cnt;
@@ -321,6 +327,7 @@ struct Stx
 			e0=e.TryArguments(args, nargs).TryOperator(')');
 			if(e0.Yes())
 			{
+				/*
 				printf("Function call %s(", id);
 				for(int i=0;i<nargs;i++)
 				{
@@ -328,13 +335,18 @@ struct Stx
 					printf("%f", args[i]);
 				}
 				printf(")\n");
+				*/
 				if(streq(id,"pow",TOK_LEN)&&(nargs==2))
 				{
 					val=pow(args[0],args[1]);
 				}
+				if(streq(id,"sqrt",TOK_LEN)&&(nargs==1))
+				{
+					val=sqrt(args[0]);
+				}
 				return e0;
 			}
-			return {e.p, ERROR};
+			return {calc, e.p, ERROR};
 		}
 		e=TryValue(val0);
 		if(e.Yes())
@@ -342,49 +354,51 @@ struct Stx
 			val=val0;
 			return e;
 		}
-		return {p,NO};
+		return {calc, p, NO};
 	}
 	Stx TryValue(float& val)
 	{
 		STX_START_CHECK
-		if(t[p].IsNumber())
+		if(calc->t[p].IsNumber())
 		{
-			val=t[p].GetNumber();
-			return {p+1, YES};
+			val=calc->t[p].GetNumber();
+			return {calc, p+1, YES};
 		}
-		if(t[p].IsId())
+		if(calc->t[p].IsId())
 		{
-			int n=FindVariable(&(t[p].value[0]));
+			int n=calc->FindVariable(&(calc->t[p].value[0]));
 			if(n>=0)
-				val=vars[n].value;
+				val=calc->vars[n].value;
 			else
-				printf("Variable %s not found\n", t[p].value);
-			return {p+1, YES};
+			{
+				// printf("Variable %s not found\n", calc->t[p].value);
+			}
+			return {calc, p+1, YES};
 		}
-		return {p,NO};
+		return {calc, p, NO};
 	}
 	Stx TryId(char* id)
 	{
 		STX_START_CHECK
-		if(t[p].IsId())
+		if(calc->t[p].IsId())
 		{
 			for(int i=0;i<TOK_LEN;i++)
 			{
-				id[i]=t[p].value[i];
+				id[i]=calc->t[p].value[i];
 			}
-			return {p+1, YES};
+			return {calc, p+1, YES};
 		}
-		return {p,NO};
+		return {calc, p, NO};
 	}
 	Stx TryOperator(int op)
 	{
 		STX_START_CHECK
 		char c=char(op);
-		if(t[p].IsOperator(op))
+		if(calc->t[p].IsOperator(op))
 		{
-			return {p+1, YES};
+			return {calc, p+1, YES};
 		}
-		return {p,NO};
+		return {calc, p, NO};
 	}
 	Stx TryExpr(float& result)
 	{
@@ -399,9 +413,9 @@ struct Stx
 		}
 		if(e.No())
 		{
-			return {p,NO};
+			return {calc, p, NO};
 		}
-		return {p,ERROR};
+		return {calc, p, ERROR};
 	}
 	Stx TryAssign(float& result)
 	{
@@ -412,12 +426,12 @@ struct Stx
 		Stx e=c.TryId(id).TryOperator('=').TryExpr(val);
 		if(e.Yes())
 		{
-			int index=FindVariable(&id[0]);
+			int index=calc->FindVariable(&id[0]);
 			if(index<0)
 			{
 				for(int i=0;i<NVARS;i++)
 				{
-					if(vars[i].name[0]==0)
+					if(calc->vars[i].name[0]==0)
 					{
 						index=i;
 						break;
@@ -426,31 +440,30 @@ struct Stx
 			}
 			if(index>=0)
 			{
-				strcp(&(vars[index].name[0]),id,TOK_LEN);
-				vars[index].value=val;
+				strcp(&(calc->vars[index].name[0]),id,TOK_LEN);
+				calc->vars[index].value=val;
 			}
 			result=val;
 			return e;
 		}
 		if(e.No())
 		{
-			return {p,NO};
+			return {calc, p, NO};
 		}
-		return {p,ERROR};
+		return {calc, p, ERROR};
 	}
 };
 
-char* hs;
-
 // Lexical context
 
-#define LTX_START_CHECK if(!Yes()){return {p, status};}
+#define LTX_START_CHECK if(!Yes()){return {hs, p, status};}
 
 // Global state because multiline comments are multiline by definition
 bool multilineComment=false;
 
 struct Ltx
 {
+	char* hs;
 	int p;
 	int status;
 	bool Yes(){return status==YES;}
@@ -462,9 +475,9 @@ struct Ltx
 		int c=hs[p]-'0';
 		if((c>=0)&&(c<=9))
 		{
-			digit=c;return {p+1, YES};
+			digit=c;return {hs, p+1, YES};
 		}
-		return {p, NO};
+		return {hs, p, NO};
 	}
 	Ltx TryAlpha(int& sym)
 	{
@@ -477,9 +490,9 @@ struct Ltx
 			)
 		{
 			sym=c;
-			return {p+1, YES};
+			return {hs, p+1, YES};
 		}
-		return {p, NO};
+		return {hs, p, NO};
 	}
 	Ltx TryAlphaNum(int& sym)
 	{
@@ -492,9 +505,9 @@ struct Ltx
 			)
 		{
 			sym=c;
-			return {p+1, YES};
+			return {hs, p+1, YES};
 		}
-		return {p, NO};
+		return {hs, p, NO};
 	}
 	Ltx TryId(char* id)
 	{
@@ -521,15 +534,15 @@ struct Ltx
 				}
 				else break;
 			}
-			return {e.p, YES};
+			return {hs, e.p, YES};
 		}
-		return {p, NO};
+		return {hs, p, NO};
 	}
 	Ltx TryDot()
 	{
 		LTX_START_CHECK
-		if(hs[p]=='.'){return {p+1, YES};}
-		return {p, NO};
+		if(hs[p]=='.'){return {hs, p+1, YES};}
+		return {hs, p, NO};
 	}
 	Ltx SkipSpaces()
 	{
@@ -581,9 +594,9 @@ struct Ltx
 				continue;
 			}
 			if((c==' ')||(c=='\t')||(c=='\n')){i++;}
-			else return {i, YES};
+			else return {hs, i, YES};
 		}
-		return {p, YES};
+		return {hs, p, YES};
 	}
 	Ltx TryOperator(int& op)
 	{
@@ -597,9 +610,9 @@ struct Ltx
 			(c==',')||(c=='='))
 		{
 			op=c;
-			return {e.p+1, YES};
+			return {hs, e.p+1, YES};
 		}
-		return {p, NO};
+		return {hs, p, NO};
 	}
 	Ltx TryInt(int& val)
 	{
@@ -614,7 +627,7 @@ struct Ltx
 			{
 				e=e.TryDigit(digit);
 				if(e.Yes()){val=val*10+digit;}
-				else return {e.p, YES};
+				else return {hs, e.p, YES};
 			}
 		}
 		return e;
@@ -631,10 +644,10 @@ struct Ltx
 				int digit;
 				e=e.TryDigit(digit);
 				if(e.Yes()){val+=digit/scale;scale*=10.;}
-				else return {e.p, YES};
+				else return {hs, e.p, YES};
 			}
 		}
-		else return {e.p, NO};
+		else return {hs, e.p, NO};
 	}
 	Ltx TryFloat(float& val)
 	{
@@ -668,8 +681,7 @@ struct Ltx
 
 int MakeTokens(SToken*t, char* s)
 {
-		hs=s;
-		Ltx c={0,YES};
+		Ltx c={s, 0,YES};
 		int i=0;
 		while(true)
 		{
@@ -717,55 +729,3 @@ int MakeTokens(SToken*t, char* s)
 	return 0;
 }
 
-int main()
-{
-	strcp(&(vars[0].name[0]),"pi",TOK_LEN);
-	vars[0].value=M_PI;
-	while(1)
-	{
-		char g[256];
-		printf("\n>");
-		if(fgets(g,256,stdin))
-		{
-			//printf("Got line `%s`", g);
-			t[0].SetEnd();
-			MakeTokens(t,g);
-			if(t[0].IsEnd())
-			{
-				continue;
-			}
-			/*
-			bool end=false;
-			for(int i=0;i<NTOK;i++)
-			{
-				if(i)printf(" ");
-				int type=t[i].type;
-				switch(type)
-				{
-					case NUM: printf("%f", t[i].GetNumber());break;
-					case ID:  printf("%s", t[i].value);break;
-					case OP:  printf("%c", t[i].value[0]);break;
-					case END: printf("\n"); end=true; break;
-				}
-				if(end)
-				{
-					break;
-				}
-			}*/
-			Stx c={0,YES};
-			float res;
-			Stx e=c.TryAssign(res);
-			if(!e.Yes())
-				e=c.TryExpr(res);
-			if(e.Yes())
-			{
-				printf("Result: %f\n", res);
-			}
-			else
-			{
-				// printf("No expr or error\n");
-			}
-		}else return 0;
-	}
-	return 0;
-}

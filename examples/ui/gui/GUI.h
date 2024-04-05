@@ -78,7 +78,7 @@ int LineTextEvent(SButton& b, SScincEvent& ev)
 	// TODO: sometimes b.text[b.cur] behaves strangely
 	//printf("Event %c%c%c%c\n",(ev.type&0xff000000)>>24,(ev.type&0xff0000)>>16,(ev.type&0xff00)>>8,(ev.type&0xff));
 	char* text=b.text;
-	int cur=b.cur;
+	int& cur=b.cur;
 	//printf(" Cur %i text before: <%s>\n", cur, text);
 	if(ev.type=='CHAR')
 	{
@@ -142,9 +142,14 @@ int LineTextEvent(SButton& b, SScincEvent& ev)
 				}
 			}
 		}
+		if(ev.x==4013)
+		{
+			if(b.CB)
+				b.CB(&b);
+		}
 	}
 	//printf(" Cur %i text after: <%s>\n", cur, text);
-	b.cur=cur;
+	//b.cur=cur;
 	return 0;
 }
 
