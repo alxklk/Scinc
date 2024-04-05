@@ -45,6 +45,9 @@ int main()
 	gui.AddSlide("", 150,30,15,100,'val2',&val[2],true,0,1);
 	gui.AddSlide("", 170,30,15,100,'val3',&val[3],true,0,1);
 	gui.AddSlide("", 190,30,15,100,'val4',&val[4],true,0,1);
+	char editLine[MAX_TEXT_LEN]={};
+	gui.AddStatic(editLine, 20,210,100,20);
+	gui.AddLineEdit(editLine, 20,190,100,20).SetCB([](SButton*p)->int{printf("'%s'\n",p->text);return 0;});
 
 	SetPresentWait(true);
 
