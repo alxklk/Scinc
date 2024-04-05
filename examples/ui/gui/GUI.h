@@ -142,6 +142,21 @@ int LineTextEvent(SButton& b, SScincEvent& ev)
 				}
 			}
 		}
+		if(ev.x==4006)
+		{
+			cur=0;
+		}
+		if(ev.x==4007)
+		{
+			for(int i=0;i<MAX_TEXT_LEN;i++)
+			{
+				if(text[i]==0)
+				{
+					cur=i;
+					break;
+				}
+			}
+		}
 		if(ev.x==4013)
 		{
 			if(b.CB)
