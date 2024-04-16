@@ -134,6 +134,22 @@ struct Calc
 		for(int i=0;i<NTOK;i++)t[i].type=END;
 		for(int i=0;i<NVARS;i++)vars[i].name[0]=0;
 	}
+	int AddVariable(char* name)
+	{
+		int found=FindVariable(name);
+		if(found==-1)
+		{
+			for(int i=0;i<NVARS;i++)
+			{
+				if(vars[i].name[0]==0)
+				{
+					strcp(&(vars[i].name[0]),name,TOK_LEN);
+					return i;
+				}
+			}
+		}
+		return found;
+	}
 	int FindVariable(char* name)
 	{
 		for(int i=0;i<NVARS;i++)
@@ -343,6 +359,14 @@ struct Stx
 				if(streq(id,"sqrt",TOK_LEN)&&(nargs==1))
 				{
 					val=sqrt(args[0]);
+				}
+				if(streq(id,"sin",TOK_LEN)&&(nargs==1))
+				{
+					val=sin(args[0]);
+				}
+				if(streq(id,"cos",TOK_LEN)&&(nargs==1))
+				{
+					val=cos(args[0]);
 				}
 				return e0;
 			}
