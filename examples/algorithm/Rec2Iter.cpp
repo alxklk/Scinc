@@ -1,3 +1,10 @@
+// Converting recursive algorythm
+// to iterative. As an exsmple
+// using following task:
+// Divide interval into several
+// subintervals of relative sizes,
+// repeat for each subintervals
+// until certain nesting depth met.
 #include <stdio.h>
 
 float d[3]={.5,.3,.2};
