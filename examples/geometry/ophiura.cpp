@@ -5,6 +5,7 @@
 #define G_SCREEN_HEIGHT 240
 
 #include "graphics.h"
+#include "../ws.h"
 
 #define M_PI 3.141592654
 

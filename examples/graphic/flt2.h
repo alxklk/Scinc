@@ -1,3 +1,5 @@
+#ifndef FLT2_H_DEFINED
+#define FLT2_H_DEFINED
 struct flt2
 {
 	float x;
@@ -6,12 +8,21 @@ struct flt2
 	{
 		return sqrt(x*x+y*y);
 	}
+	float lengthSq()
+	{
+		return (x*x+y*y);
+	}
 	static flt2 New(float x, float y)
 	{
 		flt2 result;
 		result.x=x;
 		result.y=y;
 		return result;
+	}
+	void Set(float newx, float newy)
+	{
+		x=newx;
+		y=newy;
 	}
 	flt2 normalized()
 	{
@@ -89,6 +100,13 @@ struct flt2
 		result.y=y*rr;
 		return result;
 	}
+	flt2 operator/ (flt2 r)
+	{
+		flt2 result;
+		result.x=x/r.x;
+		result.y=y/r.y;
+		return result;
+	}
 	flt2 operator/= (float r)
 	{
 		float rr=1.0/r;
@@ -102,7 +120,12 @@ struct flt2
 
 float vdot(const flt2& l,const flt2& r){return l.x*r.x+l.y*r.y;}
 
+float vcross(const flt2& l,const flt2& r){return l.x*r.y-l.y*r.x;};
+
+
 flt2 reflect(const flt2& r, const flt2& n)
 {
 	return n*vdot(n,r)*2.0f-r;
 }
+
+#endif FLT2_H_DEFINED

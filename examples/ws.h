@@ -31,6 +31,8 @@ int InitWS()
 	printf("With hot reloading enabled\n");
 #endif
 
+	quitReq=0;
+
 	SetEventCallback([](SScincEvent e)->int
 	{
 		if(e.type=='MLDN')
@@ -40,15 +42,17 @@ int InitWS()
 		}
 		else if(e.type=='WMOV')
 		{
+			if(e.w!=mainWin)return 1;
 			//printf("%i,%i %ix%i\n",e.x,e.y,e.z,e.h);
 #ifdef __SCINC_HOTRELOAD__
 			mainWinPosX=e.x;
 			mainWinPosY=e.y;
+			printf("main windows mov %i %i\n", e.x, e.y);
 			SetPersistentInt("mainWinPosX", mainWinPosX);
 			SetPersistentInt("mainWinPosY", mainWinPosY);
 #endif
 		}
-		else if(e.type=='WQIT')
+		else if((e.type=='WDEL')||(e.type=='WDST'))
 		{
 			//fputs("Window kill event\n",stderr);
 
@@ -79,6 +83,9 @@ int dummy=InitWS();
 void Present()
 {
 	Poll();
+#ifndef NO_GREEDY_EVENT
+	SScincEvent ev;while(GetScincEvent(ev)){}
+#endif
 	if(quitReq)
 	{
 		Graph g;
@@ -88,6 +95,7 @@ void Present()
 		stext("|      Otherwise press esc or click anywhere     |",10,30,0xffffffff);
 		stext(" ------------------------------------------------ ",10,40,0xffffffff);
 #ifdef __SCINC_HOTRELOAD__
+		g.fillrect(10,50,6*50,10*2,0x80800000);
 		stext("|             NOTE: Hotreload enabled            |",10,50,0xffffffff);
 		stext(" ------------------------------------------------ ",10,60,0xffffffff);
 #endif

@@ -1,4 +1,5 @@
 #include "graphics.h"
+#include "../ws.h"
 
 struct flt2
 {
