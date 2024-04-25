@@ -8,6 +8,7 @@
 //#define WRITE_MPG
 
 #include "graphics.h"
+#include "../ws.h"
 
 Graph g;
 

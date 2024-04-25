@@ -7,6 +7,8 @@
 
 #include "graphics.h"
 
+#include "../../ws.h"
+
 Graph g;
 
 int gseed=12736347;

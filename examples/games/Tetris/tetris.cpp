@@ -5,14 +5,14 @@
 #else
 #define G_SCREEN_SCALE 4
 #endif
-#define G_SCREEN_MODE 1
+#define G_SCREEN_MODE 3
 
 #include "sound.h"
 #include "graphics.h"
 #include "penta.h"
 #include "minos.h"
 #include "../../ui/menu/menu.h"
-
+#define NO_GREEDY_EVENT
 #include "../../ws.h"
 
 int gseed=4734234;

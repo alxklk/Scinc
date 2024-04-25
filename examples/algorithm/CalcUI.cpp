@@ -20,6 +20,9 @@
 #include "graphics.h"
 #include "Calc.h"
 #include "../ui/gui/GUI.h"
+
+#define NO_GREEDY_EVENT
+
 #include "../ws.h"
 
 #include "../graphic/font.h"

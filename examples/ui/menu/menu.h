@@ -222,7 +222,7 @@ struct SMenu
 		{
 			if((ev.type&0xffff)=='DN')
 			{
-				if((ev.x==3002)||(ev.y==3003))
+				if((ev.x==3002)||(ev.x==3003))
 				{
 					menuOpen=!menuOpen;
 					if(menuOpen)
@@ -391,7 +391,7 @@ struct SMenu
 					menuHover=i;
 					if(menuOpen)
 						menuSelected=i;
-					if((ev.type&0xffff)=='DN')
+					if((ev.type&0xffffff)=='LDN')
 					{
 						menuOpen=!menuOpen;
 						if(menuOpen)
@@ -424,7 +424,7 @@ struct SMenu
 						if((me.x>mx0)&&(me.x<mx1)&&(me.y>=ey)&&(me.y<(ey+mh)))
 						{
 							menuHover=j;
-							if((ev.type&0xffff)=='DN')
+							if(((ev.type&0xffffff)=='LDN')||((ev.type&0xffffff)=='LUP'))
 							{
 								cmd=mi[j].cmd;
 								cmdArg=mi[j].cmdArg;
