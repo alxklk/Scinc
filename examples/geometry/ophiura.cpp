@@ -9,6 +9,8 @@
 
 #define M_PI 3.141592654
 
+#include "../ws.h"
+
 Graph g;
 
 float t;

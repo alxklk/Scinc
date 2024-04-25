@@ -2,7 +2,6 @@
 
 int main()
 {
-	FILE* fout=((FILE*)3);
-	fputs("12345", fout);
+	fputs("12345", stdout);
 	return 0;
 }

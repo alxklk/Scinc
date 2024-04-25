@@ -1,5 +1,5 @@
 #define G_SCREEN_MODE 0
-#define G_SCREEN_SCALE 2
+#define G_SCREEN_SCALE 1
 
 #include "graphics.h"
 

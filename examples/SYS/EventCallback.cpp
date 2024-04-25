@@ -2,6 +2,8 @@
 #define G_SCREEN_MODE 2
 #define G_SCREEN_SCALE 1
 
+#define G_SCREEN_SCALE 1
+
 #include "graphics.h"
 
 Graph g;

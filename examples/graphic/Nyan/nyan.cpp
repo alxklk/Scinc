@@ -6,6 +6,7 @@
 #define G_SCREEN_MODE 1
 
 #include "graphics.h"
+#include "../../ws.h"
 
 #include "../../ws.h"
 

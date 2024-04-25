@@ -1,8 +1,8 @@
 
 #define G_SCREEN_WIDTH 800
 #define G_SCREEN_HEIGHT 600
-#define G_SCREEN_SCALE 3
-#define G_SCREEN_MODE 3
+#define G_SCREEN_SCALE 1
+#define G_SCREEN_MODE 2
 
 #include "graphics.h"
 #include "../ws.h"

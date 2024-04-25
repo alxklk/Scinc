@@ -1,7 +1,7 @@
 #include <stdio.h>
 
 #define G_SCREEN_SCALE 2
-#define G_SCREEN_MODE 3
+#include "../ws.h"
 
 #include "graphics.h"
 
