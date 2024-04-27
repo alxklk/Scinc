@@ -92,6 +92,14 @@ struct flt2
 		result.y=y*r;
 		return result;
 	}
+	flt2 operator*= (float r)
+	{
+		flt2 result;
+		result.x=x*r;
+		result.y=y*r;
+		*this=result;
+		return result;
+	}
 	flt2 operator/ (float r)
 	{
 		float rr=1.0/r;

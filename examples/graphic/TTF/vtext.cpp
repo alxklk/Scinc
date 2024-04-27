@@ -5,6 +5,7 @@
 #define G_SCREEN_SCALE 1
 
 #include "graphics.h"
+#include "../../ws.h"
 
 Graph g;
 
