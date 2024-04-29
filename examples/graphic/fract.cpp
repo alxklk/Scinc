@@ -1,8 +1,8 @@
 #include "graphics.h"
 #define G_SCREEN_MODE 1
 #define G_SCREEN_HEIGHT 900
-#define G_SCREEN_WIDTH 900
-#define G_SCREEN_SCALE 1
+#define G_SCREEN_WIDTH 1500
+#define G_SCREEN_SCALE 2
 #define NO_GREEDY_EVENT
 #include "../ws.h"
 #include "flt2.h"
@@ -26,7 +26,8 @@ flt2 normxys[MAX_N];
 flt2* render;
 int nRender;
 
-int snap=true;
+bool snap=true;
+int domain=0;
 
 struct SGridLine
 {
@@ -35,13 +36,12 @@ struct SGridLine
 	flt2 pd;
 };
 
-float girdX=5;
-float girdY=10;
-
-SGridLine grid[3]={
-	{0x4f00ffff,1,{girdX,0}},
-	{0x2fff00ff,1,{0,girdY}},
-	{0x00000000,0,{-5,-5}}};
+SGridLine grid[4]={
+	{0x2f00ffff,1,{5,0}},
+	{0x2fff00ff,1,{0,10}},
+	{0x3f808080,0,{10,10}},
+	{0x3f808080,0,{10,-10}}
+	};
 
 
 #define FLAG_NODE 1
@@ -123,9 +123,9 @@ int drawCount;
 
 flt2 globalP;
 
-void Rec0(flt2 d, float signY, float signX, int depth, int flag)
+void Rec0(flt2 d, float signY, float signX, float depth, int flag)
 {
-	if(depth<0)
+	if(depth<=0)
 	{
 		globalP+=d;
 		render[nRender++]=globalP;
@@ -134,7 +134,8 @@ void Rec0(flt2 d, float signY, float signX, int depth, int flag)
 	else
 	{
 		flt2 dp=d.perp()*signY;
-		if(flag&FLAG_NEGY){dp=-dp; signY=-signY;}
+		if(depth<1)dp*=(depth-int(depth));
+		if(flag&FLAG_NEGY){dp=-dp;signY=-signY;}
 		if(flag&FLAG_NEGX){signX=-signX;}
 		if(signX<0)
 		{
@@ -154,7 +155,7 @@ void Rec0(flt2 d, float signY, float signX, int depth, int flag)
 	}
 }
 
-void Rec1(flt2 d, int depth, int flag)
+void Rec1(flt2 d, float signY, float signX, float depth, int flag)
 {
 	if(depth<=0)
 	{
@@ -164,21 +165,19 @@ void Rec1(flt2 d, int depth, int flag)
 	}
 	else
 	{
-		flt2 dp=d.perp();
-		if(flag&FLAG_NEGY)dp=-dp;
-		if(flag&FLAG_NEGX)
+		flt2 dp=d.perp()*signY;
+		if(depth<1)dp*=(depth-int(depth));
+		if(flag&FLAG_NEGY){dp=-dp;signY=-signY;}
+		if(flag&FLAG_NEGX){signX=-signX;}
+		if(signX<0)
 		{
-			for(int i=0;i<nnp;i++)
+			for(int i0=0;i0<nnp;i0++)
 			{
-				int i0=nnp-1-i;
-				if(flags[i0]&FLAG_NODE)
-				{
-					Rec1(d*normxys[i0].x+dp*normxys[i0].y, depth-1, flags[i0]);
-				}
+				int i=nnp-1-i0;
+				if(flags[i]&FLAG_NODE)
+					Rec1(d*normxys[i].x+dp*normxys[i].y, signY, signX, depth-1, flags[i]);
 				else
-				{
-					Rec1(d*normxys[i0].x+dp*normxys[i0].y,0,0);
-				}
+					Rec1(d*normxys[i].x+dp*normxys[i].y, signY, signX, 0, flags[i]);
 			}
 		}
 		else
@@ -186,13 +185,9 @@ void Rec1(flt2 d, int depth, int flag)
 			for(int i=0;i<nnp;i++)
 			{
 				if(flags[i]&FLAG_NODE)
-				{
-					Rec1(d*normxys[i].x-dp*normxys[i].y, depth-1, flags[i]);
-				}
+					Rec1(d*normxys[i].x-dp*normxys[i].y, signY, signX, depth-1, flags[i]);
 				else
-				{
-					Rec1(d*normxys[i].x-dp*normxys[i].y,0,0);
-				}
+					Rec1(d*normxys[i].x-dp*normxys[i].y, signY, signX, 0, flags[i]);
 			}
 		}
 	}
@@ -394,18 +389,14 @@ void Koch()
 	depth=4;
 	nep=5;
 	editxys[0]=flt2::New(0,0);
-	editxys[1]=flt2::New(sin(M_PI/6),0);
-	editxys[2]=flt2::New(1.5*sin(M_PI/6),-cos(M_PI/6)*.5);
-	editxys[3]=flt2::New(2*sin(M_PI/6),0);
-	editxys[4]=flt2::New(3*sin(M_PI/6),0);
+	editxys[1]=flt2::New(10.,0);
+	editxys[2]=flt2::New(15.,-sqrt(10*10-5*5));
+	editxys[3]=flt2::New(20.,0);
+	editxys[4]=flt2::New(30.,0);
 	flags[0]=0;
 	flags[1]=0;
 	flags[2]=0;
 	flags[3]=0;
-	for(int i=0;i<nep;i++)
-	{
-		editxys[i]=editxys[i]/sin(M_PI/6)*10;
-	}
 }
 
 void Dragon()
@@ -513,7 +504,7 @@ void DrawA(flt2* p, int cnt)
 
 void HelperGrid()
 {
-	for(int s=0;s<3;s++)
+	for(int s=0;s<4;s++)
 	{
 		flt2 gp0=offset-grid[s].pd.perp()*scale*100.;
 		flt2 gp1=offset+grid[s].pd.perp()*scale*100.;
@@ -534,8 +525,8 @@ int main()
 #ifdef __SCINC_HOTRELOAD__
 
 	{
-		int x=GetPersistentInt("optWinPosX", -200000);
-		int y=GetPersistentInt("optWinPosY", -200000);
+		int x=GetHostInt("optWinPosX", -200000);
+		int y=GetHostInt("optWinPosY", -200000);
 		printf("Persistent pos %i %i\n", x, y);
 		if((x>-200000)&&(y>-200000))
 		{
@@ -553,13 +544,38 @@ int main()
 	gui.AddFrame("",            5,5,105,135);
 	gui.AddStatic("Render",     5,10,105,15);
 	gui.AddCheck("Grid",        10,ctly+=ctldy,65,15,0,&snap);
+	gui.AddSelect("Gaussian"  , 10,ctly+=ctldy,65,15,0,0,&domain).SetActionCB(
+		[](SWidget* p)->int
+		{
+			grid[0].pd.Set(5,0);
+			grid[1].pd.Set(0,10);
+			grid[2].pd.Set(10,10);
+			grid[3].pd.Set(10,-10);
+		});
+	gui.AddSelect("Eisenstein", 10,ctly+=ctldy,65,15,0,1,&domain).SetActionCB(
+		[](SWidget* p)->int
+		{
+			float h=sqrt(10*10-5*5);
+			grid[0].pd.Set(5,0);
+			grid[1].pd.Set(0,h);
+			grid[2].pd.Set( h,5);grid[2].pd.normalize();grid[2].pd=grid[2].pd*h;
+			grid[3].pd.Set(-h,5);grid[3].pd.normalize();grid[3].pd=grid[3].pd*h;
+		});
 	gui.AddSelect("Line",       10,ctly+=ctldy,65,15,0,0,&curves);
 	gui.AddSelect("Quadratic",  10,ctly+=ctldy,85,15,0,1,&curves);
 	gui.AddSelect("Catmul-Rom", 10,ctly+=ctldy,85,15,0,2,&curves);
 	gui.AddSelect("Circular",   10,ctly+=ctldy,85,15,0,3,&curves);
 	float fdepth=depth;
-	gui.AddSlide("Depth",   10,ctly+=ctldy+10,200,15,0,&fdepth,0,0,7)
-		.SetActionCB([](SWidget* p)->int{depth=*p->fDest;});
+	gui.AddSlide("Depth",   10,ctly+=ctldy+10,200,15,0,&fdepth,0,0,10).SetActionCB(
+		[](SWidget* p)->int
+		{
+			depth=*p->fDest;
+		});
+	gui.AddSlide("C-R alpha",   10,ctly+=ctldy+10,200,15,0,&alpha,0,0,1).SetActionCB(
+		[](SWidget* p)->int
+		{
+			depth=*p->fDest;
+		});
 
 	alpha=0.5;
 	render=(flt2*)malloc(sizeof(flt2)*1024*1024*4);
@@ -626,8 +642,8 @@ int main()
 				{
 #ifdef __SCINC_HOTRELOAD__
 					printf("opt windows mov %i %i\n", ev.x, ev.y);
-					SetPersistentInt("optWinPosX", ev.x);
-					SetPersistentInt("optWinPosY", ev.y);
+					SetHostInt("optWinPosX", ev.x);
+					SetHostInt("optWinPosY", ev.y);
 #endif
 				}
 				else
@@ -645,8 +661,8 @@ int main()
 			if(ev.type=='KBDN')
 			{
 				printf("Key %i %i %i %i\n", ev.type, ev.x, ev.y, ev.z);
-				if(ev.x==5102)depth--;
-				else if(ev.x==5103)depth++;
+				if(ev.x==KEYCODE_GR_SUB){depth--;fdepth=int(fdepth-1);}
+				else if(ev.x==KEYCODE_GR_ADD){depth++;fdepth=int(fdepth+1.01);}
 				else if(ev.x=='0')method=0;
 				else if(ev.x=='1')method=1;
 				else if(ev.x=='2')method=2;
@@ -736,12 +752,19 @@ int main()
 							if(snap)
 							{
 								flt2 gp;
-								gp.x=vdot(p, grid[0].pd)/grid[0].pd.length();
-								gp.y=vdot(p, grid[1].pd)/grid[1].pd.length();
+								gp.x=vdot(p, grid[0].pd)/grid[0].pd.lengthSq();
+								gp.y=vdot(p, grid[1].pd)/grid[1].pd.lengthSq();
+								if((Abs(gp.x-int(gp.x+.5))<.3)&&(Abs(gp.y-int(gp.y+.5))<.3))
+								{
+									gp.y=int(gp.y+.5);
+									gp.x=int(gp.x+.5);
+								}
+								editxys[sel.sp[0]]=grid[0].pd*gp.x+grid[1].pd*gp.y;
 							}
-
-							editxys[sel.sp[0]].x=p.x;
-							editxys[sel.sp[0]].y=p.y;
+							else
+							{
+								editxys[sel.sp[0]].x=p.x;
+							}
 						}
 						else
 						{
@@ -817,12 +840,12 @@ int main()
 		{
 			case 0:
 			{
-				Rec0(delta,1.,1.,depth, 0);
+				Rec0(delta,1.,1.,fdepth, 0);
 			}
 			break;
 			case 1:
 			{
-				Rec1(delta,depth+1,0);
+				Rec1(delta,1.,1.,fdepth,0);
 			}
 			break;
 			case 2: Rec2(flt2::New(scale,0),depth); break;
