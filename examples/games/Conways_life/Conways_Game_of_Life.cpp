@@ -1,4 +1,5 @@
 #include "graphics.h"
+#include "../../ws.h"
 
 #pragma STACK_SIZE 512000
 

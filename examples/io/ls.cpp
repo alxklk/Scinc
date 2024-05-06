@@ -1,60 +1,8 @@
 #include <stdio.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include "../include/strn.h"
 
-void strncat(char* res, const char* left, const char* right, int n)
-{
-	const char* src=left;
-	int srci=0;
-	bool first=true;
-	int i=0;
-	while(true)
-	{
-		if(i==n)
-		{
-			break;
-		}
-		if(src[srci]==0)
-		{
-			if(first)
-			{
-				first=false;
-				src=right;
-				srci=0;
-			}
-			else
-			{
-				break;
-			}
-		}
-		res[i]=src[srci];
-		i++;
-		srci++;
-	}
-	res[i]=0;
-}
-
-int strnlen(const char* s, int n)
-{
-	for(int i=0;i<n;i++)
-	{
-		if(s[i]==0)
-			return i;
-	}
-	return n;
-}
-
-char strnlast(const char* s, int n)
-{
-	if(s[0]==0)return s[0];
-
-	for(int i=1;i<n;i++)
-	{
-		if(s[i]==0)
-			return s[i-1];
-	}
-	return s[n-1];
-}
 
 int listdir(const char *path) 
 {

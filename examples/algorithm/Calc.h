@@ -33,40 +33,11 @@
 
 #include <math.h>
 #include <stdio.h>
+#include "../include/strn.h"
 
 #include "Lex.h"
 
 #define M_PI 3.14159265358979323846
-
-bool streq(char* l, char* r, int n)
-{
-	for(int i=0;i<n;i++)
-	{
-		if(l[i]!=r[i])
-		{
-			return false;
-		}
-		else if(l[i]==0)
-		{
-			break;
-		}
-	}
-	return true;
-}
-
-void strcp(char* l, char* r, int n)
-{
-	for(int i=0;i<n;i++)
-	{
-		l[i]=r[i];
-		if(r[i]==0)
-		{
-			break;
-		}
-	}
-	l[n]=0;
-}
-
 
 struct SVariable
 {
@@ -94,7 +65,7 @@ struct Calc
 			{
 				if(vars[i].name[0]==0)
 				{
-					strcp(&(vars[i].name[0]),name,TOK_LEN);
+					strncp(&(vars[i].name[0]),name,TOK_LEN);
 					return i;
 				}
 			}
@@ -106,7 +77,7 @@ struct Calc
 		for(int i=0;i<NVARS;i++)
 		{
 			if(vars[i].name[0]==0)break;
-			if(streq(&(vars[i].name[0]),name,TOK_LEN))
+			if(strneq(&(vars[i].name[0]),name,TOK_LEN))
 			{
 				return i;
 			}
@@ -271,11 +242,11 @@ struct Stx
 			if(e0.Yes())
 			{
 				// printf("Function call %s()\n", id);
-				if(streq(id,"pi",TOK_LEN))
+				if(strneq(id,"pi",TOK_LEN))
 				{
 					val=M_PI;
 				}
-				if(streq(id,"vars",TOK_LEN))
+				if(strneq(id,"vars",TOK_LEN))
 				{
 					int cnt=0;
 					for(int i=0;i<NVARS;i++)
@@ -303,19 +274,19 @@ struct Stx
 				}
 				printf(")\n");
 				*/
-				if(streq(id,"pow",TOK_LEN)&&(nargs==2))
+				if(strneq(id,"pow",TOK_LEN)&&(nargs==2))
 				{
 					val=pow(args[0],args[1]);
 				}
-				if(streq(id,"sqrt",TOK_LEN)&&(nargs==1))
+				if(strneq(id,"sqrt",TOK_LEN)&&(nargs==1))
 				{
 					val=sqrt(args[0]);
 				}
-				if(streq(id,"sin",TOK_LEN)&&(nargs==1))
+				if(strneq(id,"sin",TOK_LEN)&&(nargs==1))
 				{
 					val=sin(args[0]);
 				}
-				if(streq(id,"cos",TOK_LEN)&&(nargs==1))
+				if(strneq(id,"cos",TOK_LEN)&&(nargs==1))
 				{
 					val=cos(args[0]);
 				}
@@ -415,7 +386,7 @@ struct Stx
 			}
 			if(index>=0)
 			{
-				strcp(&(calc->vars[index].name[0]),id,TOK_LEN);
+				strncp(&(calc->vars[index].name[0]),id,TOK_LEN);
 				calc->vars[index].value=val;
 			}
 			result=val;

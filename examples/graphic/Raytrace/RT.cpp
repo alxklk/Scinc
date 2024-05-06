@@ -721,21 +721,21 @@ int main()
 
 		if(changed)
 		{
-			SetPersistentFloat("campos.x",campos.x);
-			SetPersistentFloat("campos.y",campos.y);
-			SetPersistentFloat("campos.z",campos.z);
-			SetPersistentFloat("forward.x",forward.x);
-			SetPersistentFloat("forward.y",forward.y);
-			SetPersistentFloat("forward.z",forward.z);
+			SetHostFloat("campos.x",campos.x);
+			SetHostFloat("campos.y",campos.y);
+			SetHostFloat("campos.z",campos.z);
+			SetHostFloat("forward.x",forward.x);
+			SetHostFloat("forward.y",forward.y);
+			SetHostFloat("forward.z",forward.z);
 		}
 
 
-		campos.x=GetPersistentFloat("campos.x",campos.x);
-		campos.y=GetPersistentFloat("campos.y",campos.y);
-		campos.z=GetPersistentFloat("campos.z",campos.z);
-		forward.x=GetPersistentFloat("forward.x",forward.x);
-		forward.y=GetPersistentFloat("forward.y",forward.y);
-		forward.z=GetPersistentFloat("forward.z",forward.z);
+		campos.x=GetHostFloat("campos.x",campos.x);
+		campos.y=GetHostFloat("campos.y",campos.y);
+		campos.z=GetHostFloat("campos.z",campos.z);
+		forward.x=GetHostFloat("forward.x",forward.x);
+		forward.y=GetHostFloat("forward.y",forward.y);
+		forward.z=GetHostFloat("forward.z",forward.z);
 		
 		float3 right=cross(forward,Z).Normalized();
 		float3 up=cross(forward,right).Normalized();

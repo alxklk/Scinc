@@ -17,7 +17,7 @@ int main()
 {
 	Calc c;
 	c.Init();
-	strcp(&(c.vars[0].name[0]),"pi",TOK_LEN);
+	strncp(&(c.vars[0].name[0]),"pi",TOK_LEN);
 	c.vars[0].value=M_PI;
 	while(1)
 	{
@@ -37,7 +37,7 @@ int main()
 			char id[32];
 			if(s.TryId(id).Yes())
 			{
-				if(streq(id,"plot2d",TOK_LEN))
+				if(strneq(id,"plot2d",TOK_LEN))
 				{
 					int xidx=c.AddVariable("x");
 					for(float f=-10.;f<=10;f+=0.1)

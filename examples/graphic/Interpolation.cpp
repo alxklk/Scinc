@@ -194,14 +194,43 @@ void DrawA(flt2* p, int cnt)
 		flt2 p0=p[i]+dp0*l;
 		flt2 p1=p[i]+dp1*l;
 		float a=vdot(dp0,dp1);
-		int sweep=0;
-		if(vcross(dp0,dp1)<0)sweep=1;
-		//a=sqrt(1.-a*a);
-		float sa=sqrt((1-a)/2.);
-		float ca=sqrt((1+a)/2.);
-		float ta=sa/ca;
 		g.L(p0.x,p0.y);
-		g.A(l*ta,l*ta,0,0,sweep,p1.x,p1.y);
+		//a=sqrt(1.-a*a);
+		float ca=sqrt((1+a)/2.);
+		if(ca!=0)
+		{
+			float sa=sqrt((1-a)/2.);
+			float ta=sa/ca;
+			int sweep=0;
+			if(vcross(dp0,dp1)<0)sweep=1;
+			g.A(l*ta,l*ta,0,0,sweep,p1.x,p1.y);
+		}
+		else
+		{
+			g.L(p1.x,p1.y);
+		}
+	}
+	g.L(p[cnt-1].x,p[cnt-1].y);
+}
+
+void DrawB(flt2* p, int cnt)
+{
+	g.M(p[0].x,p[0].y);
+	for(int i=1;i<cnt-1;i++)
+	{
+		flt2 dp0=p[i-1]-p[i];
+		flt2 dp1=p[i+1]-p[i];
+		float dpl0=dp0.length()/3.;
+		float dpl1=dp1.length()/3.;
+		dp0.normalize();
+		dp1.normalize();
+		float l=dpl0;
+		if(dpl1<l)l=dpl1;
+		flt2 p0=p[i]+dp0*l;
+		flt2 p1=p[i]+dp1*l;
+		float a=vdot(dp0,dp1);
+		g.L(p0.x,p0.y);
+		g.L(p1.x,p1.y);
 	}
 	g.L(p[cnt-1].x,p[cnt-1].y);
 }
@@ -223,16 +252,25 @@ void DrawCR(flt2* p, int cnt)
 	g.C(b1.x, b1.y, b2.x, b2.y, b3.x, b3.y);
 }
 
+int method=0;
+
 int main()
 {
 	SMenu menu;
 	menu.Init();
 	menu.cmdHandler=0;
 
+
 	menu.Create()
 	.P("=")
 		.M("About","about")
 		.M("Exit","exit").C([](SMenuItem&i)->int{exit(0);return 0;})
+	.P("Method")
+		.M("Arcs","").C([](SMenuItem&i)->int{method=0;return 0;})
+		.M("Q Bez","").C([](SMenuItem&i)->int{method=1;return 0;})
+		.M("Cat-Rom","").C([](SMenuItem&i)->int{method=2;return 0;})
+		.M("Cat-Rom 0","").C([](SMenuItem&i)->int{method=3;return 0;})
+		.M("Bevel","").C([](SMenuItem&i)->int{method=4;return 0;})
 	.P("ALpha")
 		.M("0","").C([](SMenuItem&i)->int{alpha=0;return 0;})
 		.M("0.5","").C([](SMenuItem&i)->int{alpha=0.5;return 0;})
@@ -349,8 +387,14 @@ int main()
 		g.M(100,100);
 		g.Q(100,200,200,200);
 		g.M(xys[0].x,xys[0].y);
-		//DrawCR(xys,np);
-		DrawA(xys,np);
+		switch(method)
+		{
+			case 0: DrawA (xys,np);break;
+			case 1: DrawQ (xys,np);break;
+			case 2: DrawCR(xys,np);break;
+			case 3: DrawCR0();     break;
+			case 4: DrawB (xys,np);break;
+		}
 		g.fin();
 		g.rgba32(0x8000ff00);
 		g.width(3,3);

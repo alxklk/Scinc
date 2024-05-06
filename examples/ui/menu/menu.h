@@ -59,7 +59,7 @@ struct SMenu
 {
 	int misize;
 	int curPar;
-	SMenuItem mi[32];
+	SMenuItem mi[64];
 	SMenu& Create()
 	{
 		misize=0;

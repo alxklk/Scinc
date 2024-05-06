@@ -51,7 +51,7 @@ void UpdateResult()
 	{
 		float min=0;
 		float max=1;
-		if(streq(id,"plot2d",TOK_LEN))
+		if(strneq(id,"plot2d",TOK_LEN))
 		{
 			Stx dims=plot.TryExpr(min).TryExpr(max);
 			if(dims.Yes())
@@ -70,7 +70,7 @@ void UpdateResult()
 			}
 			return;
 		}
-		if(streq(id,"plotpar",TOK_LEN))
+		if(strneq(id,"plotpar",TOK_LEN))
 		{
 			Stx dims=plot.TryExpr(min).TryExpr(max);
 			if(dims.Yes())
@@ -103,10 +103,10 @@ void UpdateResult()
 int main()
 {
 	for(int i=0;i<MAX_TEXT_LEN;i++)text[i]=0;
-	strcp(text,"plotpar 0 pi*4 sin(t)*(1+sin(10*t)*.5)*(.1+t*.1) cos(t)*(1+sin(10*t)*.5)*(.1+t*.1)",MAX_TEXT_LEN);
+	strncp(text,"plotpar 0 pi*4 sin(t)*(1+sin(10*t)*.5)*(.1+t*.1) cos(t)*(1+sin(10*t)*.5)*(.1+t*.1)",MAX_TEXT_LEN);
 	c.Init();
 	CGUI gui;
-	strcp(&(c.vars[0].name[0]),"pi",TOK_LEN);
+	strncp(&(c.vars[0].name[0]),"pi",TOK_LEN);
 	c.vars[0].value=M_PI;
 
 	pfont=(CFont*)malloc(sizeof(CFont));

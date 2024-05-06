@@ -1,21 +1,5 @@
 #include <stdio.h>
-
-
-bool strneq(char* l, char* r, int n)
-{
-	for(int i=0;i<n;i++)
-	{
-		if(l[i]!=r[i])
-		{
-			return false;
-		}
-		else if(l[i]==0)
-		{
-			break;
-		}
-	}
-	return true;
-}
+#include "../include/strn.h"
 
 typedef char* pchar;
 

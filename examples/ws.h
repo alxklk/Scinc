@@ -47,9 +47,9 @@ int InitWS()
 #ifdef __SCINC_HOTRELOAD__
 			mainWinPosX=e.x;
 			mainWinPosY=e.y;
-			printf("main windows mov %i %i\n", e.x, e.y);
-			SetPersistentInt("mainWinPosX", mainWinPosX);
-			SetPersistentInt("mainWinPosY", mainWinPosY);
+			//printf("main windows mov %i %i\n", e.x, e.y);
+			SetHostInt("mainWinPosX", mainWinPosX);
+			SetHostInt("mainWinPosY", mainWinPosY);
 #endif
 		}
 		else if((e.type=='WDEL')||(e.type=='WDST'))
@@ -73,7 +73,7 @@ int InitWS()
 
 	mainWin=wsys.CreateWindow(width,height,scale,scale,mode);
 #ifdef __SCINC_HOTRELOAD__
-	wsys.SetWindowPos(mainWin,GetPersistentInt("mainWinPosX", 200),GetPersistentInt("mainWinPosY", 200));
+	wsys.SetWindowPos(mainWin,GetHostInt("mainWinPosX", 200),GetHostInt("mainWinPosY", 200));
 #endif
 	return 0;
 }

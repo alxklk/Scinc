@@ -328,8 +328,8 @@ int main()
 	int cx=0;
 	int cy=0;
 	//SetPresentWait(1);
-	cx=GetPersistentInt("cx",cx);
-	cy=GetPersistentInt("cy",cy);
+	cx=GetHostInt("cx",cx);
+	cy=GetHostInt("cy",cy);
 	if(cx<0)
 		cx=0;
 	if(cy<0)
@@ -427,8 +427,8 @@ int main()
 						{
 							cx=icx;
 							cy=icy;
-							SetPersistentInt("cx",cx);
-							SetPersistentInt("cy",cy);
+							SetHostInt("cx",cx);
+							SetHostInt("cy",cy);
 							code=cx+cy*16;
 							teststr[testcur]=code;
 							testcur=(testcur+1)%32;

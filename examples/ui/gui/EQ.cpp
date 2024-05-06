@@ -1,6 +1,9 @@
 #define G_SCREEN_SCALE 4
 #include "graphics.h"
+#include "../../ws.h"
+
 #include "GUI.h"
+
 
 float interp(float y0, float y1, float t)
 {
