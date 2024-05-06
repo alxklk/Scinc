@@ -1,3 +1,9 @@
+#ifdef NOTDEF
+Scinc "$0" "$*"
+exit
+#endif
+
+
 #include "graphics.h"
 #define G_SCREEN_MODE 1
 #define G_SCREEN_HEIGHT 900
@@ -11,6 +17,7 @@
 #include "../ui/menu/menu.h"
 #include "../ui/gui/GUI.h"
 #include "CatmullRom.h"
+#include "../include/strn.h"
 
 #define M_PI 3.14159265358979323846
 
@@ -134,9 +141,20 @@ void Rec0(flt2 d, float signY, float signX, float depth, int flag)
 	else
 	{
 		flt2 dp=d.perp()*signY;
-		if(depth<1)dp*=(depth-int(depth));
+		if(depth<1)dp*=depth;
 		if(flag&FLAG_NEGY){dp=-dp;signY=-signY;}
 		if(flag&FLAG_NEGX){signX=-signX;}
+
+		flt2 aux;
+		if(depth<1.)
+		{
+			aux=d*(1.0-depth)*.5;
+			globalP+=aux;
+			render[nRender++]=globalP;
+			drawCount++;
+			d=d*depth;
+		}
+
 		if(signX<0)
 		{
 			for(int i0=0;i0<nnp;i0++)
@@ -152,6 +170,14 @@ void Rec0(flt2 d, float signY, float signX, float depth, int flag)
 				Rec0(d*normxys[i].x-dp*normxys[i].y, signY, signX, depth-1, flags[i]);
 			}
 		}
+
+		if(depth<1)
+		{
+			globalP+=aux;
+			render[nRender++]=globalP;
+			drawCount++;
+		}
+
 	}
 }
 
@@ -166,9 +192,24 @@ void Rec1(flt2 d, float signY, float signX, float depth, int flag)
 	else
 	{
 		flt2 dp=d.perp()*signY;
-		if(depth<1)dp*=(depth-int(depth));
+		float fd=0.;
+		if(depth<1)
+		{
+			fd=depth;
+			if(fd<0)fd=0;
+			dp*=fd;
+		}
 		if(flag&FLAG_NEGY){dp=-dp;signY=-signY;}
 		if(flag&FLAG_NEGX){signX=-signX;}
+		flt2 aux;
+		if(depth<1)
+		{
+			aux=d*(1.0-fd)*.5;
+			globalP+=aux;
+			render[nRender++]=globalP;
+			drawCount++;
+			d=d*fd;
+		}
 		if(signX<0)
 		{
 			for(int i0=0;i0<nnp;i0++)
@@ -190,6 +231,12 @@ void Rec1(flt2 d, float signY, float signX, float depth, int flag)
 					Rec1(d*normxys[i].x-dp*normxys[i].y, signY, signX, 0, flags[i]);
 			}
 		}
+		if(depth<1)
+		{
+			globalP+=aux;
+			render[nRender++]=globalP;
+			drawCount++;
+		}
 	}
 }
 
@@ -204,20 +251,62 @@ char* svgtemplate1=
 "-->\n<g><path style=\"fill:black\" d=\"";
 char* svgtemplate2="\"/></g></svg>\n";
 
-void SVG0(FILE* f, flt2 d, int depth)
+int method=0;
+
+struct SVGWriter
 {
-	if(depth==0)
+	FILE* f;
+	void M(float x, float y)
 	{
-		char s[512];
-		snprintf(s,512,"%f %f ", d.x, d.y);fputs(s,f);
+		char s[128];
+		snprintf(s, 128, " M %f %f ", x, y);
+		fputs(s, f);
 	}
-	else
+	void L(float x, float y)
 	{
-		for(int i=0;i<nnp;i++)
+		char s[128];
+		snprintf(s, 128, " L %f %f ", x, y);
+		fputs(s, f);
+	}
+	void A(float rx, float ry, float angle, int large, int sweep, float x, float y)
+	{
+		char s[256];
+		snprintf(s, 128, " A %f %f %f %i %i %f %f ", rx, ry, angle, large, sweep, x, y);
+		fputs(s, f);
+	}
+};
+
+void SVGA(SVGWriter& g, flt2* p, int cnt)
+{
+	g.M(p[0].x,p[0].y);
+	for(int i=1;i<cnt-1;i++)
+	{
+		flt2 dp0=p[i-1]-p[i];
+		flt2 dp1=p[i+1]-p[i];
+		float dpl0=dp0.length()/2.;
+		float dpl1=dp1.length()/2.;
+		dp0.normalize();
+		dp1.normalize();
+		float l=dpl0;
+		if(dpl1<l)l=dpl1;
+		flt2 p0=p[i]+dp0*l;
+		flt2 p1=p[i]+dp1*l;
+		g.L(p0.x,p0.y);
+
+		float a=vdot(dp0,dp1);
+		float ca=sqrt((1+a)/2.);
+		float sa=sqrt((1-a)/2.);
+		float ta=sa/ca;
+		if((ca==0)||(ta>10000))
 		{
-			SVG0(f, d*normxys[i].x-d.perp()*normxys[i].y,depth-1);
+			g.L(p1.x,p1.y);
+		}
+		else
+		{
+			g.A(l*ta,l*ta,0,0,(vcross(dp0,dp1)<0)?1:0,p1.x,p1.y);
 		}
 	}
+	g.L(p[cnt-1].x,p[cnt-1].y);
 }
 
 void SVG()
@@ -233,10 +322,42 @@ void SVG()
 		snprintf(s,512,"%f %f %i\n",editxys[i].x,editxys[i].y,flags[i]);fputs(s,f);
 	}
 	fputs(svgtemplate1,f);
-	snprintf(s,512,"M %f %f ", editxys[0].x, editxys[0].y);fputs(s,f);
-	snprintf(s,512,"l %f %f ", 0.,-500);fputs(s,f);
-	SVG0(f, flt2::New(1000,0), 5);
-	snprintf(s,512," %f %f z", 0., 500);fputs(s,f);
+	//snprintf(s,512,"M %f %f ", editxys[0].x, editxys[0].y);fputs(s,f);
+	//snprintf(s,512,"l %f %f ", 0.,-500.);fputs(s,f);
+
+	{
+		drawCount=0;
+		nRender=0;
+		nnp=nep-1;
+		flt2 delta=editxys[nep-1]-editxys[0];
+		flt2 deltax=delta;
+		flt2 deltay=delta.perp();
+		for(int i=1;i<nep;i++)
+		{
+			normxys[i-1].x=vdot(deltax,editxys[i]-editxys[i-1])/delta.lengthSq();
+			normxys[i-1].y=-vdot(deltay,editxys[i]-editxys[i-1])/delta.lengthSq();
+		}
+		delta=delta*scale;
+		globalP=editxys[0]*scale+offset;
+		render[0]=globalP;nRender++;
+		switch(method)
+		{
+			case 0:
+			{
+				Rec0(delta,1.,1.,8, 0);
+			}
+			break;
+			case 1:
+			{
+				Rec1(delta,1.,1.,8,0);
+			}
+			break;
+		}
+	}
+	SVGWriter w={f};
+	SVGA(w, render, nRender);
+	//snprintf(s,512," %f %f z", 0., 500.);fputs(s,f);
+	fputs(" z",f);
 	fputs(svgtemplate2,f);
 	fclose(f);
 }
@@ -276,7 +397,6 @@ float Abs(float x)
 	return x;
 }
 
-int method=0;
 int showHelpers=1;
 int curves=0;
 
@@ -324,9 +444,11 @@ void SaveFile()
 	fclose(f);
 }
 
+char filename[512]="frac_0000.txt";
+
 void LoadFile()
 {
-	FILE* f=fopen("frac_0000.txt","rb");
+	FILE* f=fopen(filename,"rb");
 	char s[512];
 	fgets(s,512,f);
 	SToken toks[32];
@@ -468,6 +590,27 @@ void DrawQ(flt2* p, int cnt)
 	g.L(b2.x, b2.y);
 }
 
+void DrawB(flt2* p, int cnt)
+{
+	g.M(p[0].x,p[0].y);
+	for(int i=1;i<cnt-1;i++)
+	{
+		flt2 dp0=p[i-1]-p[i];
+		flt2 dp1=p[i+1]-p[i];
+		float dpl0=dp0.length()/3.;
+		float dpl1=dp1.length()/3.;
+		dp0.normalize();
+		dp1.normalize();
+		float l=dpl0;
+		if(dpl1<l)l=dpl1;
+		flt2 p0=p[i]+dp0*l;
+		flt2 p1=p[i]+dp1*l;
+		float a=vdot(dp0,dp1);
+		g.L(p0.x,p0.y);
+		g.L(p1.x,p1.y);
+	}
+	g.L(p[cnt-1].x,p[cnt-1].y);
+}
 
 void DrawA(flt2* p, int cnt)
 {
@@ -519,7 +662,9 @@ void HelperGrid()
 	}
 }
 
-int main()
+typedef char* charptr;
+
+int main(int argc, charptr* argv)
 {
 	int optWin=wsys.CreateWindow(640,480,G_SCREEN_SCALE,G_SCREEN_SCALE,G_SCREEN_MODE);
 #ifdef __SCINC_HOTRELOAD__
@@ -565,6 +710,7 @@ int main()
 	gui.AddSelect("Quadratic",  10,ctly+=ctldy,85,15,0,1,&curves);
 	gui.AddSelect("Catmul-Rom", 10,ctly+=ctldy,85,15,0,2,&curves);
 	gui.AddSelect("Circular",   10,ctly+=ctldy,85,15,0,3,&curves);
+	gui.AddSelect("Bevel 1/3",  10,ctly+=ctldy,85,15,0,4,&curves);
 	float fdepth=depth;
 	gui.AddSlide("Depth",   10,ctly+=ctldy+10,200,15,0,&fdepth,0,0,10).SetActionCB(
 		[](SWidget* p)->int
@@ -578,7 +724,7 @@ int main()
 		});
 
 	alpha=0.5;
-	render=(flt2*)malloc(sizeof(flt2)*1024*1024*4);
+	render=(flt2*)malloc(sizeof(flt2)*1024*1024*8);
 	SMenu menu;
 	menu.Init();
 	menu.cmdHandler=0;
@@ -609,6 +755,7 @@ int main()
 		.M("Catmull-Rom t=0.5", "").C([](SMenuItem&i)->int{curves=2;alpha=0.5;return 0;})
 		.M("Catmull-Rom t=1.0", "").C([](SMenuItem&i)->int{curves=2;alpha=1.0;return 0;})
 		.M("Circular arc", "").C([](SMenuItem&i)->int{curves=3;return 0;})
+		.M("Bevel 1/3", "").C([](SMenuItem&i)->int{curves=4;return 0;})
 	.P("Method")
 		.M("All recursive","methot_all").C([](SMenuItem&i)->int{method=0;return 0;})
 		.M("Some recursive","method_some").C([](SMenuItem&i)->int{method=1;return 0;})
@@ -629,6 +776,12 @@ int main()
 	int my;
 	int dragStart=false;
 	Reset();
+	if(argc>1)
+	{
+		strncp(filename, argv[1], 512);
+		printf("Loading data from file %s\n", filename);
+		LoadFile();
+	}
 
 	while(true)
 	{
@@ -641,7 +794,6 @@ int main()
 				if(ev.type=='WMOV')
 				{
 #ifdef __SCINC_HOTRELOAD__
-					printf("opt windows mov %i %i\n", ev.x, ev.y);
 					SetHostInt("optWinPosX", ev.x);
 					SetHostInt("optWinPosY", ev.y);
 #endif
@@ -660,7 +812,7 @@ int main()
 			}
 			if(ev.type=='KBDN')
 			{
-				printf("Key %i %i %i %i\n", ev.type, ev.x, ev.y, ev.z);
+				//printf("Key %i %i %i %i\n", ev.type, ev.x, ev.y, ev.z);
 				if(ev.x==KEYCODE_GR_SUB){depth--;fdepth=int(fdepth-1);}
 				else if(ev.x==KEYCODE_GR_ADD){depth++;fdepth=int(fdepth+1.01);}
 				else if(ev.x=='0')method=0;
@@ -764,6 +916,7 @@ int main()
 							else
 							{
 								editxys[sel.sp[0]].x=p.x;
+								editxys[sel.sp[0]].y=p.y;
 							}
 						}
 						else
@@ -868,7 +1021,8 @@ int main()
 		{
 			g.clear();
 			g.M(render[0].x,render[0].y);
-			if(curves==3)DrawA(render,nRender);
+			if(curves==4)DrawB(render,nRender);
+			else if(curves==3)DrawA(render,nRender);
 			else if(curves==2)DrawCR(render,nRender);
 			else if(curves==1)DrawQ(render,nRender);
 			else DrawLR(render,nRender);
