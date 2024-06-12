@@ -3,9 +3,9 @@
 #ifdef __JS__
 #define G_SCREEN_SCALE 2
 #else
-#define G_SCREEN_SCALE 2
+#define G_SCREEN_SCALE 4
 #endif
-#define G_SCREEN_MODE 3
+#define G_SCREEN_MODE 1
 
 #include "sound.h"
 #include "graphics.h"
@@ -520,6 +520,8 @@ public:
 		//nextPiece=irand(gseed)%MAXPIECE;
 		//nextcol=irand(gseed)%7;
 		pa=0;
+		nextPA=irand(gseed)%4;
+		nextPiece=irand(gseed)%MAXPIECE;
 		NewPiece();
 		NewPiece();
 		t=0;
@@ -1210,7 +1212,6 @@ int MenuCommand0(char* command, int arg)
 
 int main()
 {
-
 	menu.Init();
 	menu.bg=0x80ffffff;
 	menu.cmdHandler=&MenuCommand0;

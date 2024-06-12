@@ -7,6 +7,7 @@
 
 
 #include "graphics.h"
+#include "../../ws.h"
 #include "../../graphic/font.h"
 #include "../../graphic/letters.h"
 #include "../../graphic/gtext.h"

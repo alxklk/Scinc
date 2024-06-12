@@ -24,6 +24,8 @@
 #include "../../graphic/letters.h"
 #include "../../graphic/gtext.h"
 
+#define NO_GREEDY_EVENT
+
 #include "../../ws.h"
 
 Graph g;

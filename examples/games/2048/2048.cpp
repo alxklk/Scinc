@@ -10,6 +10,7 @@ float X0=25;
 float Y0=180;
 
 #include "graphics.h"
+#include "../../ws.h"
 
 Graph g;
 
