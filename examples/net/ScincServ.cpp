@@ -21,7 +21,9 @@ int main(int argc, pchar* argv)
 		{
 			printf("Serv received '%s'\n", buf);
 			char response[128]="Server responce";
-			ServSend(cliSock, response, strnlen(response,4096));
+			int len=strnlen(response,128);
+			printf("Serv responding '%s' %i\n", response, len);
+			ServSend(cliSock, response, len+1);
 		}
 		Wait(.1);
 	}
