@@ -8,6 +8,8 @@
 #include "ScincBase.h"
 #include <cstring>
 #include <tuple>
+#include <vector>
+#include <string>
 
 // User type must include static const int field 'size_of'
 // Can contain native pointers and opaque pointers, structures, handles etc
