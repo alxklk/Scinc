@@ -65,7 +65,7 @@
 			if(clientSock==-1)
 				return 0;
 		}
-		printf("poll\n");
+		//printf("poll\n");
 
 		request.clear();
 		char buffer[4096];
@@ -136,7 +136,7 @@
 
 	int CliSend_Impl(int cliSock, const char* data, int size)
 	{
-		fprintf(stderr, "send(%i, '%.*s', %i)\n", cliSock, size, data, size);
+		//fprintf(stderr, "send(%i, '%.*s', %i)\n", cliSock, size, data, size);
 		int res=send(cliSock, data, size, 0);
 		if(res==-1)
 		{
@@ -190,10 +190,10 @@
 #endif
 
 WRAP(int, ServInit, (int port), {return ServInit_Impl(port);})
-WRAP(int, ServPoll, (int servSock, int* clientSock, char* buf, int maxSize), {std::string s; int res=ServPoll_Impl(servSock, *clientSock, s); int cnt=std::min(maxSize,int(s.size()));for(int i=0;i<cnt-1;i++){buf[i]=s[i];}buf[cnt]=0;return cnt;} )
+WRAP(int, ServPoll, (int servSock, int* clientSock, char* buf, int maxSize), {std::string s; int res=ServPoll_Impl(servSock, *clientSock, s); int cnt=std::min(maxSize,int(s.size()));for(int i=0;i<cnt;i++){buf[i]=s[i];}buf[cnt]=0;return cnt;} )
 WRAP(int, ServSend, (int clientSock, char* data, int size), {return ServSend_Impl(clientSock, data, size);})
 WRAP(int, ServDone,(int servSock),{close(servSock);return 0;})
 WRAP(int, CliInit,(char* addr, int port),{return CliInit_Impl(addr, port);})
-WRAP(int, CliPoll,(int cliSock, char* buf, int maxSize), {std::vector<char>data;int res=CliPoll_Impl(cliSock, data); int cnt=std::min(maxSize,int(data.size()));for(int i=0;i<cnt-1;i++){buf[i]=data[i];}buf[cnt]=0;return cnt;})
+WRAP(int, CliPoll,(int cliSock, char* buf, int maxSize), {std::vector<char>data;int res=CliPoll_Impl(cliSock, data); int cnt=std::min(maxSize,int(data.size()));for(int i=0;i<cnt;i++){buf[i]=data[i];}buf[cnt]=0;return cnt;})
 WRAP(int, CliSend,(int cliSock, char* data, int size),{return CliSend_Impl(cliSock, data, size);})
 WRAP(int, CliDone,(int cliSock),{close(cliSock);return 0;})
