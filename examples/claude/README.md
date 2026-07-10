@@ -22,6 +22,7 @@ three sections.
 | `whitenoise.cpp` | White-noise generator via the `CSound` API; plays ~3 s |
 | `fractal_melody.cpp` | 4-track generative synth: a Thue-Morse fractal drives lead (2-op FM), harmony and bass at three time scales, over a drum track; A-minor-pentatonic, ping-pong delay; sound-only, runs until Ctrl-C |
 | `fractal_melody_scope.cpp` | The same synth with a window: oscilloscope, 16-step beat grid, a "fractal roll" plotting the lead/bass walk, and per-track VU meters. Tempo & scale are set on the CLI (`Scinc fractal_melody_scope.cpp [bpm] [scale]`) or live (keys `1`-`5` scale, `-`/`+` tempo) |
+| `track_editor.cpp` | A 4-track visual melody editor (in the spirit of `examples/sound/melody_matrix.cpp`, but each grid is an independent instrument track). Paint 16-step patterns with the mouse; click a track header to cycle its instrument through 8 synthesized voices — EPiano/Bell (2-op FM), Pluck (Karplus-Strong), Square, Pad (detuned saws), Organ (additive), SubBass, and Drums (row picks kick/snare/hat/clap). `T` random, `C` clear, `-`/`+` tempo |
 
 ## graphic/ — animation (intrinsic `graphics.h` + `../../ws.h`)
 
