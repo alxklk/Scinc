@@ -2,6 +2,6 @@
 
 int main()
 {
-	fputs("12345", stdout);
+	fputs("12345", stderr);
 	return 0;
 }

@@ -1,11 +1,11 @@
 #include <stdio.h>
 
-#define CAM_W 320
-#define CAM_H 240
+#define CAM_W 640
+#define CAM_H 480
 
 #define G_SCREEN_WIDTH CAM_W
 #define G_SCREEN_HEIGHT CAM_H
-#define G_SCREEN_SCALE 3
+#define G_SCREEN_SCALE 2
 #define G_SCREEN_MODE 1
 
 #include "graphics.h"
