@@ -57,30 +57,33 @@
 #define NITEMS  8              // depth-sorted drawables: NT tubes + striker + sail
 
 // ---- 3D world geometry (world units ~ pixels at the ring's depth) ----------
-#define RW       58.0          // suspension-ring radius (horizontal circle)
+#define RW       25.0         // suspension-ring radius (horizontal circle)
 #define CORDLEN  14.0          // ring rim -> tube top
 #define TUBER     5.0          // tube half-width
 #define LROD     70.0          // pivot -> striker (sits at mid-tube height)
 #define LSAIL   140.0          // pivot -> wind sail (hangs below the tubes)
-#define BALLR    11.0          // striker radius
-#define SAILR    20.0          // wind-sail radius
+#define BALLR     9.0          // striker radius (nearly fills the small ring)
+#define SAILR    13.0          // wind-sail radius
 #define CEIL     82.0          // ceiling anchor height above the ring
-#define WOBS      6.0          // struck-tube visual swing amplitude
-#define LEANS    10.0          // wind lean amplitude
+#define WOBS      3.5          // struck-tube visual swing amplitude
+#define LEANS     8.0          // wind lean amplitude
 
 // ---- perspective camera ----------------------------------------------------
-#define FOCAL   460.0
+#define FOCAL   560.0
 #define CAMDIST 300.0
 #define PITCHA    0.40         // camera tilt (looking up under the ring)
 #define PROJCX  320.0
-#define PROJCY  125.0
+#define PROJCY  118.0
 
 // ---- pendulum / strike tuning ---------------------------------------------
-#define WFORCE     5.0
+#define WFORCE     3.0         // keep the striker from being pinned on the tubes
 #define KREST     12.0
-#define DAMP       0.9
-#define STRIKEBAND 32.0
-#define MINSPEED  12.0
+#define DAMP       0.7
+#define STRIKEBAND 14.0        // contact radius: striker (9) + tube (5)
+#define MINSPEED    6.0        // ignore slow drift-contacts
+#define COOLTUBE    0.26       // a given tube can't re-ring for this long (s)
+#define COOLANY     0.08       // minimum gap between ANY two strikes (s)
+#define REARM       1.08       // striker must back off to STRIKEBAND*this to re-arm
 
 // ------------------------------- globals -----------------------------------
 Graph  g;
@@ -103,8 +106,20 @@ int    metalGlow[NT];          // ring / glow colour
 float  ring[NT];               // remaining ring energy 0..1 (glow + wobble)
 float  ringT[NT];              // time since last strike (for wobble phase)
 float  ringPh[NT];             // random wobble phase
-float  cooldn[NT];             // strike debounce timer
+float  cooldn[NT];             // per-tube strike cooldown timer
 float  prevDist[NT];           // last frame's striker->tube horizontal distance
+int    armed[NT];              // 1 = tube may ring; cleared on strike until the
+                               //     striker backs away again (contact hysteresis)
+float  coolAny = 0.0;          // global cooldown between any two strikes
+int    strikeCount = 0;        // TEMP verification
+float  dbgMaxR = 0.0;
+float  dbgMinDist = 999.0;
+float  dbgMaxSpeed = 0.0;
+int    dbgContact = 0;
+int    dbgNotArmed = 0;
+int    dbgCool = 0;
+int    dbgRecede = 0;
+int    dbgSlow = 0;
 
 // depth-sort scratch
 int    itemType[NITEMS];       // 0=tube 1=striker 2=sail
@@ -163,7 +178,7 @@ float  oy = -70.0;
 float  oz = 0.0;
 
 // wind (3D horizontal)
-float  baseWind    = 0.50;     // steady breeze 0..1 (user adjustable)
+float  baseWind    = 0.90;     // steady breeze 0..1 (user adjustable)
 float  windX = 0.0;
 float  windZ = 0.0;
 float  windSmoothX = 0.0;
@@ -379,13 +394,16 @@ void SpawnRipple(float x, float y, int col)
 
 void StrikeTube(int i, float amp)
 {
-	if (cooldn[i] > 0.0)
+	if (cooldn[i] > 0.0 || coolAny > 0.0)
 		return;
 	AddChime(tubeFreq[i], amp, tubePan[i]);
 	if (amp > ring[i]) ring[i] = amp;
 	ringT[i]  = 0.0;
 	ringPh[i] = frand() * TWO_PI;
-	cooldn[i] = 0.06;
+	cooldn[i] = COOLTUBE;
+	coolAny   = COOLANY;
+	armed[i]  = 0;              // stays quiet until the striker backs off
+	strikeCount++;   // TEMP verification
 	float bx = RW * cos(tubeAng[i]);
 	float bz = RW * sin(tubeAng[i]);
 	P3 mp = project(bx, -CORDLEN - tubeLen[i] * 0.5, bz);
@@ -395,8 +413,12 @@ void StrikeTube(int i, float amp)
 void UpdateWind(float dt)
 {
 	float t = tSim;
-	windX = baseWind * (sin(t * 0.37) * 0.6 + sin(t * 0.90 + 1.3) * 0.4) + gustx;
-	windZ = baseWind * (sin(t * 0.31 + 2.0) * 0.6 + sin(t * 0.80 + 0.5) * 0.4) + gustz;
+	// turbulence: a fast component near the pendulum's resonance keeps the
+	// striker moving among the tubes instead of leaning steadily on one
+	windX = baseWind * (sin(t * 0.37) * 0.45 + sin(t * 0.90 + 1.3) * 0.30
+	                  + sin(t * 2.30 + 0.7) * 0.25) + gustx;
+	windZ = baseWind * (sin(t * 0.31 + 2.0) * 0.45 + sin(t * 0.80 + 0.5) * 0.30
+	                  + sin(t * 2.70 + 1.9) * 0.25) + gustz;
 
 	gustTimer -= dt;
 	if (gustTimer <= 0.0)               // random gust in a random horizontal dir
@@ -443,6 +465,9 @@ void CheckStrikes(float dt)
 	float vx = LROD * cos(thx) * thxV;
 	float vz = LROD * cos(thz) * thzV;
 	float speed = sqrt(vx * vx + vz * vz);
+	float dbgR = sqrt(ox * ox + oz * oz);          // TEMP verification
+	if (dbgR > dbgMaxR) dbgMaxR = dbgR;
+	if (speed > dbgMaxSpeed) dbgMaxSpeed = speed;
 	for (int i = 0; i < NT; i++)
 	{
 		float tx = RW * cos(tubeAng[i]);
@@ -450,9 +475,21 @@ void CheckStrikes(float dt)
 		float dx = tx - ox;
 		float dz = tz - oz;
 		float dist = sqrt(dx * dx + dz * dz);
-		if (dist < STRIKEBAND && cooldn[i] <= 0.0 && dist < prevDist[i] && speed > MINSPEED)
+		if (dist < dbgMinDist) dbgMinDist = dist;   // TEMP verification
+		if (dist > STRIKEBAND * REARM)
+			armed[i] = 1;               // striker has pulled away: allow a new tap
+		if (dist < STRIKEBAND)                                     // TEMP verification
 		{
-			float amp = 0.12 + clampF(speed / 130.0, 0.0, 1.0) * 0.72;
+			dbgContact++;
+			if (!armed[i]) dbgNotArmed++;
+			else if (cooldn[i] > 0.0 || coolAny > 0.0) dbgCool++;
+			else if (dist >= prevDist[i]) dbgRecede++;
+			else if (speed <= MINSPEED) dbgSlow++;
+		}
+		if (dist < STRIKEBAND && armed[i] && cooldn[i] <= 0.0 && coolAny <= 0.0
+			&& dist < prevDist[i] && speed > MINSPEED)
+		{
+			float amp = 0.12 + clampF(speed / 45.0, 0.0, 1.0) * 0.72;
 			StrikeTube(i, amp);
 		}
 		prevDist[i] = dist;
@@ -558,8 +595,8 @@ void DrawTube(int i)
 	{
 		float mxs = (topp.sx + botp.sx) * 0.5;
 		float mys = (topp.sy + botp.sy) * 0.5;
-		g.Circle(mxs, mys, 0.0, (9.0 + ring[i] * 13.0) * botp.sc, 1,
-			withAlpha(glow, int(ring[i] * 42.0)));
+		g.Circle(mxs, mys, 0.0, (5.5 + ring[i] * 7.0) * botp.sc, 1,
+			withAlpha(glow, int(ring[i] * 34.0)));
 	}
 
 	// cord from ring rim + knot
@@ -707,6 +744,7 @@ void InitTube(int i, float freq, float angDeg, float lenWorld, int base, int glo
 	metalGlow[i] = glow;
 	ring[i] = 0.0; ringT[i] = 0.0; ringPh[i] = 0.0; cooldn[i] = 0.0;
 	prevDist[i] = 999.0;
+	armed[i] = 1;
 }
 
 int main()
@@ -811,7 +849,8 @@ int main()
 				if (mx >= minx && mx <= maxx && my >= tp.sy - 4.0 && my <= bp.sy + 4.0)
 					if (tp.z < hitZ) { hitZ = tp.z; hit = i; }
 			}
-			if (hit >= 0) { cooldn[hit] = 0.0; StrikeTube(hit, 0.6); }
+			// a hand-played click always rings, ignoring the cooldowns
+			if (hit >= 0) { cooldn[hit] = 0.0; coolAny = 0.0; StrikeTube(hit, 0.6); }
 		}
 		prevmb = mb;
 
@@ -821,6 +860,8 @@ int main()
 		CheckStrikes(dt);
 		UpdateRipples(dt);
 		UpdateStreaks(dt);
+		coolAny -= dt;
+		if (coolAny < 0.0) coolAny = 0.0;
 		for (int i = 0; i < NT; i++)
 		{
 			ring[i] *= (1.0 - clampF(dt * 0.75, 0.0, 0.9));
@@ -875,7 +916,15 @@ int main()
 		DrawRingArc(M_PI, TWO_PI);     // near half of the hoop (in front)
 		DrawRipples();
 		DrawHUD();
-
+/*
+		if (tSim > 8.0)   // TEMP verification
+		{
+			printf("strikes=%i  contactFrames=%i  rejected: notArmed=%i cool=%i receding=%i slow=%i\n",
+				strikeCount, dbgContact, dbgNotArmed, dbgCool, dbgRecede, dbgSlow);
+			fflush(stdout);
+			break;
+		}
+*/
 		Present();
 	}
 	return 0;
