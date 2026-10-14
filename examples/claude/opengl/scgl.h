@@ -71,6 +71,8 @@ typedef float* FLOATV;
 #define GL_BLEND                 0x0BE2
 #define GL_TEXTURE_2D            0x0DE1
 #define GL_MULTISAMPLE           0x809D
+#define GL_VERTEX_PROGRAM_POINT_SIZE 0x8642  // gl_PointSize from the vertex shader
+#define GL_POINT_SPRITE          0x8861   // points rasterised as sprites with gl_PointCoord
 #define GL_POLYGON_OFFSET_LINE   0x2A02
 #define GL_POLYGON_OFFSET_FILL   0x8037
 // lights & materials
