@@ -1,4 +1,6 @@
-char* all5letter[13000]={
+#define N_ALL5LETTER 12972
+
+char* all5letter[N_ALL5LETTER]={
 "aahed",
 "aalii",
 "aargh",
