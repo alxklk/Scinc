@@ -4,7 +4,7 @@
 <radialGradient id="gl" gradientUnits="userSpaceOnUse" cx="50" cy="52" r="46"><stop offset="0" stop-color="#ffc840" stop-opacity="0.55"/><stop offset="1" stop-color="#ffc840" stop-opacity="0"/></radialGradient>
 <radialGradient id="body" gradientUnits="userSpaceOnUse" cx="46" cy="44" r="36" fx="44" fy="40"><stop offset="0" stop-color="#fffbe0" stop-opacity="1"/><stop offset="0.45" stop-color="#ffe070" stop-opacity="1"/><stop offset="1" stop-color="#ff9a10" stop-opacity="1"/></radialGradient>
 </defs>
-<circle cx="50" cy="52" r="46" fill="url(#gl)"/>
-<polygon points="50.00,20.00 58.82,41.86 82.34,43.49 64.27,58.64 69.98,81.51 50.00,69.00 30.02,81.51 35.73,58.64 17.66,43.49 41.18,41.86" fill="url(#body)" stroke="#ffa820" stroke-width="7" stroke-linejoin="round"/>
-<ellipse cx="42" cy="44" rx="6" ry="3.5" transform="rotate(-30 42 44)" fill="#ffffff" opacity="0.7"/>
+<g id="glow"><circle cx="50" cy="52" r="46" fill="url(#gl)"/></g>
+<g id="body"><polygon points="50.00,20.00 58.82,41.86 82.34,43.49 64.27,58.64 69.98,81.51 50.00,69.00 30.02,81.51 35.73,58.64 17.66,43.49 41.18,41.86" fill="url(#body)" stroke="#ffa820" stroke-width="7" stroke-linejoin="round"/>
+<ellipse cx="42" cy="44" rx="6" ry="3.5" transform="rotate(-30 42 44)" fill="#ffffff" opacity="0.7"/></g>
 </svg>

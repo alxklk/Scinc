@@ -1,0 +1,5 @@
+<centers>
+	<center id="halo" pivot="50,50,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="jets" pivot="50,50,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="disk" pivot="50,50,1,0,0,1" offset="0,0,1,0,0,1"/>
+</centers>

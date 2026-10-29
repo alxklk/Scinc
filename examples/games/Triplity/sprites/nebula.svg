@@ -7,13 +7,17 @@
 <radialGradient id="c4" gradientUnits="userSpaceOnUse" cx="36" cy="64" r="18"><stop offset="0" stop-color="#ffb060" stop-opacity="0.7"/><stop offset="1" stop-color="#ff7040" stop-opacity="0"/></radialGradient>
 <radialGradient id="core" gradientUnits="userSpaceOnUse" cx="50" cy="50" r="14"><stop offset="0" stop-color="#ffffff" stop-opacity="0.7"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
 </defs>
-<circle cx="42" cy="44" r="30" fill="url(#c1)"/>
-<circle cx="60" cy="58" r="30" fill="url(#c2)"/>
-<circle cx="58" cy="36" r="20" fill="url(#c3)"/>
-<circle cx="36" cy="64" r="18" fill="url(#c4)"/>
+<g id="clouds">
+<g id="c1"><circle cx="42" cy="44" r="30" fill="url(#c1)"/></g>
+<g id="c2"><circle cx="60" cy="58" r="30" fill="url(#c2)"/></g>
+<g id="c3"><circle cx="58" cy="36" r="20" fill="url(#c3)"/></g>
+<g id="c4"><circle cx="36" cy="64" r="18" fill="url(#c4)"/></g>
+</g>
+<g id="stars">
 <circle cx="50" cy="50" r="14" fill="url(#core)"/>
 <path d="M50 43 Q51.4 48.6 57 50 Q51.4 51.4 50 57 Q48.6 51.4 43 50 Q48.6 48.6 50 43Z" fill="#ffffff"/>
 <path d="M64 40 Q64.8 43.2 68 44 Q64.8 44.8 64 48 Q63.2 44.8 60 44 Q63.2 43.2 64 40Z" fill="#ffffff"/>
 <path d="M38 52.5 Q38.7 55.3 41.5 56 Q38.7 56.7 38 59.5 Q37.3 56.7 34.5 56 Q37.3 55.3 38 52.5Z" fill="#ffffff"/>
 <path d="M58 63 Q58.6 65.4 61 66 Q58.6 66.6 58 69 Q57.4 66.6 55 66 Q57.4 65.4 58 63Z" fill="#ffffff"/>
+</g>
 </svg>

@@ -1,0 +1,6 @@
+<anim>
+	<target entity="dust" param="rotation" interpolation="sin" timeline="repeat" pivot="local" times="0,0.25,0.75,1" keys="0,0.16,-0.16,0" />
+	<target entity="ion" param="rotation" interpolation="sin" timeline="repeat" pivot="local" times="0,0.35,0.85,1" keys="0,-0.1,0.1,0" />
+	<target entity="coma" param="scale_x" interpolation="sin" timeline="repeat" pivot="local" times="0,0.4,1" keys="1,1.35,1" />
+	<target entity="coma" param="scale_y" interpolation="sin" timeline="repeat" pivot="local" times="0,0.4,1" keys="1,1.35,1" />
+</anim>

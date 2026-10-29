@@ -9,11 +9,13 @@
 <radialGradient id="g4" gradientUnits="userSpaceOnUse" cx="68" cy="57" r="6.6000000000000005"><stop offset="0" stop-color="#dfe8ff" stop-opacity="0.55"/><stop offset="1" stop-color="#dfe8ff" stop-opacity="0"/></radialGradient>
 <radialGradient id="g5" gradientUnits="userSpaceOnUse" cx="48" cy="53" r="5.4"><stop offset="0" stop-color="#dfe8ff" stop-opacity="0.55"/><stop offset="1" stop-color="#dfe8ff" stop-opacity="0"/></radialGradient>
 </defs>
+<g id="all">
 <circle cx="50" cy="52" r="36" fill="url(#haze)"/>
-<circle cx="40" cy="43" r="12.600000000000001" fill="url(#g0)"/><circle cx="40" cy="43" r="4.2" fill="#ffffff"/>
-<circle cx="61" cy="39" r="9.600000000000001" fill="url(#g1)"/><circle cx="61" cy="39" r="3.2" fill="#ffffff"/>
-<circle cx="56" cy="62" r="15.0" fill="url(#g2)"/><circle cx="56" cy="62" r="5.0" fill="#ffffff"/>
-<circle cx="35" cy="63" r="7.800000000000001" fill="url(#g3)"/><circle cx="35" cy="63" r="2.6" fill="#ffffff"/>
-<circle cx="68" cy="57" r="6.6000000000000005" fill="url(#g4)"/><circle cx="68" cy="57" r="2.2" fill="#ffffff"/>
-<circle cx="48" cy="53" r="5.4" fill="url(#g5)"/><circle cx="48" cy="53" r="1.8" fill="#ffffff"/>
+<g id="s0"><circle cx="40" cy="43" r="12.600000000000001" fill="url(#g0)"/><circle cx="40" cy="43" r="4.2" fill="#ffffff"/></g>
+<g id="s1"><circle cx="61" cy="39" r="9.600000000000001" fill="url(#g1)"/><circle cx="61" cy="39" r="3.2" fill="#ffffff"/></g>
+<g id="s2"><circle cx="56" cy="62" r="15.0" fill="url(#g2)"/><circle cx="56" cy="62" r="5.0" fill="#ffffff"/></g>
+<g id="s3"><circle cx="35" cy="63" r="7.800000000000001" fill="url(#g3)"/><circle cx="35" cy="63" r="2.6" fill="#ffffff"/></g>
+<g id="s4"><circle cx="68" cy="57" r="6.6000000000000005" fill="url(#g4)"/><circle cx="68" cy="57" r="2.2" fill="#ffffff"/></g>
+<g id="s5"><circle cx="48" cy="53" r="5.4" fill="url(#g5)"/><circle cx="48" cy="53" r="1.8" fill="#ffffff"/></g>
+</g>
 </svg>

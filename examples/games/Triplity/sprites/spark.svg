@@ -4,8 +4,8 @@
 <radialGradient id="gl" gradientUnits="userSpaceOnUse" cx="50" cy="50" r="40"><stop offset="0" stop-color="#7fdcff" stop-opacity="0.55"/><stop offset="1" stop-color="#7fdcff" stop-opacity="0"/></radialGradient>
 <radialGradient id="body" gradientUnits="userSpaceOnUse" cx="50" cy="50" r="34"><stop offset="0" stop-color="#ffffff" stop-opacity="1"/><stop offset="0.35" stop-color="#e8fbff" stop-opacity="1"/><stop offset="1" stop-color="#6cc8ff" stop-opacity="1"/></radialGradient>
 </defs>
-<circle cx="50" cy="50" r="40" fill="url(#gl)"/>
-<path d="M50 28 Q54.4 45.6 72 50 Q54.4 54.4 50 72 Q45.6 54.4 28 50 Q45.6 45.6 50 28Z" transform="rotate(45 50 50)" fill="#bfeaff" opacity="0.55"/>
-<path d="M50 14 Q55.76 44.24 86 50 Q55.76 55.76 50 86 Q44.24 55.76 14 50 Q44.24 44.24 50 14Z" fill="url(#body)"/>
-<circle cx="50" cy="50" r="4" fill="#ffffff"/>
+<g id="glow"><circle cx="50" cy="50" r="40" fill="url(#gl)"/></g>
+<g id="back"><path d="M50 28 Q54.4 45.6 72 50 Q54.4 54.4 50 72 Q45.6 54.4 28 50 Q45.6 45.6 50 28Z" transform="rotate(45 50 50)" fill="#bfeaff" opacity="0.55"/></g>
+<g id="body"><path d="M50 14 Q55.76 44.24 86 50 Q55.76 55.76 50 86 Q44.24 55.76 14 50 Q44.24 44.24 50 14Z" fill="url(#body)"/>
+<circle cx="50" cy="50" r="4" fill="#ffffff"/></g>
 </svg>

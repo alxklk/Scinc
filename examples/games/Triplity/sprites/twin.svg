@@ -7,8 +7,10 @@
 <radialGradient id="b" gradientUnits="userSpaceOnUse" cx="64" cy="36" r="10" fx="62" fy="34"><stop offset="0" stop-color="#ffffff" stop-opacity="1"/><stop offset="0.5" stop-color="#cfe4ff" stop-opacity="1"/><stop offset="1" stop-color="#5a90ff" stop-opacity="1"/></radialGradient>
 </defs>
 <ellipse cx="52" cy="48" rx="40" ry="15" transform="rotate(-25 52 48)" fill="none" stroke="#c8d4ff" stroke-width="1.6" opacity="0.55"/>
+<g id="pair">
 <circle cx="40" cy="57" r="30" fill="url(#ga)"/><circle cx="66" cy="38" r="22" fill="url(#gb)"/>
 <circle cx="40" cy="57" r="15" fill="url(#a)"/>
 <circle cx="66" cy="38" r="10" fill="url(#b)"/>
 <path d="M66 19 Q67.9 36.1 85 38 Q67.9 39.9 66 57 Q64.1 39.9 47 38 Q64.1 36.1 66 19Z" fill="#ffffff" opacity="0.8"/>
+</g>
 </svg>

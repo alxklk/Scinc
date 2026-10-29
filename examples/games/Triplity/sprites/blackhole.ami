@@ -1,0 +1,11 @@
+<anim>
+	<target entity="glow" param="scale_x" interpolation="sin" timeline="repeat" pivot="local" times="0,0.4,1" keys="1,1.3,1" />
+	<target entity="glow" param="scale_y" interpolation="sin" timeline="repeat" pivot="local" times="0,0.4,1" keys="1,1.3,1" />
+	<target entity="glow" param="hue" interpolation="sin" timeline="repeat" pivot="local" times="0,0.4,1" keys="0,-0.12,0" />
+	<target entity="ring" param="scale_x" interpolation="sin" timeline="repeat" pivot="local" times="0,0.3,0.6,1" keys="1,1.12,0.95,1" />
+	<target entity="ring" param="scale_y" interpolation="sin" timeline="repeat" pivot="local" times="0,0.3,0.6,1" keys="1,1.12,0.95,1" />
+	<target entity="back" param="scale_x" interpolation="sin" timeline="repeat" pivot="local" times="0,0.5,1" keys="1,0.86,1" />
+	<target entity="front" param="scale_x" interpolation="sin" timeline="repeat" pivot="local" times="0,0.5,1" keys="1,0.86,1" />
+	<target entity="back" param="scale_y" interpolation="sin" timeline="repeat" pivot="local" times="0,0.5,1" keys="1,1.3,1" />
+	<target entity="front" param="scale_y" interpolation="sin" timeline="repeat" pivot="local" times="0,0.5,1" keys="1,1.3,1" />
+</anim>

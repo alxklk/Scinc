@@ -1,0 +1,4 @@
+<centers>
+	<center id="spin" pivot="50,50,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="field" pivot="50,50,1,0,0,1" offset="0,0,1,0,0,1"/>
+</centers>

@@ -1,0 +1,9 @@
+<centers>
+	<center id="all" pivot="50,52,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="s0" pivot="40,43,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="s1" pivot="61,39,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="s2" pivot="56,62,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="s3" pivot="35,63,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="s4" pivot="68,57,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="s5" pivot="48,53,1,0,0,1" offset="0,0,1,0,0,1"/>
+</centers>

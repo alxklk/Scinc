@@ -1,0 +1,6 @@
+<anim>
+	<target entity="body" param="rotation" interpolation="sin" timeline="repeat" pivot="local" times="0,1" keys="0,1.570796" />
+	<target entity="back" param="rotation" interpolation="sin" timeline="repeat" pivot="local" times="0,1" keys="0,-1.570796" />
+	<target entity="glow" param="scale_x" interpolation="sin" timeline="repeat" pivot="local" times="0,0.45,1" keys="1,1.6,1" />
+	<target entity="glow" param="scale_y" interpolation="sin" timeline="repeat" pivot="local" times="0,0.45,1" keys="1,1.6,1" />
+</anim>

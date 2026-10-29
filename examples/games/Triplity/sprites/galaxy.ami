@@ -1,0 +1,4 @@
+<anim>
+	<target entity="spin" param="rotation" interpolation="sin" timeline="repeat" pivot="local" times="0,1" keys="0,3.141593" />
+	<target entity="field" param="rotation" interpolation="sin" timeline="repeat" pivot="local" times="0,0.5,1" keys="0,-0.15,0" />
+</anim>

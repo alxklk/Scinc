@@ -1,0 +1,8 @@
+<centers>
+	<center id="clouds" pivot="50,50,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="c1" pivot="42,44,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="c2" pivot="60,58,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="c3" pivot="58,36,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="c4" pivot="36,64,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="stars" pivot="50,50,1,0,0,1" offset="0,0,1,0,0,1"/>
+</centers>

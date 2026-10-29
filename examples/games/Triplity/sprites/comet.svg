@@ -6,8 +6,8 @@
 <radialGradient id="coma" gradientUnits="userSpaceOnUse" cx="68" cy="50" r="18"><stop offset="0" stop-color="#d8f4ff" stop-opacity="0.8"/><stop offset="1" stop-color="#d8f4ff" stop-opacity="0"/></radialGradient>
 <radialGradient id="head" gradientUnits="userSpaceOnUse" cx="66" cy="48" r="8" fx="64" fy="46"><stop offset="0" stop-color="#ffffff" stop-opacity="1"/><stop offset="1" stop-color="#9fe0ff" stop-opacity="1"/></radialGradient>
 </defs>
-<path d="M68 41 C48 38 26 34 4 26 C22 42 40 60 68 59 Z" fill="url(#dust)"/>
-<path d="M68 47 C46 46 24 47 0 50 C24 53 46 54 68 53 Z" fill="url(#ion)"/>
-<circle cx="68" cy="50" r="18" fill="url(#coma)"/>
+<g id="dust"><path d="M68 41 C48 38 26 34 4 26 C22 42 40 60 68 59 Z" fill="url(#dust)"/></g>
+<g id="ion"><path d="M68 47 C46 46 24 47 0 50 C24 53 46 54 68 53 Z" fill="url(#ion)"/></g>
+<g id="coma"><circle cx="68" cy="50" r="18" fill="url(#coma)"/></g>
 <circle cx="68" cy="50" r="8" fill="url(#head)"/>
 </svg>

@@ -1,0 +1,7 @@
+<anim>
+	<target entity="jets" param="scale_y" interpolation="sin" timeline="repeat" pivot="local" times="0,0.35,1" keys="1,1.7,1" />
+	<target entity="jets" param="scale_x" interpolation="sin" timeline="repeat" pivot="local" times="0,0.35,1" keys="1,0.7,1" />
+	<target entity="disk" param="scale_x" interpolation="sin" timeline="repeat" pivot="local" times="0,0.45,1" keys="1,1.15,1" />
+	<target entity="halo" param="scale_x" interpolation="sin" timeline="repeat" pivot="local" times="0,0.4,1" keys="1,1.35,1" />
+	<target entity="halo" param="scale_y" interpolation="sin" timeline="repeat" pivot="local" times="0,0.4,1" keys="1,1.35,1" />
+</anim>

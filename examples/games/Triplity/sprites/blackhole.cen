@@ -1,0 +1,6 @@
+<centers>
+	<center id="glow" pivot="50,50,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="back" pivot="50,50,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="ring" pivot="50,50,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="front" pivot="50,50,1,0,0,1" offset="0,0,1,0,0,1"/>
+</centers>

@@ -1,0 +1,15 @@
+<anim>
+	<target entity="all" param="rotation" interpolation="sin" timeline="repeat" pivot="local" times="0,0.5,1" keys="0,0.35,0" />
+	<target entity="s0" param="scale_x" interpolation="sin" timeline="repeat" pivot="local" times="0,0.05,0.2,0.35,1" keys="1,1,1.8,1,1" />
+	<target entity="s0" param="scale_y" interpolation="sin" timeline="repeat" pivot="local" times="0,0.05,0.2,0.35,1" keys="1,1,1.8,1,1" />
+	<target entity="s1" param="scale_x" interpolation="sin" timeline="repeat" pivot="local" times="0,0.16,0.31,0.46,1" keys="1,1,1.8,1,1" />
+	<target entity="s1" param="scale_y" interpolation="sin" timeline="repeat" pivot="local" times="0,0.16,0.31,0.46,1" keys="1,1,1.8,1,1" />
+	<target entity="s2" param="scale_x" interpolation="sin" timeline="repeat" pivot="local" times="0,0.27,0.42,0.57,1" keys="1,1,1.8,1,1" />
+	<target entity="s2" param="scale_y" interpolation="sin" timeline="repeat" pivot="local" times="0,0.27,0.42,0.57,1" keys="1,1,1.8,1,1" />
+	<target entity="s3" param="scale_x" interpolation="sin" timeline="repeat" pivot="local" times="0,0.38,0.53,0.68,1" keys="1,1,1.8,1,1" />
+	<target entity="s3" param="scale_y" interpolation="sin" timeline="repeat" pivot="local" times="0,0.38,0.53,0.68,1" keys="1,1,1.8,1,1" />
+	<target entity="s4" param="scale_x" interpolation="sin" timeline="repeat" pivot="local" times="0,0.49,0.64,0.79,1" keys="1,1,1.8,1,1" />
+	<target entity="s4" param="scale_y" interpolation="sin" timeline="repeat" pivot="local" times="0,0.49,0.64,0.79,1" keys="1,1,1.8,1,1" />
+	<target entity="s5" param="scale_x" interpolation="sin" timeline="repeat" pivot="local" times="0,0.6,0.75,0.9,1" keys="1,1,1.8,1,1" />
+	<target entity="s5" param="scale_y" interpolation="sin" timeline="repeat" pivot="local" times="0,0.6,0.75,0.9,1" keys="1,1,1.8,1,1" />
+</anim>

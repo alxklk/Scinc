@@ -1,0 +1,8 @@
+<centers>
+	<center id="k0" pivot="24,62,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="k1" pivot="36,44,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="k2" pivot="52,50,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="k3" pivot="62,30,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="k4" pivot="76,40,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="k5" pivot="70,66,1,0,0,1" offset="0,0,1,0,0,1"/>
+</centers>

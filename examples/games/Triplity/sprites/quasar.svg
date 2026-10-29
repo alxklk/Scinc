@@ -7,9 +7,9 @@
 <radialGradient id="disk" gradientUnits="userSpaceOnUse" cx="50" cy="50" r="34"><stop offset="0" stop-color="#ffffff" stop-opacity="1"/><stop offset="0.3" stop-color="#ffe090" stop-opacity="1"/><stop offset="0.7" stop-color="#ff6a30" stop-opacity="0.9"/><stop offset="1" stop-color="#a02060" stop-opacity="0"/></radialGradient>
 <radialGradient id="core" gradientUnits="userSpaceOnUse" cx="50" cy="50" r="12"><stop offset="0" stop-color="#ffffff" stop-opacity="1"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
 </defs>
-<circle cx="50" cy="50" r="40" fill="url(#halo)"/>
-<path d="M50 2 L56 42 L44 42 Z" fill="url(#jet)"/>
-<path d="M50 98 L56 58 L44 58 Z" fill="url(#jet2)"/>
-<ellipse cx="50" cy="50" rx="36" ry="11" fill="url(#disk)"/>
+<g id="halo"><circle cx="50" cy="50" r="40" fill="url(#halo)"/></g>
+<g id="jets"><path d="M50 2 L56 42 L44 42 Z" fill="url(#jet)"/>
+<path d="M50 98 L56 58 L44 58 Z" fill="url(#jet2)"/></g>
+<g id="disk"><ellipse cx="50" cy="50" rx="36" ry="11" fill="url(#disk)"/></g>
 <circle cx="50" cy="50" r="12" fill="url(#core)"/><circle cx="50" cy="50" r="5" fill="#ffffff"/>
 </svg>

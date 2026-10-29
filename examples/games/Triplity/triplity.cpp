@@ -20,8 +20,13 @@
 // Run with -x2 (Scinc triplity.cpp -x2) for HiDPI screens: the window keeps
 // its size on screen but renders at twice the resolution.
 //
-// The sprites are SVG files in sprites/, drawn with svg.h. Best score and
-// a few totals are kept in triplity.sav next to this file.
+// The sprites are SVG files in sprites/, drawn with svg.h. Each one has a
+// .cen (pivots of its parts) and an .ami (one animation cycle whose first
+// and last pose is the resting sprite). The cycle plays once when a piece
+// appears, flies, is hovered, comes into hand or is first reached on the
+// ladder; the rest of the time sprites are drawn still, so an idle screen
+// costs nothing. sheet.cpp shows all the cycles. Best score and a few
+// totals are kept in triplity.sav next to this file.
 
 #include <stdio.h>
 
@@ -85,6 +90,8 @@ void Circle(float x, float y, float r, float w, float a, int c)
 #define BHOLE 21
 
 int sprite[22];        // SVG id per piece value
+int spriteAnim[22];    // its animation cycle (.ami)
+#define ANIM_LEN 0.9   // seconds for one cycle
 int tierPts[9];
 
 char* PieceName(int p)
@@ -102,19 +109,31 @@ char* PieceName(int p)
 	return "";
 }
 
+void LoadSprite(int p, char* name)
+{
+	char svg[48];
+	char cen[48];
+	char ami[48];
+	snprintf(svg,47,"sprites/%s.svg",name);
+	snprintf(cen,47,"sprites/%s.cen",name);
+	snprintf(ami,47,"sprites/%s.ami",name);
+	sprite[p]=SVGLoad(svg,cen);
+	spriteAnim[p]=SVGLoadAnimation(sprite[p],ami);
+}
+
 void LoadSprites()
 {
 	for(int i=0;i<22;i++)sprite[i]=-1;
-	sprite[1]=SVGLoad("sprites/dust.svg");
-	sprite[2]=SVGLoad("sprites/spark.svg");
-	sprite[3]=SVGLoad("sprites/star.svg");
-	sprite[4]=SVGLoad("sprites/twin.svg");
-	sprite[5]=SVGLoad("sprites/constellation.svg");
-	sprite[6]=SVGLoad("sprites/nebula.svg");
-	sprite[7]=SVGLoad("sprites/galaxy.svg");
-	sprite[8]=SVGLoad("sprites/quasar.svg");
-	sprite[COMET]=SVGLoad("sprites/comet.svg");
-	sprite[BHOLE]=SVGLoad("sprites/blackhole.svg");
+	LoadSprite(1,"dust");
+	LoadSprite(2,"spark");
+	LoadSprite(3,"star");
+	LoadSprite(4,"twin");
+	LoadSprite(5,"constellation");
+	LoadSprite(6,"nebula");
+	LoadSprite(7,"galaxy");
+	LoadSprite(8,"quasar");
+	LoadSprite(COMET,"comet");
+	LoadSprite(BHOLE,"blackhole");
 	tierPts[0]=0;
 	tierPts[1]=5;
 	tierPts[2]=20;
@@ -797,15 +816,23 @@ void Button(char* s, float x, float y, float w, float h, int c, int mx, int my)
 	TextC(s,x+w/2,y+h/2,1.4,COL_TEXT,1.2);
 }
 
-// piece p centred at (cx,cy), size in pixels, rotated by angle (radians)
-void DrawPiece(int p, float cx, float cy, float size, float ang)
+// piece p centred at (cx,cy), size in pixels, rotated by angle (radians);
+// u in 0..1 is the point in its animation cycle, anything else draws it still
+void DrawPiece(int p, float cx, float cy, float size, float ang, float u)
 {
 	if(p<=0||sprite[p]<0)return;
 	float s=size/100;
 	float a=cos(ang)*s;
 	float b=sin(ang)*s;
 	SVGSetTransform((cx-(a*50-b*50))*SC,(cy-(b*50+a*50))*SC,a*SC,b*SC,-b*SC,a*SC);
-	SVGDraw(sprite[p]);
+	if(u>=0&&u<1)SVGDrawAnimated(sprite[p],spriteAnim[p],u);
+	else SVGDraw(sprite[p]);
+}
+
+// how far into its cycle an animation started at t0 is (>=1 when done)
+float AnimU(float T, float t0)
+{
+	return (T-t0)/ANIM_LEN;
 }
 
 float CometAngle(int d)
@@ -866,6 +893,12 @@ float CellY(int i){return BY+Py(i)*CELL+CELL/2;}
 int hoverCell=-1;
 float hoverT0=0;   // when the mouse entered hoverCell
 
+// starts of the side-column animations: the piece in hand, the telescope
+// and the ladder icons (a tier reached for the first time this game)
+float curT0=-10;
+float holdT0=-10;
+float ladderT0[9];       // TOP+1
+
 // does the hovered placement fuse this cell? (for the preview wiggle)
 int previewMask[NC];
 int previewOn=0;
@@ -914,6 +947,7 @@ void DrawBoard(float T)
 		float cy=CellY(i);
 		float size=CELL*0.92;
 		float ang=0;
+		float au=AnimU(T,bornT[i]);
 		// pop in
 		float u=(T-bornT[i])/0.25;
 		if(u>=0&&u<1)size=size*(0.6+0.4*EaseOut(u)+0.15*sin(M_PI*u));
@@ -932,6 +966,7 @@ void DrawBoard(float T)
 			float w=0.11*EaseOut(Clamp01((T-hoverT0)/0.2));
 			cx=cx+(CellX(hoverCell)-cx)*w;
 			cy=cy+(CellY(hoverCell)-cy)*w;
+			au=AnimU(T,hoverT0);
 		}
 		if(p==COMET)
 		{
@@ -939,6 +974,7 @@ void DrawBoard(float T)
 			if(phase==PH_FLY&&flyFrom[i]>=0)
 			{
 				float f=EaseOut(Clamp01(pt/T_FLY));
+				au=pt/T_FLY;
 				cx=CellX(flyFrom[i])+(cx-CellX(flyFrom[i]))*f;
 				cy=CellY(flyFrom[i])+(cy-CellY(flyFrom[i]))*f;
 			}
@@ -954,11 +990,11 @@ void DrawBoard(float T)
 		if(phase==PH_SWALLOW&&i==swallowCell)
 		{
 			float f=Clamp01(pt/T_SWALLOW);
-			DrawPiece(BHOLE,cx,cy,CELL*(0.5+0.6*f),0);
+			DrawPiece(BHOLE,cx,cy,CELL*(0.5+0.6*f),0,f);
 			size=size*(1-f);
 			ang=f*8;
 		}
-		DrawPiece(p,cx,cy,size,ang);
+		DrawPiece(p,cx,cy,size,ang,au);
 	}
 
 	// ghost of the piece in hand
@@ -968,12 +1004,12 @@ void DrawBoard(float T)
 		float cy=CellY(hoverCell);
 		float ang=0;
 		if(cur==COMET)ang=CometAngle(CometHeading(hoverCell));
-		DrawPiece(cur,cx,cy,CELL*0.8,ang);
+		DrawPiece(cur,cx,cy,CELL*0.8,ang,AnimU(T,hoverT0));
 		FillBox(cx-CELL/2+3,cy-CELL/2+3,CELL-6,CELL-6,10,0x701b2352);
 	}
 	if(hoverCell>=0&&phase==PH_IDLE&&over==0&&cur==BHOLE&&board[hoverCell]!=0)
 	{
-		DrawPiece(BHOLE,CellX(hoverCell),CellY(hoverCell),CELL*0.5,2*EaseOut(Clamp01((T-hoverT0)/0.6)));
+		DrawPiece(BHOLE,CellX(hoverCell),CellY(hoverCell),CELL*0.5,0,AnimU(T,hoverT0));
 	}
 
 	// score popups
@@ -1013,13 +1049,13 @@ void DrawSide(float T, int mx, int my)
 	Label("PLACE",BY+114);
 	float ang=0;
 	if(cur==COMET)ang=-0.4;
-	DrawPiece(cur,RX+RW/2,BY+186,110,ang);
+	DrawPiece(cur,RX+RW/2,BY+186,110,ang,AnimU(T,curT0));
 	TextC(PieceName(cur),RX+RW/2,BY+254,1.6,COL_GOLD,1.3);
 
 	// next
 	FillBox(RX,BY+282,RW,52,12,COL_PANEL);
 	Text("NEXT",RX+16,BY+313,1.3,COL_DIM,1.1);
-	DrawPiece(nxt,RX+84,BY+308,46,0);
+	DrawPiece(nxt,RX+84,BY+308,46,0,-1);
 	Text(PieceName(nxt),RX+112,BY+313,1.3,COL_TEXT,1.1);
 
 	// telescope (hold)
@@ -1028,7 +1064,7 @@ void DrawSide(float T, int mx, int my)
 	Label("TELESCOPE",HOLD_Y+18);
 	if(hold!=0)
 	{
-		DrawPiece(hold,RX+RW/2,HOLD_Y+60,58,0);
+		DrawPiece(hold,RX+RW/2,HOLD_Y+60,58,0,AnimU(T,holdT0));
 		TextC(PieceName(hold),RX+RW/2,HOLD_Y+97,1.3,COL_TEXT,1.1);
 	}
 	else
@@ -1045,7 +1081,7 @@ void DrawSide(float T, int mx, int my)
 	{
 		float x=RX+14+(t-1)*24.5+11;
 		float y=ly+30;
-		DrawPiece(t,x,y,32,0);
+		DrawPiece(t,x,y,32,0,AnimU(T,ladderT0[t]));
 		if(t>bestTierRun)Circle(x,y,0,13,2.,0xc0141a40);
 	}
 }
@@ -1172,7 +1208,7 @@ void DrawStats(int mx, int my)
 	TextC("FURTHEST YOU HAVE GOT",ST_X+ST_W/2,ST_Y+172,1.6,COL_TEXT,1.3);
 	if(bestTier>0)
 	{
-		DrawPiece(bestTier,ST_X+ST_W/2-70,ST_Y+226,70,0);
+		DrawPiece(bestTier,ST_X+ST_W/2-70,ST_Y+226,70,0,-1);
 		Text(PieceName(bestTier),ST_X+ST_W/2-20,ST_Y+232,1.8,COL_GOLD,1.4);
 	}
 	else TextC("nothing yet",ST_X+ST_W/2,ST_Y+226,1.4,COL_DIM,1.2);
@@ -1272,8 +1308,10 @@ int Animating(float T)
 	if(phase!=PH_IDLE)return 1;
 	if(T-msgT0<1.7)return 1;
 	if(over!=0&&T-overT<0.9)return 1;
-	if(hoverCell>=0&&T-hoverT0<0.7)return 1;
-	for(int i=0;i<NC;i++)if(T-bornT[i]<0.3)return 1;
+	if(hoverCell>=0&&AnimU(T,hoverT0)<1)return 1;
+	if(AnimU(T,curT0)<1||AnimU(T,holdT0)<1)return 1;
+	for(int t=1;t<=TOP;t++)if(AnimU(T,ladderT0[t])<1)return 1;
+	for(int i=0;i<NC;i++)if(AnimU(T,bornT[i])<1)return 1;
 	for(int k=0;k<NPOP;k++)if(T-popT[k]<1.15)return 1;
 	return quitReq!=0;   // ws.h draws its quit prompt in Present
 }
@@ -1320,6 +1358,10 @@ int main(int argc, pchar* argv)
 	MakeStars();
 	NewGame();
 
+	for(int t=0;t<=TOP;t++)ladderT0[t]=-10;
+	int prevCur=cur;
+	int prevHold=hold;
+	int prevLadder=bestTierRun;
 	int prevMB=0;
 	int prevMX=-1;
 	int prevMY=-1;
@@ -1362,6 +1404,15 @@ int main(int argc, pchar* argv)
 		prevMB=mb;
 		prevMX=mx;
 		prevMY=my;
+
+		// a new piece in hand or telescope, a new tier on the ladder: play
+		// their animation once
+		if(cur!=prevCur)curT0=T;
+		if(hold!=prevHold)holdT0=T;
+		for(int t=prevLadder+1;t<=bestTierRun&&t<=TOP;t++)ladderT0[t]=T;
+		prevCur=cur;
+		prevHold=hold;
+		prevLadder=bestTierRun;
 
 		int look=Look(T);
 		if(look!=prevLook)dirty=1;
