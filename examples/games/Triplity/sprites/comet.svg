@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100" width="100" height="100">
+<title>Comet</title>
+<defs>
+<linearGradient id="dust" gradientUnits="userSpaceOnUse" x1="68" y1="50" x2="4" y2="50"><stop offset="0" stop-color="#fff4d8" stop-opacity="0.95"/><stop offset="0.5" stop-color="#ffd8a0" stop-opacity="0.45"/><stop offset="1" stop-color="#ffb080" stop-opacity="0"/></linearGradient>
+<linearGradient id="ion" gradientUnits="userSpaceOnUse" x1="68" y1="50" x2="0" y2="50"><stop offset="0" stop-color="#bff0ff" stop-opacity="0.9"/><stop offset="1" stop-color="#40a0ff" stop-opacity="0"/></linearGradient>
+<radialGradient id="coma" gradientUnits="userSpaceOnUse" cx="68" cy="50" r="18"><stop offset="0" stop-color="#d8f4ff" stop-opacity="0.8"/><stop offset="1" stop-color="#d8f4ff" stop-opacity="0"/></radialGradient>
+<radialGradient id="head" gradientUnits="userSpaceOnUse" cx="66" cy="48" r="8" fx="64" fy="46"><stop offset="0" stop-color="#ffffff" stop-opacity="1"/><stop offset="1" stop-color="#9fe0ff" stop-opacity="1"/></radialGradient>
+</defs>
+<path d="M68 41 C48 38 26 34 4 26 C22 42 40 60 68 59 Z" fill="url(#dust)"/>
+<path d="M68 47 C46 46 24 47 0 50 C24 53 46 54 68 53 Z" fill="url(#ion)"/>
+<circle cx="68" cy="50" r="18" fill="url(#coma)"/>
+<circle cx="68" cy="50" r="8" fill="url(#head)"/>
+</svg>

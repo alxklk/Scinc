@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100" width="100" height="100">
+<title>Quasar</title>
+<defs>
+<linearGradient id="jet" gradientUnits="userSpaceOnUse" x1="50" y1="50" x2="50" y2="2"><stop offset="0" stop-color="#ffffff" stop-opacity="1"/><stop offset="0.4" stop-color="#9fd8ff" stop-opacity="0.8"/><stop offset="1" stop-color="#4080ff" stop-opacity="0"/></linearGradient>
+<linearGradient id="jet2" gradientUnits="userSpaceOnUse" x1="50" y1="50" x2="50" y2="98"><stop offset="0" stop-color="#ffffff" stop-opacity="1"/><stop offset="0.4" stop-color="#9fd8ff" stop-opacity="0.8"/><stop offset="1" stop-color="#4080ff" stop-opacity="0"/></linearGradient>
+<radialGradient id="halo" gradientUnits="userSpaceOnUse" cx="50" cy="50" r="40"><stop offset="0" stop-color="#b0a0ff" stop-opacity="0.5"/><stop offset="1" stop-color="#b0a0ff" stop-opacity="0"/></radialGradient>
+<radialGradient id="disk" gradientUnits="userSpaceOnUse" cx="50" cy="50" r="34"><stop offset="0" stop-color="#ffffff" stop-opacity="1"/><stop offset="0.3" stop-color="#ffe090" stop-opacity="1"/><stop offset="0.7" stop-color="#ff6a30" stop-opacity="0.9"/><stop offset="1" stop-color="#a02060" stop-opacity="0"/></radialGradient>
+<radialGradient id="core" gradientUnits="userSpaceOnUse" cx="50" cy="50" r="12"><stop offset="0" stop-color="#ffffff" stop-opacity="1"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
+</defs>
+<circle cx="50" cy="50" r="40" fill="url(#halo)"/>
+<path d="M50 2 L56 42 L44 42 Z" fill="url(#jet)"/>
+<path d="M50 98 L56 58 L44 58 Z" fill="url(#jet2)"/>
+<ellipse cx="50" cy="50" rx="36" ry="11" fill="url(#disk)"/>
+<circle cx="50" cy="50" r="12" fill="url(#core)"/><circle cx="50" cy="50" r="5" fill="#ffffff"/>
+</svg>

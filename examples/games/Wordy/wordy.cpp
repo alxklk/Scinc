@@ -19,6 +19,10 @@
 // STATISTICS opens the statistics, Esc or BACK returns to the board. After a
 // game every guessed row can still be clicked to read its meaning.
 //
+// Run with -x2 (Scinc wordy.cpp -x2) for HiDPI screens: the window keeps
+// its size on screen but renders at twice the resolution, so everything,
+// strokes included, is drawn twice as big and comes out smoother.
+//
 // The meanings need ../../claude/net/http_dl.so (build it with
 // ../../claude/net/build_so.sh); without a network the panel says so and
 // the game plays as usual.
@@ -30,6 +34,7 @@
 
 #define G_SCREEN_WIDTH 820
 #define G_SCREEN_HEIGHT 720
+#define G_SCREEN_MODE 1   // XShm: faster presents than mode 0 (plain XPutImage)
 
 #include "all5letterw.h"
 #include "answers.h"
@@ -71,6 +76,13 @@
 
 Graph g;
 CFont* pfont=0;
+
+typedef char* pchar;
+
+// rendering scale: 1 normally, 2 with -x2. All layout stays in logical
+// units; the path transform scales the geometry, Stroke scales the widths
+// and mouse positions are divided back.
+float SC=1;
 
 int irand(int& seed)
 {
@@ -269,14 +281,17 @@ void ParseWiki(int s, int id)
 	}
 }
 
-void UpdateLookups()
+// returns 1 when some lookup finished, so the screen needs a redraw
+int UpdateLookups()
 {
+	int changed=0;
 	for(int s=0;s<NSLOTS;s++)
 	{
 		int k=lkState[s];
 		if(k!=LK_DICT&&k!=LK_WIKI)continue;
 		int st=HttpStatus(lkReq[s]);
 		if(st==HTTP_PENDING)continue;
+		changed=1;
 		if(st==200)
 		{
 			if(k==LK_DICT)ParseDict(s,lkReq[s]);
@@ -290,6 +305,7 @@ void UpdateLookups()
 		else if(st<0)lkState[s]=LK_OFFLINE;
 		else lkState[s]=LK_NOTFOUND;
 	}
+	return changed;
 }
 
 void ResetLookups()
@@ -643,7 +659,7 @@ void FrameBox(float x, float y, float w, float h, float t, int c)
 // above r=1.5, the big tile letters want about 2.
 void Stroke(float r, float k)
 {
-	g.width(r,k);
+	g.width(r*SC,k);
 	g.stroke();
 }
 
@@ -1166,8 +1182,52 @@ void Draw(int mx, int my, int mb)
 
 // ---------------------------------------------------------------- main
 
-int main()
+// Is something moving on the screen? Then every frame is drawn; otherwise
+// the screen is only redrawn when Look() changes or input arrives.
+int Animating(float T)
 {
+	if(revealRow>=0)return 1;
+	if(T-shakeT0<0.5)return 1;
+	if(T-bounceT0<FLIP_STEP*5+0.5+0.5)return 1;
+	if(statsOpen&&T-statsT0<0.25)return 1;
+	if(msgDur>0)return 1;   // fading out; DrawMessage clears msgDur at the end
+	for(int i=0;i<30;i++)if(T-popT[i]<0.15)return 1;
+	return quitReq!=0;      // ws.h draws its quit prompt in Present
+}
+
+// Slow changes that don't need every frame: the GIVE UP button turning back
+// from SURE? and the "Looking it up..." dots. A redraw happens when the
+// value differs from the last drawn one.
+int Look(float T)
+{
+	int v=0;
+	if(T-giveUpT<3)v=1;
+	for(int s=0;s<NSLOTS;s++)
+	{
+		if(lkState[s]==LK_DICT||lkState[s]==LK_WIKI)v+=2+(int(T*3)%4)*2;
+	}
+	return v;
+}
+
+int main(int argc, pchar* argv)
+{
+	for(int i=1;i<argc;i++)
+	{
+		char* a=argv[i];
+		if(a[0]=='-'&&a[1]=='x'&&a[2]=='2'&&a[3]==0)SC=2;
+	}
+	if(SC!=1)
+	{
+		// ws.h made an 820x720 window magnified 2x; replace it with one
+		// of the same screen size that has real pixels
+		wsys.DeleteWindow(mainWin);
+		mainWin=wsys.CreateWindow(G_SCREEN_WIDTH*SC,G_SCREEN_HEIGHT*SC,1,1,G_SCREEN_MODE);
+		g.SetActiveRT(wsys.GetWindowRT(mainWin));
+	}
+	g.t_0(0,0);
+	g.t_x(SC,0);
+	g.t_y(0,SC);
+
 	pfont=(CFont*)malloc(sizeof(CFont));
 	CFontMaker fm;
 	fm.Init(*pfont,6);
@@ -1182,28 +1242,74 @@ int main()
 	NewGame();
 
 	int prevMB=0;
+	int prevMX=-1;
+	int prevMY=-1;
+	int prevLook=-1;
+	float lastPresent=0;
+	int dirty=1;
+	int wasAnim=0;
 	while(true)
 	{
 		float T=Time();
-		if(revealRow>=0&&T-revealT0>FLIP_STEP*4+FLIP_TIME)RowRevealed();
-		UpdateLookups();
+		if(revealRow>=0&&T-revealT0>FLIP_STEP*4+FLIP_TIME)
+		{
+			RowRevealed();
+			dirty=1;
+		}
+		if(UpdateLookups())dirty=1;
 
 		int key;
 		int press;
 		while(GetKeyEvent(key,press))
 		{
 			if(press>0)OnKey(key);
+			dirty=1;
 		}
 
 		int mx;
 		int my;
 		int mb;
 		GetMouseState(mx,my,mb);
+		mx=mx/SC;
+		my=my/SC;
 		if((mb&1)&&!(prevMB&1))OnClick(mx,my);
+		if(mx!=prevMX||my!=prevMY||mb!=prevMB)dirty=1;
 		prevMB=mb;
+		prevMX=mx;
+		prevMY=my;
 
-		Draw(mx,my,mb);
-		Present();
+		int look=Look(T);
+		if(look!=prevLook)dirty=1;
+		prevLook=look;
+
+		// one more frame after an animation ends, to draw its final state
+		int anim=Animating(T);
+		if(wasAnim&&!anim)dirty=1;
+		wasAnim=anim;
+
+		if(dirty||anim)
+		{
+			Draw(mx,my,mb);
+			Present();
+			lastPresent=T;
+			dirty=0;
+			Wait(0.01);   // ~60 fps is plenty, leave the rest of the CPU alone
+		}
+		else
+		{
+			// nothing changed: just keep the events flowing (Present would
+			// drain the queue we don't read) and show the frame again now
+			// and then in case the window was covered
+			Poll();
+			SScincEvent ev;
+			while(GetScincEvent(ev)){}
+			if(T-lastPresent>0.5)
+			{
+				wsys.Present(mainWin);
+				lastPresent=T;
+			}
+			Wait(0.03);
+		}
 	}
 	return 0;
 }
