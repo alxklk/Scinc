@@ -1,0 +1,3 @@
+<anim>
+	<target entity="arm" param="rotation" interpolation="linear" timeline="repeat" pivot="local" times="0,1" keys="0,1.570796" />
+</anim>

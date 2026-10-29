@@ -1,0 +1,4 @@
+<anim>
+	<target entity="arm" param="scale_x" interpolation="linear" timeline="mirror" pivot="local" times="0,1" keys="1,0.5" />
+	<target entity="arm" param="scale_y" interpolation="linear" timeline="mirror" pivot="local" times="0,1" keys="1,2.5" />
+</anim>

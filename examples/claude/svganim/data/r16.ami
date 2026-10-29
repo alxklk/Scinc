@@ -1,0 +1,4 @@
+<anim>
+	<target entity="*G1" param="rotation" interpolation="linear" timeline="mirror" pivot="local" times="0,1" keys="0,1.570796" />
+	<target entity="*R0" param="A+" interpolation="linear" timeline="extra" pivot="local" times="0" keys="-0.7" />
+</anim>

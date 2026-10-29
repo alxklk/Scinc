@@ -1,0 +1,6 @@
+<centers>
+	<center id="*G0" pivot="50,50,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="*G1" pivot="30,26,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="*G4" pivot="30,52,1,0,0,1" offset="0,0,1,0,0,1"/>
+	<center id="*G7" pivot="30,78,1,0,0,1" offset="0,0,1,0,0,1"/>
+</centers>

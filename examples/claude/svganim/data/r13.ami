@@ -1,0 +1,5 @@
+<anim>
+	<target entity="arm" param="rotation" interpolation="linear" timeline="mirror" pivot="local" times="0,1" keys="0,1.570796" />
+	<target entity="arm2" param="t" interpolation="linear" timeline="extra" pivot="local" times="0.5,1.5" keys="0,1" />
+	<target entity="arm2" param="R*" interpolation="linear" timeline="extra" pivot="local" times="0" keys="0.3" />
+</anim>
