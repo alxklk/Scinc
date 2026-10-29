@@ -70,27 +70,79 @@ void DrawGlyph(Graph& g, CFont& f, int s, float x, float y, float sx, float sy)
 	}
 }
 
+// next character of UTF-8 text s at i (i moves past it); 0 at the end,
+// -1 for a broken sequence
+int Utf8Next(char* s, int& i)
+{
+	int c=s[i];
+	if(c<0)
+		c+=256;
+	if(c==0)
+		return 0;
+	i++;
+	if(c<128)
+		return c;
+	int n=0;
+	if((c&0xE0)==0xC0)
+	{
+		c=c&0x1F;
+		n=1;
+	}
+	else if((c&0xF0)==0xE0)
+	{
+		c=c&0x0F;
+		n=2;
+	}
+	else if((c&0xF8)==0xF0)
+	{
+		c=c&0x07;
+		n=3;
+	}
+	else
+		return -1;
+	for(int k=0;k<n;k++)
+	{
+		int b=s[i];
+		if(b<0)
+			b+=256;
+		if((b&0xC0)!=0x80)
+			return -1;
+		c=(c<<6)|(b&0x3F);
+		i++;
+	}
+	return c;
+}
+
+// number of characters (not bytes) in UTF-8 text
+int Utf8Len(char* s)
+{
+	int i=0;
+	int n=0;
+	while(Utf8Next(s,i)!=0)
+		n++;
+	return n;
+}
+
 void DrawText(Graph& g, CFont& f, char* s, int col, float x, float y, float sx, float sy)
 {
 	int i=0;
 	float cx=x;
 	while(true)
 	{
-		int c=s[i];
-		if(c<0)
-		{
-			//printf(" c<0\n");
-			i++;
-			continue;
-		}
+		int c=Utf8Next(s,i);
 		if(c==0)
 			break;
+		if(c<0)
+			continue;
+		CGlyph* pgl=FindGlyph(f,c);
+		if(!pgl)
+			continue;
+		CGlyph gl=*pgl;
 		if(
-			((!col)&&(!f.g[c].col))||
-			(col&&f.g[c].col)
+			((!col)&&(!gl.col))||
+			(col&&gl.col)
 			)
 			DrawGlyph(g,f,c,cx,y,sx,sy);
-		cx+=f.g[c].w*sx;
-		i++;
+		cx+=gl.w*sx;
 	}
 }

@@ -92,7 +92,6 @@ public:
 	}
 	int NewUGlyph(int uglyph)
 	{
-		printf(" New UGlyph %i\n", uglyph);
 		int found=-1;
 		for(int i=0;i<NUGLYF;i++)
 		{
@@ -106,7 +105,8 @@ public:
 				break;
 			}
 		}
-		printf(" Found UGlyph %i\n", found);
+		if(found<0)
+			printf(" Font Unicode table overflow, >= %i\n", NUGLYF);
 		return found;
 	}
 	void StartGlyph(int glyph)
@@ -127,6 +127,19 @@ public:
 		{
 			curUGlyphIdx=NewUGlyph(glyph);
 		}
+	}
+	// a Unicode glyph that looks exactly like an ASCII one (Cyrillic A, O...)
+	// shares its drawing commands
+	void Alias(int uglyph, int glyph)
+	{
+		int i=NewUGlyph(uglyph);
+		if(i<0)
+			return;
+		font->u[i].g.col=font->g[glyph].col;
+		font->u[i].g.w=font->g[glyph].w;
+		font->u[i].g.n=font->g[glyph].n;
+		font->u[i].g.c0=font->g[glyph].c0;
+		font->u[i].g.d0=font->g[glyph].d0;
 	}
 	void Width(float w)
 	{
@@ -202,7 +215,7 @@ public:
 		if(curGlyph<NGLYF)
 			font->g[curGlyph].col=1;
 		else
-			font->g[curUGlyphIdx].col=1;
+			font->u[curUGlyphIdx].g.col=1;
 		Cmd('0');
 	}
 	void stroke(float w, int c)
@@ -210,7 +223,7 @@ public:
 		if(curGlyph<NGLYF)
 			font->g[curGlyph].col=1;
 		else
-			font->g[curUGlyphIdx].col=1;
+			font->u[curUGlyphIdx].g.col=1;
 		Cmd('/');
 		Data(w);
 		Data(c);
@@ -220,7 +233,7 @@ public:
 		if(curGlyph<NGLYF)
 			font->g[curGlyph].col=1;
 		else
-			font->g[curUGlyphIdx].col=1;
+			font->u[curUGlyphIdx].g.col=1;
 		Cmd('f');
 		Data(c);
 	}

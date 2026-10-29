@@ -1,3 +1,493 @@
+// Ukrainian Cyrillic, by Unicode code point (DrawText reads UTF-8). Letters
+// that look exactly like Latin ones share their glyphs.
+void MakeUkrainian(CFontMaker& fm)
+{
+	fm.Alias(0x410,'A');
+	fm.Alias(0x412,'B');
+	fm.Alias(0x415,'E');
+	fm.Alias(0x406,'I');
+	fm.Alias(0x41A,'K');
+	fm.Alias(0x41C,'M');
+	fm.Alias(0x41D,'H');
+	fm.Alias(0x41E,'O');
+	fm.Alias(0x420,'P');
+	fm.Alias(0x421,'C');
+	fm.Alias(0x422,'T');
+	fm.Alias(0x425,'X');
+	fm.Alias(0x430,'a');
+	fm.Alias(0x435,'e');
+	fm.Alias(0x456,'i');
+	fm.Alias(0x43E,'o');
+	fm.Alias(0x440,'p');
+	fm.Alias(0x441,'c');
+	fm.Alias(0x443,'y');
+	fm.Alias(0x445,'x');
+	fm.Alias(0x2BC,'\'');   // modifier letter apostrophe
+	fm.Alias(0x2019,'\'');  // right single quotation mark
+
+	// ---- capitals
+	{
+		fm.StartGlyph(0x411);   // Б
+		fm.M(4,9);
+		fm.l(-4,0);
+		fm.l(0,-9);
+		fm.l(2,0);
+		fm.c(2.75,0,2.75,0,0,5);
+		fm.l(-2,0);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x413);   // Г
+		fm.M(0,0);
+		fm.l(0,9);
+		fm.l(4,0);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x490);   // Ґ
+		fm.M(0,0);
+		fm.l(0,9);
+		fm.l(4,0);
+		fm.l(0,1.5);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x414);   // Д
+		fm.M(0,-1.5);
+		fm.l(0,1.5);
+		fm.l(4,0);
+		fm.l(0,-1.5);
+		fm.M(.5,0);
+		fm.l(1,9);
+		fm.l(2,0);
+		fm.l(0,-9);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x404);   // Є
+		fm.M(4,7);
+		fm.c(-.5,   3,   0,   5,-4,-2.5);
+		fm.c(  0,-5.5, -.5,-3.5, 4,-2.5);
+		fm.M(0,4.5);
+		fm.l(2.75,0);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x416);   // Ж
+		fm.M(2,0);
+		fm.l(0,9);
+		fm.M(0,9);
+		fm.l(2,-4.5);
+		fm.l(2,4.5);
+		fm.M(0,0);
+		fm.l(2,4.5);
+		fm.l(2,-4.5);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x417);   // З
+		fm.M(.25,7);
+		fm.c(0,2.6,0,2.6,3.5,0);
+		fm.c(0,-1.5,1,0,-2,-2);
+		fm.c(2,0,0,1,2.25,-2.5);
+		fm.c(0,-3.,.5,-3,-4,-.5);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x418);   // И
+		fm.M(0,9);
+		fm.l(0,-9);
+		fm.l(4,9);
+		fm.l(0,-9);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x419);   // Й
+		fm.M(0,9);
+		fm.l(0,-9);
+		fm.l(4,9);
+		fm.l(0,-9);
+		fm.M(1,11);
+		fm.c(0,-1.2,0,-1.2,2,0);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x407);   // Ї
+		fm.M(1,0);
+		fm.l(2,0);
+		fm.M(1,9);
+		fm.l(2,0);
+		fm.M(2,0);
+		fm.l(0,9);
+		fm.M(1,10.5);
+		fm.l(0,.5);
+		fm.M(.75,10.75);
+		fm.l(.5,0);
+		fm.M(3,10.5);
+		fm.l(0,.5);
+		fm.M(2.75,10.75);
+		fm.l(.5,0);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x41B);   // Л
+		fm.M(0,0);
+		fm.l(1.25,9);
+		fm.l(2.75,0);
+		fm.l(0,-9);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x41F);   // П
+		fm.M(0,0);
+		fm.l(0,9);
+		fm.l(4,0);
+		fm.l(0,-9);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x423);   // У
+		fm.M(0,9);
+		fm.L(2,3);
+		fm.M(4,9);
+		fm.L(1,0);
+		fm.l(-1,0);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x424);   // Ф
+		fm.M(2,0);
+		fm.l(0,9);
+		fm.M(2,7);
+		fm.c(-2.75,0,-2.75,0,0,-5);
+		fm.c( 2.75,0, 2.75,0,0, 5);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x426);   // Ц
+		fm.M(0,9);
+		fm.L(0,0);
+		fm.L(4,0);
+		fm.l(0,-1.5);
+		fm.M(3.5,0);
+		fm.L(3.5,9);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x427);   // Ч
+		fm.M(0,9);
+		fm.l(0,-3.5);
+		fm.c(0,-2,-1.5,0,4,-1.5);
+		fm.M(4,9);
+		fm.l(0,-9);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x428);   // Ш
+		fm.M(0,9);
+		fm.l(0,-9);
+		fm.l(4,0);
+		fm.l(0,9);
+		fm.M(2,0);
+		fm.l(0,9);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x429);   // Щ
+		fm.M(0,9);
+		fm.L(0,0);
+		fm.L(4,0);
+		fm.l(0,-1.5);
+		fm.M(1.75,0);
+		fm.L(1.75,9);
+		fm.M(3.5,0);
+		fm.L(3.5,9);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x42C);   // Ь
+		fm.M(0,9);
+		fm.l(0,-9);
+		fm.l(2,0);
+		fm.c(2.75,0,2.75,0,0,5);
+		fm.l(-2,0);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x42E);   // Ю
+		fm.M(0,0);
+		fm.l(0,9);
+		fm.M(0,4.5);
+		fm.l(1,0);
+		fm.M(2.5,9);
+		fm.c(-2,0,-2,0,0,-9);
+		fm.c( 2,0, 2,0,0, 9);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x42F);   // Я
+		fm.M(4,4);
+		fm.l(-2,0);
+		fm.M(4,0);
+		fm.l(0,9);
+		fm.l(-2,0);
+		fm.c(-2.75,0,-2.75,0,0,-5);
+		fm.M(2.5,4);
+		fm.c(-1.5,-.5,1.5,1,-2.75,-4);
+		fm.EndGlyph();
+	}
+
+	// ---- small letters
+	{
+		fm.StartGlyph(0x431);   // б
+		fm.M(0,3);
+		fm.c(0, 4,0, 4, 4,0);
+		fm.c(0,-4,0,-4,-4,0);
+		fm.c(0,5,-1.5,0,4,6);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x432);   // в
+		fm.M(0,3.5);
+		fm.l(2,0);
+		fm.M(2,0);
+		fm.l(-2,0);
+		fm.l(0,6);
+		fm.l(1.75,0);
+		fm.c(1.75,0,1.75,0,0,-2.5);
+		fm.m(.25,0);
+		fm.c(2.25,0,2.25,0,0,-3.5);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x433);   // г
+		fm.M(0,0);
+		fm.l(0,6);
+		fm.l(3.5,0);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x491);   // ґ
+		fm.M(0,0);
+		fm.l(0,6);
+		fm.l(3.5,0);
+		fm.l(0,1.5);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x434);   // д
+		fm.M(0,-1.5);
+		fm.l(0,1.5);
+		fm.l(4,0);
+		fm.l(0,-1.5);
+		fm.M(.5,0);
+		fm.l(1,6);
+		fm.l(2,0);
+		fm.l(0,-6);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x454);   // є
+		fm.M(4,5);
+		fm.c(-.5,1.5,0,3.5,-4,-2);
+		fm.c(0,-3.5,-.5,-2,4,-2);
+		fm.M(0,3);
+		fm.l(3,0);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x436);   // ж
+		fm.M(2,0);
+		fm.l(0,6);
+		fm.M(0,6);
+		fm.l(2,-3);
+		fm.l(2,3);
+		fm.M(0,0);
+		fm.l(2,3);
+		fm.l(2,-3);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x437);   // з
+		fm.M(.25,4.75);
+		fm.c(0,1.75,0,1.75,3.5,0);
+		fm.c(0,-1,.75,0,-1.75,-1.5);
+		fm.c(1.5,0,0,.75,2,-1.75);
+		fm.c(0,-2,.5,-2,-4,-.25);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x438);   // и
+		fm.M(0,6);
+		fm.l(0,-6);
+		fm.l(4,6);
+		fm.l(0,-6);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x439);   // й
+		fm.M(0,6);
+		fm.l(0,-6);
+		fm.l(4,6);
+		fm.l(0,-6);
+		fm.M(1,8.5);
+		fm.c(0,-1.2,0,-1.2,2,0);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x457);   // ї
+		fm.M(2,0);
+		fm.l(0,6);
+		fm.M(1,0);
+		fm.l(2,0);
+		fm.M(1,6);
+		fm.l(1,0);
+		fm.M(1,7.75);
+		fm.l(0,.5);
+		fm.M(.75,8);
+		fm.l(.5,0);
+		fm.M(3,7.75);
+		fm.l(0,.5);
+		fm.M(2.75,8);
+		fm.l(.5,0);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x43A);   // к
+		fm.M(0,0);
+		fm.l(0,6);
+		fm.M(0,2.5);
+		fm.L(3.5,6);
+		fm.M(1.25,3.75);
+		fm.L(4,0);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x43B);   // л
+		fm.M(0,0);
+		fm.l(1.25,6);
+		fm.l(2.75,0);
+		fm.l(0,-6);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x43C);   // м
+		fm.M(0,0);
+		fm.l(0,6);
+		fm.l(2,-4);
+		fm.l(2,4);
+		fm.l(0,-6);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x43D);   // н
+		fm.M(0,0);
+		fm.l(0,6);
+		fm.M(4,0);
+		fm.l(0,6);
+		fm.M(0,3);
+		fm.l(4,0);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x43F);   // п
+		fm.M(0,0);
+		fm.l(0,6);
+		fm.l(4,0);
+		fm.l(0,-6);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x442);   // т
+		fm.M(2,0);
+		fm.l(0,6);
+		fm.M(0,6);
+		fm.l(4,0);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x444);   // ф
+		fm.M(2,-3);
+		fm.L(2,9);
+		fm.M(2,6);
+		fm.c(-2.75,0,-2.75,0,0,-6);
+		fm.c( 2.75,0, 2.75,0,0, 6);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x446);   // ц
+		fm.M(0,6);
+		fm.L(0,0);
+		fm.L(4,0);
+		fm.l(0,-1.5);
+		fm.M(3.5,0);
+		fm.L(3.5,6);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x447);   // ч
+		fm.M(0,6);
+		fm.l(0,-2);
+		fm.c(0,-1.5,-1.5,0,4,-1);
+		fm.M(4,6);
+		fm.L(4,0);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x448);   // ш
+		fm.M(0,6);
+		fm.L(0,0);
+		fm.L(4,0);
+		fm.L(4,6);
+		fm.M(2,0);
+		fm.L(2,6);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x449);   // щ
+		fm.M(0,6);
+		fm.L(0,0);
+		fm.L(4,0);
+		fm.l(0,-1.5);
+		fm.M(1.75,0);
+		fm.L(1.75,6);
+		fm.M(3.5,0);
+		fm.L(3.5,6);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x44C);   // ь
+		fm.M(0,6);
+		fm.L(0,0);
+		fm.l(2,0);
+		fm.c(2.5,0,2.5,0,0,3.5);
+		fm.l(-2,0);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x44E);   // ю
+		fm.M(0,0);
+		fm.L(0,6);
+		fm.M(0,3);
+		fm.l(1,0);
+		fm.M(2.5,6);
+		fm.c(-2,0,-2,0,0,-6);
+		fm.c( 2,0, 2,0,0, 6);
+		fm.EndGlyph();
+	}
+	{
+		fm.StartGlyph(0x44F);   // я
+		fm.M(4,0);
+		fm.L(4,6);
+		fm.l(-2,0);
+		fm.c(-2.5,0,-2.5,0,0,-3.5);
+		fm.l(2,0);
+		fm.M(2.5,2.5);
+		fm.L(0,0);
+		fm.EndGlyph();
+	}
+}
+
 void MakeLetters(CFontMaker& fm)
 {
 	{
@@ -842,10 +1332,6 @@ void MakeLetters(CFontMaker& fm)
 		fm.c(1.5,3,-1.5,-3,4,0);
 		fm.EndGlyph();
 	}
-	{
-		fm.StartGlyph('А');
-		fm.M(0,7.5);
-		fm.c(1.5,3,-1.5,-3,4,0);
-		fm.EndGlyph();
-	}
+	MakeUkrainian(fm);
 }
+
