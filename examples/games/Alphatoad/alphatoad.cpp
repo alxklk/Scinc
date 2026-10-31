@@ -6,7 +6,7 @@
 //
 // A turn:
 //   1. two or three new boxes land on random free cells; their letters are
-//      drawn by English letter frequency (E often, Z rarely), their numbers
+//      drawn by letter frequency (E often, Z rarely), their numbers
 //      are random (2..9);
 //   2. you spell a word of 2+ letters from any boxes on the pond, in any
 //      order: click them, or type the letters (typing picks the matching box
@@ -32,18 +32,34 @@
 //
 // A few words always score x2, whatever toads sit on the pads: TOAD, FROG,
 // TADPOLE, POND, BULLFROG, TOADSTOOL, NEWT, POLLIWOG, POLLYWOG, AMPHIBIAN,
-// CROAK, LEAP, RIBBIT, SCINC and their plurals.
+// CROAK, LEAP, RIBBIT, SCINC and their plurals; in Ukrainian every form of
+// ЖАБА, ЖАБКА, ЖАБЕНЯ, ЖАБЕНЯТКО, РОПУХА, ПУГОЛОВОК, СТАВОК, ТРИТОН,
+// АМФІБІЯ, ЛАТАТТЯ, КВАКАТИ and КУМКАТИ.
 //
-// Keys: letters pick boxes, Backspace drops the last one, Esc clears the
-// word, Enter feeds.
+// The button left of STATISTICS switches between English and Ukrainian.
+// Each language has its own letters, dictionary, toads and progress
+// (alphatoad.sav, alphatoad_ua.sav); the last one played is remembered in
+// alphatoad.cfg. A toad is kept by its number, and the same number may
+// love a different letter in the other language.
+//
+// Keys: letters pick boxes (English only: Scinc doesn't pass Cyrillic keys
+// yet), Backspace drops the last one, Esc clears the word, Enter feeds.
 //
 //   Scinc alphatoad.cpp [-x2] [COLSxROWS]
 //
-// -x2 renders at twice the resolution for HiDPI screens; COLSxROWS sets the
-// size of the pond (4..10 each way, 7x7 by default), e.g. 9x6.
+// The window is unscaled; -x2 makes it twice as big, rendered at twice the
+// resolution (for HiDPI screens); the x2 button switches between the two any time.
+// COLSxROWS sets the size of the pond (4..10 each way, 7x7 by default),
+// e.g. 9x6.
 //
 // The dictionary is words.txt: the public domain ENABLE word list, newer
-// words from the SCOWL american-english list, and RIBBIT and SCINC. The
+// words from the SCOWL american-english list, and RIBBIT and SCINC.
+// words_ua.txt (Windows-1251, sorted by bytes) comes from the brown-uk
+// dictionary dict_uk 6.8.6 (github.com/brown-uk/dict_uk, CC BY-NC-SA 4.0):
+// every form, up to 15 letters, of each word seen in the hermitdave
+// FrequencyWords Ukrainian subtitles list, plus the base form of every
+// other word up to 12 letters; no proper names, abbreviations, slang,
+// archaic, rare or rude words. The
 // meanings come from dictionaryapi.dev / wiktionary.org through
 // ../../claude/net/http_dl.so (build it with ../../claude/net/build_so.sh);
 // without a network the game plays as usual.
@@ -57,6 +73,7 @@
 
 #define G_SCREEN_WIDTH 860
 #define G_SCREEN_HEIGHT 800
+#define G_SCREEN_SCALE 1  // unscaled; -x2 makes a window twice as big
 #define G_SCREEN_MODE 1   // XShm
 
 #include "graphics.h"
@@ -107,6 +124,7 @@ CFont* pfont=0;
 typedef char* pchar;
 
 float SC=1;   // 2 with -x2: layout stays in logical units
+int scaleReq=0;    // the x2 button was pressed
 
 int seed=5150243;
 
@@ -116,26 +134,136 @@ int irand()
 	return seed>>4;
 }
 
+// ---------------------------------------------------------------- languages
+//
+// English or Ukrainian: each has its own dictionary, letters, toad abilities
+// and save file. Inside the game a Ukrainian letter is one byte in
+// Windows-1251 (the encoding of words_ua.txt), so words stay plain byte
+// strings; they turn into Unicode only on screen and for the meaning lookup.
+
+#define LANG_EN 0
+#define LANG_UA 1
+int lang=LANG_EN;
+
+int CpToUni(int b)
+{
+	b=b&255;
+	if(b<128)return b;
+	if(b>=0xC0)return 0x410+b-0xC0;
+	if(b==0xB3)return 0x456;
+	if(b==0xB2)return 0x406;
+	if(b==0xBF)return 0x457;
+	if(b==0xAF)return 0x407;
+	if(b==0xBA)return 0x454;
+	if(b==0xAA)return 0x404;
+	if(b==0xB4)return 0x491;
+	if(b==0xA5)return 0x490;
+	return '?';
+}
+
+int UniToCp(int u)
+{
+	if(u<128)return u;
+	if(u>=0x410&&u<=0x44F)return u-0x410+0xC0;
+	if(u==0x456)return 0xB3;
+	if(u==0x406)return 0xB2;
+	if(u==0x457)return 0xBF;
+	if(u==0x407)return 0xAF;
+	if(u==0x454)return 0xBA;
+	if(u==0x404)return 0xAA;
+	if(u==0x491)return 0xB4;
+	if(u==0x490)return 0xA5;
+	return '?';
+}
+
+// capital of a letter (a byte, Latin or Windows-1251)
+int UpChar(int c)
+{
+	c=c&255;
+	if(c>='a'&&c<='z')return c-'a'+'A';
+	if(c>=0xE0)return c-0x20;
+	if(c==0xB3)return 0xB2;
+	if(c==0xBF)return 0xAF;
+	if(c==0xBA)return 0xAA;
+	if(c==0xB4)return 0xA5;
+	return c;
+}
+
+// Windows-1251 text to UTF-8, for DrawText and URLs
+void CpToUtf8(char* s, char* d, int max)
+{
+	int n=0;
+	int i=0;
+	while(s[i]!=0&&n<max-3)
+	{
+		int u=CpToUni(s[i]);
+		if(u<128)
+		{
+			d[n]=u;
+			n++;
+		}
+		else
+		{
+			d[n]=0xC0|(u>>6);
+			d[n+1]=0x80|(u&63);
+			n+=2;
+		}
+		i++;
+	}
+	d[n]=0;
+}
+
+// stand-ins for the accented Latin letters U+00C0..U+017F (zh in "zhaba")
+char* latinBase="AAAAAAACEEEEIIIIDNOOOOOxOUUUUYTsaaaaaaaceeeeiiiidnooooo/ouuuuytyAaAaAaCcCcCcCcDdDdEeEeEeEeEeGgGgGgGgHhHhIiIiIiIiIiIiJjKkkLlLlLlLlLlNnNnNnnNnOoOoOoOoRrRrRrSsSsSsSsTtTtTtUuUuUuUuUuUuWwYyYZzZzZzs";
+
+// UTF-8 from the web to Windows-1251 in place: Ukrainian letters stay,
+// accented Latin letters, typographic quotes and dashes become ASCII,
+// anything else '?'
+void Utf8ToCp(char* s)
+{
+	int i=0;
+	int o=0;
+	while(true)
+	{
+		int c=Utf8Next(s,i);
+		if(c==0)break;
+		if(c==0x301)continue;   // stress mark
+		int b='?';
+		if(c>0&&c<128)b=c;
+		else if(c==0xA0||c==0x2002||c==0x2003||c==0x2009)b=' ';
+		else if(c==0x2018||c==0x2019||c==0x201B||c==0x2032||c==0xB4||c==0x2BC)b='\'';
+		else if(c==0x201C||c==0x201D||c==0x201E||c==0xAB||c==0xBB)b='"';
+		else if((c>=0x2010&&c<=0x2015)||c==0x2212)b='-';
+		else if(c>=0xC0&&c<0x180)b=latinBase[c-0xC0];
+		else if(c>=0x400)b=UniToCp(c);
+		s[o]=b;
+		o++;
+	}
+	s[o]=0;
+}
+
 // ---------------------------------------------------------------- dictionary
 //
-// words.txt is read whole into dictBuf; dictOff[i] is where word i starts.
-// The file is sorted, so a lookup is a binary search.
+// words.txt (or words_ua.txt) is read whole into dictBuf; dictOff[i] is where
+// word i starts. The file is sorted by bytes, so a lookup is a binary search.
+
+#define DICT_BYTES 7400000
+#define DICT_WORDS 700000
 
 char* dictBuf;
 int* dictOff;
 int nDict=0;
 
-void LoadDict()
+void LoadDict(char* file)
 {
-	dictBuf=(char*)malloc(1900000);
-	dictOff=(int*)malloc(4*190000);
-	FILE* f=fopen("words.txt","rb");
+	nDict=0;
+	FILE* f=fopen(file,"rb");
 	if(f==0)
 	{
-		printf("words.txt not found - run Alphatoad from its own folder\n");
+		printf("%s not found - run Alphatoad from its own folder\n",file);
 		return;
 	}
-	int n=fread(dictBuf,1,1899999,f);
+	int n=fread(dictBuf,1,DICT_BYTES-1,f);
 	fclose(f);
 	dictBuf[n]=10;
 	int st=0;
@@ -143,7 +271,7 @@ void LoadDict()
 	{
 		if(dictBuf[i]==10)
 		{
-			if(i>st&&nDict<190000)
+			if(i>st&&nDict<DICT_WORDS)
 			{
 				dictOff[nDict]=st;
 				nDict++;
@@ -157,8 +285,8 @@ int DictCmp(char* w, int o)
 {
 	for(int i=0;i<40;i++)
 	{
-		int a=w[i];
-		int b=dictBuf[o+i];
+		int a=w[i]&255;
+		int b=dictBuf[o+i]&255;
 		if(b==10||b==13)b=0;
 		if(a!=b)return a-b;
 		if(a==0)return 0;
@@ -186,103 +314,179 @@ int InDict(char* w)
 // how often each letter occurs in English text, per 10000
 int freq[26]={817,149,278,425,1270,223,202,609,697,15,77,403,241,675,751,193,10,599,633,906,276,98,236,15,197,7};
 
+// the Ukrainian alphabet and how often each letter occurs (per 10000, from
+// film subtitles; F and G with the upturn raised a little so they show up)
+int uaLetter[33]={0x430,0x431,0x432,0x433,0x491,0x434,0x435,0x454,0x436,0x437,0x438,
+	0x456,0x457,0x439,0x43A,0x43B,0x43C,0x43D,0x43E,0x43F,0x440,0x441,0x442,0x443,
+	0x444,0x445,0x446,0x447,0x448,0x449,0x44C,0x44E,0x44F};
+int uaFreq[33]={871,222,478,152,10,354,673,54,107,215,631,395,42,131,321,307,364,691,
+	993,291,417,380,609,335,30,96,89,128,103,83,165,100,187};
+
+// the letters of the current language, as bytes
+int nLet=26;
+int letCode[33];
+int letFreq[33];
+
 int IsVowel(int c)
 {
-	return c=='a'||c=='e'||c=='i'||c=='o'||c=='u';
+	c=c&255;
+	if(lang==LANG_EN)return c=='a'||c=='e'||c=='i'||c=='o'||c=='u';
+	int u=CpToUni(c);
+	return u==0x430||u==0x435||u==0x454||u==0x438||u==0x456||u==0x457||
+		u==0x43E||u==0x443||u==0x44E||u==0x44F;
+}
+
+void SetLetters()
+{
+	if(lang==LANG_EN)
+	{
+		nLet=26;
+		for(int i=0;i<26;i++)
+		{
+			letCode[i]='a'+i;
+			letFreq[i]=freq[i];
+		}
+		return;
+	}
+	nLet=33;
+	for(int i=0;i<33;i++)
+	{
+		letCode[i]=UniToCp(uaLetter[i]);
+		letFreq[i]=uaFreq[i];
+	}
 }
 
 int RandLetter(int vowelsOnly)
 {
 	int sum=0;
-	for(int i=0;i<26;i++)
+	for(int i=0;i<nLet;i++)
 	{
-		if(vowelsOnly&&!IsVowel('a'+i))continue;
-		sum+=freq[i];
+		if(vowelsOnly&&!IsVowel(letCode[i]))continue;
+		sum+=letFreq[i];
 	}
 	int r=irand()%sum;
-	for(int i=0;i<26;i++)
+	for(int i=0;i<nLet;i++)
 	{
-		if(vowelsOnly&&!IsVowel('a'+i))continue;
-		r-=freq[i];
-		if(r<0)return 'a'+i;
+		if(vowelsOnly&&!IsVowel(letCode[i]))continue;
+		r-=letFreq[i];
+		if(r<0)return letCode[i];
 	}
-	return 'e';
+	return letCode[0];
 }
 
 // ---------------------------------------------------------------- toads
 //
-// toadType/Param/Level: the toads the player owns (up to 3), kept in the
-// save file. A toad's multiplier is level+1.
+// A toad is known by its number, toadId, which the save file keeps; what
+// it does depends on the language (toad 7 loves R in English and P in
+// Ukrainian):
+//   0..19  a letter toad: the k-th of the language's toad letters
+//   20..23 a length toad: EN 3..6 letters, UA 4..7 (Ukrainian words are longer)
+//   24     the double letter toad
+// toadType/Param are worked out from the number. A toad's multiplier is
+// level+1.
 
 #define TT_LETTER 0
 #define TT_LENGTH 1
 #define TT_DOUBLE 2
 #define MAX_LEVEL 5
+#define TOAD_IDS 25
 
 int nToads=0;
+int toadId[3];
 int toadType[3];
 int toadParam[3];
 int toadLevel[3];
 
 // new toads offered on the TOADS screen
+int offerId[3];
 int offerType[3];
 int offerParam[3];
 
 char* toadLetters="etaoinsrhldcumpgyfwb";   // letters a letter toad may love
+int uaToadLetter[20]={0x43E,0x430,0x43D,0x435,0x438,0x442,0x432,0x440,0x456,0x441,
+	0x43C,0x434,0x443,0x43A,0x43B,0x43F,0x431,0x437,0x44F,0x433};
+
+int IdType(int id)
+{
+	if(id<20)return TT_LETTER;
+	if(id<24)return TT_LENGTH;
+	return TT_DOUBLE;
+}
+
+int IdParam(int id)
+{
+	if(id<20)
+	{
+		int c=toadLetters[id];
+		if(lang==LANG_UA)c=UniToCp(uaToadLetter[id]);
+		return c;
+	}
+	if(id<24)
+	{
+		if(lang==LANG_EN)return id-20+3;
+		return id-20+4;
+	}
+	return 0;
+}
+
+void SetToad(int i, int id)
+{
+	toadId[i]=id;
+	toadType[i]=IdType(id);
+	toadParam[i]=IdParam(id);
+}
+
+void SetOffer(int i, int id)
+{
+	offerId[i]=id;
+	offerType[i]=-1;
+	offerParam[i]=-1;
+	if(id<0)return;
+	offerType[i]=IdType(id);
+	offerParam[i]=IdParam(id);
+}
 
 int ToadMult(int i)
 {
 	return 1+toadLevel[i];
 }
 
-int ToadOwned(int t, int p)
+int ToadOwned(int id)
 {
-	for(int i=0;i<nToads;i++)if(toadType[i]==t&&toadParam[i]==p)return 1;
+	for(int i=0;i<nToads;i++)if(toadId[i]==id)return 1;
 	return 0;
 }
 
-int Offered(int t, int p, int n)
+int Offered(int id, int n)
 {
-	for(int i=0;i<n;i++)if(offerType[i]==t&&offerParam[i]==p)return 1;
+	for(int i=0;i<n;i++)if(offerId[i]==id)return 1;
 	return 0;
 }
 
-// a random ability nobody has and that isn't offered yet
-void RandAbility(int n, int& t, int& p)
+// a random toad nobody has and that isn't offered yet
+int RandToad(int n)
 {
+	int id=0;
 	for(int tries=0;tries<100;tries++)
 	{
 		int r=irand()%10;
-		t=TT_LETTER;
-		if(r>=5)t=TT_LENGTH;
-		if(r>=8)t=TT_DOUBLE;
-		p=0;
-		if(t==TT_LETTER)p=toadLetters[irand()%20];
-		if(t==TT_LENGTH)p=3+irand()%4;
-		if(!ToadOwned(t,p)&&!Offered(t,p,n))return;
+		id=irand()%20;
+		if(r>=5)id=20+irand()%4;
+		if(r>=8)id=24;
+		if(!ToadOwned(id)&&!Offered(id,n))return id;
 	}
+	return id;
 }
 
 void MakeOffers()
 {
-	for(int i=0;i<3;i++)
-	{
-		offerType[i]=-1;
-		offerParam[i]=-1;
-	}
-	for(int i=0;i<3;i++)
-	{
-		int t;
-		int p;
-		RandAbility(i,t,p);
-		offerType[i]=t;
-		offerParam[i]=p;
-	}
+	for(int i=0;i<3;i++)SetOffer(i,-1);
+	for(int i=0;i<3;i++)SetOffer(i,RandToad(i));
 }
 
 void AbilityText(int t, int p, char* s)
 {
-	if(t==TT_LETTER)snprintf(s,31,"%c boxes",p-'a'+'A');
+	if(t==TT_LETTER)snprintf(s,31,"%c boxes",UpChar(p));
 	else if(t==TT_LENGTH)snprintf(s,31,"%i-letter words",p);
 	else snprintf(s,31,"double letters");
 }
@@ -401,7 +605,7 @@ void Upper(char* d, char* s)
 	int i=0;
 	while(s[i]!=0&&i<MAXW)
 	{
-		d[i]=s[i]-'a'+'A';
+		d[i]=UpChar(s[i]);
 		i++;
 	}
 	d[i]=0;
@@ -463,9 +667,29 @@ int StrEq(char* a, char* b)
 	return a[i]==b[i];
 }
 
+// the toads' favourite words in Ukrainian, every form of them (UTF-8 here,
+// turned into Windows-1251 in uaToadCp when the language is set)
+char* uaToadWords=" амфібія жаб жаба жабам жабами жабах жаби жабо жабою жабу жабі жабеня жабеням жабенят жабенята жабенятам жабенятами жабенятах жабеняти жабеняті жабенятка жабеняткам жабенятками жабенятках жабенятко жабеняткові жабенятком жабенятку жабеняток жабка жабкам жабками жабках жабки жабко жабкою жабку жабок жабці квакав квакай квакаймо квакайте квакала квакали квакало квакати квакатиме квакатимем квакатимемо квакатимете квакатимеш квакатиму квакатимуть квакать квакаю квакають квакає квакаємо квакаєте квакаєш кумкати лататтю латаття лататтям лататтями лататтях лататті латать пуголовка пуголовкам пуголовками пуголовках пуголовки пуголовкові пуголовком пуголовку пуголовків пуголовок ропусі ропух ропуха ропухам ропухами ропухах ропухи ропухо ропухою ропуху ставка ставкам ставками ставках ставки ставкові ставком ставку ставків ставок тритон тритона тритонам тритонами тритонах тритоне тритони тритонові тритоном тритону тритоні тритонів ";
+char uaToadCp[4096];
+
+// is " w " in the list?
+int InWordList(char* list, char* w)
+{
+	int n=TextLen(w);
+	for(int i=0;list[i]!=0;i++)
+	{
+		if(list[i]!=' ')continue;
+		int k=0;
+		while(k<n&&list[i+1+k]==w[k])k++;
+		if(k==n&&list[i+1+n]==' ')return 1;
+	}
+	return 0;
+}
+
 // the toads' favourite words (and their plurals) always score x2
 int IsToadWord(char* w)
 {
+	if(lang==LANG_UA)return InWordList(uaToadCp,w);
 	int n=TextLen(w);
 	char b[MAXW+1];
 	CopyStr(b,w,MAXW);
@@ -526,7 +750,38 @@ void ClearWord()
 
 // ---------------------------------------------------------------- saving
 
-char* SAVE_FILE="alphatoad.sav";
+// each language has its own progress; the language played last is in
+// alphatoad.cfg
+char* SAVE_EN="alphatoad.sav";
+char* SAVE_UA="alphatoad_ua.sav";
+char* SAVE_FILE=SAVE_EN;
+char* CFG_FILE="alphatoad.cfg";
+
+// how many numbers a line of the save file has
+int LineInts(char* s)
+{
+	int n=0;
+	int i=0;
+	while(s[i]!=0)
+	{
+		if(s[i]>='0'&&s[i]<='9')
+		{
+			n++;
+			while(s[i]>='0'&&s[i]<='9')i++;
+		}
+		else i++;
+	}
+	return n;
+}
+
+// toad number of an ability, for save files from before toads had numbers
+int OldToadId(int t, int p)
+{
+	if(t==TT_LENGTH)return 20+p-3;
+	if(t==TT_DOUBLE)return 24;
+	for(int i=0;i<20;i++)if(toadLetters[i]==p)return i;
+	return 0;
+}
 
 // the k-th number on a line of the save file
 int LineInt(char* s, int k)
@@ -553,7 +808,7 @@ void LineWord(char* s, char* d)
 	while(s[i]>='0'&&s[i]<='9')i++;
 	while(s[i]==' ')i++;
 	int n=0;
-	while(s[i]>='a'&&s[i]<='z'&&n<MAXW)
+	while(((s[i]>='a'&&s[i]<='z')||(s[i]&255)>=0xA0)&&n<MAXW)
 	{
 		d[n]=s[i];
 		n++;
@@ -595,12 +850,22 @@ void LoadTotals()
 		if(k==7)LineWord(s,longest);
 		if(k>=8&&k<11&&nToads<3)
 		{
-			toadType[nToads]=v;
-			toadParam[nToads]=LineInt(s,1);
-			toadLevel[nToads]=LineInt(s,2);
-			if(toadLevel[nToads]<1)toadLevel[nToads]=1;
-			if(toadLevel[nToads]>MAX_LEVEL)toadLevel[nToads]=MAX_LEVEL;
-			if(v>=0&&v<=2)nToads++;
+			// "number level toad"; older files had "type param level toad"
+			int id=v;
+			int level=LineInt(s,1);
+			if(LineInts(s)>=3)
+			{
+				id=OldToadId(v,LineInt(s,1));
+				level=LineInt(s,2);
+			}
+			if(level<1)level=1;
+			if(level>MAX_LEVEL)level=MAX_LEVEL;
+			if(id>=0&&id<TOAD_IDS&&!ToadOwned(id))
+			{
+				SetToad(nToads,id);
+				toadLevel[nToads]=level;
+				nToads++;
+			}
 		}
 		k++;
 	}
@@ -630,7 +895,7 @@ void SaveTotals()
 	fputs(s,f);
 	for(int i=0;i<nToads;i++)
 	{
-		snprintf(s,63,"%i %i %i toad\n",toadType[i],toadParam[i],toadLevel[i]);
+		snprintf(s,63,"%i %i toad\n",toadId[i],toadLevel[i]);
 		fputs(s,f);
 	}
 	fclose(f);
@@ -639,7 +904,10 @@ void SaveTotals()
 // ---------------------------------------------------------------- word meanings
 //
 // As in Wordy: every eaten word is looked up in the Free Dictionary API
-// (dictionaryapi.dev) and, when that has no entry, in Wiktionary. The last
+// (dictionaryapi.dev) and, when that has no entry, in Wiktionary. Ukrainian
+// words go straight to the Ukrainian section of the English Wiktionary,
+// which explains them in English (inflected forms as "genitive plural of
+// ЖАБА"). The last
 // NSLOTS words keep their meanings; the list at the bottom of the panel
 // shows them and a click brings one back.
 
@@ -666,7 +934,7 @@ char itemText[NSLOTS*MAX_ITEMS*ITEM_LEN];
 int shownSlot=-1;
 int nHist=0;          // words eaten this game; the newest is in slot (nHist-1)%NSLOTS
 
-char lkUrl[160];
+char lkUrl[400];
 char lkPath[64];
 char lkBuf[4096];
 
@@ -700,8 +968,12 @@ void StartLookup(int s, int source)
 {
 	char w[16];
 	for(int i=0;i<16;i++)w[i]=lkWord[s*16+i];
-	if(source==LK_DICT)snprintf(lkUrl,159,"https://api.dictionaryapi.dev/api/v2/entries/en/%s",w);
-	else snprintf(lkUrl,159,"https://en.wiktionary.org/api/rest_v1/page/definition/%s",w);
+	char u8[40];
+	char enc[128];
+	CpToUtf8(w,u8,40);
+	UrlEncode(u8,enc,128);
+	if(source==LK_DICT)snprintf(lkUrl,399,"https://api.dictionaryapi.dev/api/v2/entries/en/%s",enc);
+	else snprintf(lkUrl,399,"https://en.wiktionary.org/api/rest_v1/page/definition/%s",enc);
 	lkReq[s]=HttpGet(lkUrl);
 	lkState[s]=source;
 	if(lkReq[s]==0)lkState[s]=LK_OFFLINE;
@@ -732,7 +1004,8 @@ void Lookup(int s, char* w)
 		lkState[s]=LK_DONE;
 		return;
 	}
-	StartLookup(s,LK_DICT);
+	if(lang==LANG_UA)StartLookup(s,LK_WIKI);
+	else StartLookup(s,LK_DICT);
 }
 
 void ParseDict(int s, int id)
@@ -755,20 +1028,23 @@ void ParseDict(int s, int id)
 	}
 }
 
+char wikiKey[4];   // the language's section in Wiktionary's answer: en, uk
+
 void WikiDef(int id, int m, int d)
 {
-	snprintf(lkPath,63,"en.%i.definitions.%i.definition",m,d);
+	snprintf(lkPath,63,"%s.%i.definitions.%i.definition",wikiKey,m,d);
 	HttpJson(id,lkPath,lkBuf,4096);
 	HtmlToText(lkBuf);
-	Utf8ToAscii(lkBuf);
+	if(lang==LANG_UA)Utf8ToCp(lkBuf);
+	else Utf8ToAscii(lkBuf);
 }
 
 void ParseWiki(int s, int id)
 {
-	int nm=HttpJsonCount(id,"en");
+	int nm=HttpJsonCount(id,wikiKey);
 	for(int m=0;m<nm&&m<3;m++)
 	{
-		snprintf(lkPath,63,"en.%i.definitions",m);
+		snprintf(lkPath,63,"%s.%i.definitions",wikiKey,m);
 		int nd=HttpJsonCount(id,lkPath);
 		int shown=0;
 		for(int d=0;d<nd&&shown<2;d++)
@@ -777,7 +1053,7 @@ void ParseWiki(int s, int id)
 			if(lkBuf[0]==0)continue;
 			if(shown==0)
 			{
-				snprintf(lkPath,63,"en.%i.partOfSpeech",m);
+				snprintf(lkPath,63,"%s.%i.partOfSpeech",wikiKey,m);
 				HttpJson(id,lkPath,lkBuf,4096);
 				AddItem(s,0);
 				WikiDef(id,m,d);
@@ -859,9 +1135,12 @@ void Spawn(int n, int tmin)
 			}
 			pick--;
 		}
-		// keep roughly one vowel in three on the pond, or few words fit
+		// keep roughly one vowel in three on the pond (two in five in
+		// Ukrainian), or few words fit
 		int v=0;
-		if(vowels*3<boxes+1&&irand()%10<6)v=1;
+		int few=vowels*3<boxes+1;
+		if(lang==LANG_UA)few=vowels*5<(boxes+1)*2;
+		if(few&&irand()%10<6)v=1;
 		kind[c]=K_BOX;
 		let[c]=RandLetter(v);
 		tim[c]=tmin+irand()%(10-tmin);
@@ -1131,6 +1410,64 @@ int CellAt(int mx, int my)
 	return cy*cols+cx;
 }
 
+// ---------------------------------------------------------------- language
+
+char langUA[4];       // the button label in Ukrainian, built at start
+float langT=-10;      // first click on the language button
+
+int LoadLang()
+{
+	FILE* f=fopen(CFG_FILE,"rb");
+	if(f==0)return LANG_EN;
+	char s[16];
+	int l=LANG_EN;
+	s[0]=0;
+	fgets(s,16,f);
+	if(s[0]=='u'&&s[1]=='a')l=LANG_UA;
+	fclose(f);
+	return l;
+}
+
+void SaveLang()
+{
+	FILE* f=fopen(CFG_FILE,"wb");
+	if(f==0)return;
+	if(lang==LANG_UA)fputs("ua language\n",f);
+	else fputs("en language\n",f);
+	fclose(f);
+}
+
+// letters, dictionary, toads and progress of language l
+void SetLanguage(int l)
+{
+	lang=l;
+	SaveLang();
+	SetLetters();
+	wikiKey[0]='e';
+	wikiKey[1]='n';
+	wikiKey[2]=0;
+	SAVE_FILE=SAVE_EN;
+	if(lang==LANG_UA)
+	{
+		wikiKey[0]='u';
+		wikiKey[1]='k';
+		SAVE_FILE=SAVE_UA;
+		CopyStr(uaToadCp,uaToadWords,4095);
+		Utf8ToCp(uaToadCp);
+		LoadDict("words_ua.txt");
+	}
+	else LoadDict("words.txt");
+	LoadTotals();
+	for(int i=0;i<3;i++)SetOffer(i,-1);
+	if(nToads==0)
+	{
+		// the first toad comes for free
+		SetToad(0,RandToad(0));
+		toadLevel[0]=1;
+		nToads=1;
+	}
+}
+
 // ---------------------------------------------------------------- the TOADS screen
 
 void ToggleToads()
@@ -1152,8 +1489,7 @@ void RaiseToad(int i)
 void ClaimToad(int j)
 {
 	if(prizes<=0||nToads>=3)return;
-	toadType[nToads]=offerType[j];
-	toadParam[nToads]=offerParam[j];
+	SetToad(nToads,offerId[j]);
 	toadLevel[nToads]=1;
 	nToads++;
 	prizes--;
@@ -1170,10 +1506,14 @@ void Stroke(float r, float k)
 	g.stroke();
 }
 
+char textBuf[640];
+
+// s may hold Ukrainian letters in Windows-1251
 void Text(char* s, float x, float y, float sx, float sy, int c, float r, float k)
 {
+	CpToUtf8(s,textBuf,640);
 	g.clear();
-	DrawText(g,*pfont,s,0,x,y,sx,sy);
+	DrawText(g,*pfont,textBuf,0,x,y,sx,sy);
 	g.fin();
 	g.rgba32(c);
 	Stroke(r,k);
@@ -1194,7 +1534,7 @@ void TextR(char* s, float rx, float cy, float sc, int c, float r, float k)
 void Letter(int ch, float cx, float cy, float sx, float sy, int c, float r, float k)
 {
 	g.clear();
-	DrawGlyph(g,*pfont,ch,cx-2*sx,cy+4.5*sy,sx,sy);
+	DrawGlyph(g,*pfont,CpToUni(ch),cx-2*sx,cy+4.5*sy,sx,sy);
 	g.fin();
 	g.rgba32(c);
 	Stroke(r,k);
@@ -1314,7 +1654,7 @@ void DrawBox(float cx, float cy, float s, int ch, int t, int order, int hover, f
 	if(hover&&order==0)FillBox(x+s*0.06,y+s*0.05,s*0.88,s*0.84,r*0.8,Fade(0x30ffffff,a));
 	float lw=s/62*2.;
 	if(lw<1.2)lw=1.2;
-	Letter(ch-'a'+'A',cx-s*0.04,cy-s*0.03,s*0.052,s*0.046,Fade(0xff3c2412,a),lw,2.);
+	Letter(UpChar(ch),cx-s*0.04,cy-s*0.03,s*0.052,s*0.046,Fade(0xff3c2412,a),lw,2.);
 	float bx=x+s*0.80;
 	float by=y+s*0.80;
 	float p=1+0.35*tickPop;
@@ -1354,7 +1694,7 @@ void DrawStone(int i, float cx, float cy, float s, int ch, float a)
 	g.stroke();
 	Ellipse(cx-s*0.12,cy-s*0.16,s*0.16,s*0.08,Fade(0x30ffffff,a));
 	float lw=s/62*1.8;
-	Letter(ch-'a'+'A',cx,cy+s*0.02,s*0.045,s*0.040,Fade(0x50202628,a),lw,2.);
+	Letter(UpChar(ch),cx,cy+s*0.02,s*0.045,s*0.040,Fade(0x50202628,a),lw,2.);
 }
 
 float Shake(float T)
@@ -1646,7 +1986,8 @@ void DrawTray(float T, int mx, int my)
 	float dx=Shake(T);
 	if(nsel==0)
 	{
-		if(phase==PH_INPUT)TextC("Click boxes or type letters to spell a word",PLAY_W/2+dx,TRAY_Y,1.4,COL_DIM,1.2,2.);
+		if(phase==PH_INPUT&&lang==LANG_UA)TextC("Click boxes to spell a word",PLAY_W/2+dx,TRAY_Y,1.4,COL_DIM,1.2,2.);
+		else if(phase==PH_INPUT)TextC("Click boxes or type letters to spell a word",PLAY_W/2+dx,TRAY_Y,1.4,COL_DIM,1.2,2.);
 	}
 	else
 	{
@@ -1770,7 +2111,7 @@ void SlotWord(int s, char* w)
 	int i=0;
 	while(lkWord[s*16+i]!=0&&i<15)
 	{
-		w[i]=lkWord[s*16+i]-'a'+'A';
+		w[i]=UpChar(lkWord[s*16+i]);
 		i++;
 	}
 	w[i]=0;
@@ -1906,6 +2247,10 @@ void DrawPanel(float T, int mx, int my)
 #define NEWBTN_X 12
 #define TOADBTN_X 120
 #define STATBTN_X (G_SCREEN_WIDTH-12-BTN_W)
+#define LANGBTN_W 56
+#define LANGBTN_X (STATBTN_X-8-LANGBTN_W)
+#define X2BTN_W 40
+#define X2BTN_X (LANGBTN_X-8-X2BTN_W)   // x2: the window twice as big
 
 #define ST_X 230
 #define ST_Y 170
@@ -1948,6 +2293,28 @@ void DrawHeader(int mx, int my)
 	}
 	else Button("TOADS",TOADBTN_X,BTN_Y,BTN_W,BTN_H,COL_BTN,mx,my);
 	Button("STATISTICS",STATBTN_X,BTN_Y,BTN_W,BTN_H,COL_BTN,mx,my);
+	if(SC==2)Button("x2",X2BTN_X,BTN_Y,X2BTN_W,BTN_H,COL_GO,mx,my);
+	else Button("x2",X2BTN_X,BTN_Y,X2BTN_W,BTN_H,COL_BTN,mx,my);
+	if(Time()-langT<3)Button("SURE?",LANGBTN_X,BTN_Y,LANGBTN_W,BTN_H,0xffa83a32,mx,my);
+	else if(lang==LANG_UA)Button(langUA,LANGBTN_X,BTN_Y,LANGBTN_W,BTN_H,COL_BTN,mx,my);
+	else Button("ENG",LANGBTN_X,BTN_Y,LANGBTN_W,BTN_H,COL_BTN,mx,my);
+}
+
+// the language button shows the language played; a click switches to the
+// other one and starts a new game (twice when a game is going on)
+void LangButton()
+{
+	int playing=phase!=PH_OVER&&!(score==0&&turn==1);
+	if(playing&&Time()-langT>=3)
+	{
+		langT=Time();
+		if(lang==LANG_EN)Message("Click again to play in Ukrainian",3);
+		else Message("Click again to play in English",3);
+		return;
+	}
+	langT=-10;
+	SetLanguage(1-lang);
+	NewGame();
 }
 
 void NewGameButton()
@@ -2247,7 +2614,11 @@ void OnKey(int k)
 	}
 	if(phase!=PH_INPUT)return;
 	if(k>='A'&&k<='Z')k=k-'A'+'a';
-	if(k>='a'&&k<='z')TypeLetter(k);
+	if(k>='a'&&k<='z')
+	{
+		// Scinc doesn't pass Cyrillic keys yet: Ukrainian is spelled by clicking
+		if(lang==LANG_EN)TypeLetter(k);
+	}
 	else if(k==KEY_BACK)
 	{
 		if(nsel>0)
@@ -2262,6 +2633,11 @@ void OnKey(int k)
 
 void OnClick(int mx, int my)
 {
+	if(Over(X2BTN_X,BTN_Y,X2BTN_W,BTN_H,mx,my))
+	{
+		scaleReq=1;    // done by the main loop, which owns the window
+		return;
+	}
 	if(toadsOpen)
 	{
 		ToadsClick(mx,my);
@@ -2283,6 +2659,11 @@ void OnClick(int mx, int my)
 	if(Over(TOADBTN_X,BTN_Y,BTN_W,BTN_H,mx,my))
 	{
 		ToggleToads();
+		return;
+	}
+	if(Over(LANGBTN_X,BTN_Y,LANGBTN_W,BTN_H,mx,my))
+	{
+		LangButton();
 		return;
 	}
 	if(Over(STATBTN_X,BTN_Y,BTN_W,BTN_H,mx,my))
@@ -2373,6 +2754,26 @@ void ParseSize(char* a)
 	rows=r;
 }
 
+// The x2 button switches between the unscaled window and one twice as big, rendered at
+// twice the resolution (-x2 starts with the big one). The layout stays in
+// logical units: only the window, the transform and SC change.
+float winSC=1;     // the scale of the window we have now
+
+void SetScale(float s)
+{
+	SC=s;
+	if(winSC!=SC)
+	{
+		wsys.DeleteWindow(mainWin);
+		mainWin=wsys.CreateWindow(G_SCREEN_WIDTH*SC,G_SCREEN_HEIGHT*SC,1,1,G_SCREEN_MODE);
+		g.SetActiveRT(wsys.GetWindowRT(mainWin));
+		winSC=SC;
+	}
+	g.t_0(0,0);
+	g.t_x(SC,0);
+	g.t_y(0,SC);
+}
+
 int main(int argc, pchar* argv)
 {
 	for(int i=1;i<argc;i++)
@@ -2381,15 +2782,7 @@ int main(int argc, pchar* argv)
 		if(a[0]=='-'&&a[1]=='x'&&a[2]=='2'&&a[3]==0)SC=2;
 		else ParseSize(a);
 	}
-	if(SC!=1)
-	{
-		wsys.DeleteWindow(mainWin);
-		mainWin=wsys.CreateWindow(G_SCREEN_WIDTH*SC,G_SCREEN_HEIGHT*SC,1,1,G_SCREEN_MODE);
-		g.SetActiveRT(wsys.GetWindowRT(mainWin));
-	}
-	g.t_0(0,0);
-	g.t_x(SC,0);
-	g.t_y(0,SC);
+	SetScale(SC);
 
 	pfont=(CFont*)malloc(sizeof(CFont));
 	CFontMaker fm;
@@ -2400,24 +2793,13 @@ int main(int argc, pchar* argv)
 	seed+=timeSeed;
 	irand();
 
-	LoadDict();
-	LoadTotals();
-	if(nToads==0)
-	{
-		// the first toad comes for free
-		int t;
-		int p;
-		for(int i=0;i<3;i++)
-		{
-			offerType[i]=-1;
-			offerParam[i]=-1;
-		}
-		RandAbility(0,t,p);
-		toadType[0]=t;
-		toadParam[0]=p;
-		toadLevel[0]=1;
-		nToads=1;
-	}
+	dictBuf=(char*)malloc(DICT_BYTES);
+	dictOff=(int*)malloc(4*DICT_WORDS);
+	langUA[0]=UniToCp(0x423);
+	langUA[1]=UniToCp(0x41A);
+	langUA[2]=UniToCp(0x420);
+	langUA[3]=0;
+	SetLanguage(LoadLang());
 	Layout();
 	for(int s=0;s<NSLOTS;s++)lkReq[s]=0;
 	NewGame();
@@ -2450,6 +2832,12 @@ int main(int argc, pchar* argv)
 		mx=mx/SC;
 		my=my/SC;
 		if((mb&1)&&!(prevMB&1))OnClick(mx,my);
+		if(scaleReq)
+		{
+			scaleReq=0;
+			SetScale(3-SC);
+			dirty=1;
+		}
 		if(mx!=prevMX||my!=prevMY||mb!=prevMB)dirty=1;
 		prevMB=mb;
 		prevMX=mx;
@@ -2473,10 +2861,14 @@ int main(int argc, pchar* argv)
 		}
 		else
 		{
+			// nothing changed: keep the events flowing and, every few
+			// seconds, show the frame again in case the window was covered
+			// (the runtime reports no expose event). Showing a still frame
+			// is the main idle cost, more so in the x2 window, so not often.
 			Poll();
 			SScincEvent ev;
 			while(GetScincEvent(ev)){}
-			if(T-lastPresent>0.5)
+			if(T-lastPresent>3)
 			{
 				wsys.Present(mainWin);
 				lastPresent=T;
