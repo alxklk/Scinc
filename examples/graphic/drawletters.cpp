@@ -6,7 +6,10 @@
 	#define G_SCREEN_SCALE 4
 #endif
 
+#define NO_GREEDY_EVENT // events are read in the main loop
+
 #include "graphics.h"
+#include "../ws.h"
 
 Graph g;
 
@@ -56,12 +59,12 @@ int main()
 		{
 			if(ev.type=='MMOV')
 			{
-				sx=ev._1/10.;
-				sy=ev._2/10.;
+				sx=ev.x/10.;
+				sy=ev.y/10.;
 			}
 			if(ev.type=='KBDN')
 			{
-				sym=ev._0;
+				sym=ev.x;
 			}
 		}
 		redraw=false;
@@ -80,7 +83,7 @@ int main()
 		ConvertGlyph(font, sym, x, y, sx, sy, step);
 
 		Present();
-		WaitForScincEvent();
+		WaitForScincEvent(1.);
 	}
 	return 0;
 }
