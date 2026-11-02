@@ -1,0 +1,16 @@
+# compile_flags.txt points clangd at the Scinc mocks in clang_mock/.
+# These files are real C++ built by a native compiler, so they get the system
+# headers instead.
+If:
+  PathMatch:
+    - .*_dl\.cpp
+    - dynamic_native/fileio_wrap\.cpp
+    - net/.*
+    - io/ls\.cpp
+    - sound/minimp3.*\.h
+CompileFlags:
+  Remove:
+    - -nostdinc*
+    - -fno-builtin
+    - -Iclang_mock
+    - -include*

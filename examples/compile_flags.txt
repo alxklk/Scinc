@@ -1,0 +1,14 @@
+-xc++
+-std=c++20
+-nostdinc
+-nostdinc++
+-fno-builtin
+-ferror-limit=0
+-Iclang_mock
+-includeclang_mock/scinc_base.h
+-Wno-multichar
+-Wno-writable-strings
+-Wno-c++11-narrowing
+-Wno-unknown-pragmas
+-Wno-unknown-attributes
+-Wno-keyword-macro
