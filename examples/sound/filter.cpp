@@ -40,49 +40,6 @@ double frand(int& seed)
 
 //#define ALMOST_ONE 0.9999999999999
 
-/*double mod(double a, double b)
-{
-	int r=a/b;
-	return a-b*r;
-}*/
-
-float fract(float a)
-{
-	return a-int(a);
-}
-
-double lega(double globalTime, double time, double t0, double t1, double f0, double f1)
-{
-	if(time<t0)
-		time=t0;
-	else if(time>t1)
-		time=t1;
-	double dt=t1-t0;
-
-	double t=(time-t0)/dt;
-
-	double p0=fract(t0*f0);
-	double p1=fract(t1*f1);
-
-	double y0=t0*f0;
-	y0+=-fract(y0)+p0;
-	double y1=y0+(f1+f0)/2.*dt;
-	y1+=-fract(y1)+p1;
-
-	double invt=1.-t;
-
-	double y=y0*invt*invt*invt
-			+3.*(y0+dt/3.*f0)*invt*invt*t
-			+3.*(y1-dt/3.*f1)*invt*t*t
-			+y1*t*t*t;
-
-	y=y-double(int(y));
-	double v=sin(y*2.*M_PI);
-
-	return v;
-}
-
-
 int cursnd;
 
 Graph g;
@@ -185,7 +142,34 @@ float SndNoise(float t)
 
 float mfreq=0.;
 float cfreq=0.;
-float prevmfreq=0.;
+
+bool toneOn=false;
+double toneFreq=0.;
+double tonePhase=0.;
+
+// Sine at mfreq. The phase is accumulated, so it stays continuous however the
+// frequency changes; the frequency is ramped across the block.
+void MixTone()
+{
+	if(!toneOn)
+	{
+		toneOn=true;
+		toneFreq=mfreq;
+		tonePhase=0.;
+	}
+	double step=(mfreq-toneFreq)/(NFFT/2);
+	for(int i=NFFT/2;i<NFFT;i++)
+	{
+		toneFreq+=step;
+		tonePhase+=toneFreq/48000.;
+		if(tonePhase>=1.)
+			tonePhase-=1.;
+		double l=sin(tonePhase*2.*M_PI)*.3;
+		int idx=i+i;
+		echo[idx  ]+=l;
+		echo[idx+1]+=l;
+	}
+}
 
 void GenerateSamples()
 {
@@ -196,22 +180,9 @@ void GenerateSamples()
 	}
 	{
 		if(sine_lega_on)
-		{
-			for(int i=NFFT/2;i<NFFT;i++)
-			{
-				int s=curSample+i;
-				float res=48000./NFFT;
-				double l=lega(s/48000.,s/48000.,(curSample+NFFT/2)/48000.,(curSample+NFFT)/48000.,prevmfreq,mfreq)*.3;
-				//double l=lega(s/48000.,s/48000.,(curSample+NFFT/2)/48000.,(curSample+NFFT)/48000.,
-				//	3000.+2500.*sin((curSample+NFFT/2)/48000.*M_PI),3000.+2500.*sin((curSample+NFFT)/48000.*M_PI)
-				//)*.3;
-				//double l=sin(s/48000.*M_PI*880.);
-				int idx=i+i;
-				echo[idx  ]+=l;
-				echo[idx+1]+=l;
-			}
-			prevmfreq=mfreq;
-		}
+			MixTone();
+		else
+			toneOn=false;
 		if(sine_on)
 		{
 			float res=48000./NFFT;
