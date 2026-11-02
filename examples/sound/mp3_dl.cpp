@@ -46,6 +46,46 @@ int close_dec()
     return 0;
 }
 
+// Independent looping decoders, so several files can play at once.
+#define MP3_SLOTS 4
+
+mp3dec_ex_t slots[MP3_SLOTS];
+
+int mp3_open(int slot, const char *file_name)
+{
+    if (slot<0 || slot>=MP3_SLOTS || !file_name || !*file_name)
+        return 0;
+    mp3dec_ex_close(&slots[slot]);
+    memset(&slots[slot], 0, sizeof(slots[slot]));
+    mp3dec_ex_open(&slots[slot], file_name, MP3D_SEEK_TO_SAMPLE);
+    return slots[slot].samples ? 1 : 0;
+}
+
+void mp3_read(int slot, void* buf, int bytes)
+{
+    memset(buf, 0, bytes);
+    if (slot<0 || slot>=MP3_SLOTS || !slots[slot].samples)
+        return;
+    mp3d_sample_t* out=(mp3d_sample_t*)buf;
+    size_t want=bytes/sizeof(mp3d_sample_t);
+    while (want)
+    {
+        size_t got=mp3dec_ex_read(&slots[slot], out, want);
+        if (!got)
+        {
+            if (mp3dec_ex_seek(&slots[slot], 0))
+                return;
+            got=mp3dec_ex_read(&slots[slot], out, want);
+            if (!got)
+                return;
+        }
+        out+=got;
+        want-=got;
+    }
+}
+
 extern "C" EXPORT int open_dec_wrapper(ScincVM* s, void*){ScincBoundCall(s,open_dec);return 0;}
 extern "C" EXPORT int decode_samples_wrapper(ScincVM* s, void*){ScincBoundCall(s,decode_samples);return 0;}
 extern "C" EXPORT int close_dec_wrapper(ScincVM* s, void*){ScincBoundCall(s,open_dec);return 0;}
+extern "C" EXPORT int mp3_open_wrapper(ScincVM* s, void*){ScincBoundCall(s,mp3_open);return 0;}
+extern "C" EXPORT int mp3_read_wrapper(ScincVM* s, void*){ScincBoundCall(s,mp3_read);return 0;}

@@ -111,6 +111,10 @@ int oneliner_on=false;
 int uprising_on=false;
 double upT[16]={};
 int rawfile_on=false;
+int mp3_music_on=false;
+int mp3_song_on=false;
+int mp3_male_on=false;
+int mp3_female_on=false;
 int mic_in=false;
 float shift=0.;
 
@@ -171,6 +175,50 @@ void MixTone()
 		echo[idx  ]+=l;
 		echo[idx+1]+=l;
 	}
+}
+
+// Adds one block from an MP3 decoder slot to the output, stereo mixed down to mono.
+void MixMp3(int slot)
+{
+	char buf[NFFT*2];
+	mp3_read(slot,&buf[0],NFFT*2);
+	int bp=0;
+	for(int i=NFFT/2;i<NFFT;i++)
+	{
+		int l=(buf[bp+1]<<8)+buf[bp];
+		int r=(buf[bp+3]<<8)+buf[bp+2];
+		if(l>=32768)l=l-65536;
+		if(r>=32768)r=r-65536;
+		bp+=4;
+		double v=(l+r)/131072.;
+		int idx=i+i;
+		echo[idx  ]+=v;
+		echo[idx+1]+=v;
+	}
+}
+
+// The MP3 checkboxes act as radio buttons: a newly checked one clears the rest.
+int mp3_sel=-1;
+
+void Mp3Exclusive()
+{
+	int on[5];
+	on[0]=rawfile_on;
+	on[1]=mp3_music_on;
+	on[2]=mp3_song_on;
+	on[3]=mp3_male_on;
+	on[4]=mp3_female_on;
+	int sel=-1;
+	for(int i=0;i<5;i++)
+		if(on[i]&&(i==mp3_sel))sel=i;
+	for(int i=0;i<5;i++)
+		if(on[i]&&(i!=mp3_sel))sel=i;
+	mp3_sel=sel;
+	rawfile_on=sel==0;
+	mp3_music_on=sel==1;
+	mp3_song_on=sel==2;
+	mp3_male_on=sel==3;
+	mp3_female_on=sel==4;
 }
 
 void GenerateSamples()
@@ -257,6 +305,10 @@ void GenerateSamples()
 				echo[idx+1]+=l;
 			}
 		}
+		if(mp3_music_on)MixMp3(0);
+		if(mp3_song_on)MixMp3(1);
+		if(mp3_male_on)MixMp3(2);
+		if(mp3_female_on)MixMp3(3);
 		if(square_on)
 		{
 			for(int i=NFFT/2;i<NFFT;i++)
@@ -413,6 +465,10 @@ int main()
 	gui.AddCheck("Shift" ,80,ctly+=ctldy,65,15,0,&shift_on);
 	gui.AddCheck("Cut"   ,80,ctly+=ctldy,65,15,0,&cut_on);
 	gui.AddCheck("InvC"  ,80,ctly+=ctldy,65,15,0,&inv);
+	gui.AddCheck("MP3 Music" ,80,ctly+=ctldy,110,15,0,&mp3_music_on);
+	gui.AddCheck("MP3 Song"  ,80,ctly+=ctldy,110,15,0,&mp3_song_on);
+	gui.AddCheck("MP3 Male"  ,80,ctly+=ctldy,110,15,0,&mp3_male_on);
+	gui.AddCheck("MP3 Female",80,ctly+=ctldy,110,15,0,&mp3_female_on);
 
 	gui.AddSlide("Shift",   200,10,401,15,0,&shift, false,0,200);
 	gui.AddSlide("Freq",    200,30,401,15,0,&mfreq, false,0,48000./NFFT*100);
@@ -476,6 +532,10 @@ int main()
 	//open_dec("bensound-funnysong.mp3");
 	//open_dec("money.mp3");
 	open_dec("bear.mp3");
+	mp3_open(0,"samples/music.mp3");
+	mp3_open(1,"samples/song.mp3");
+	mp3_open(2,"samples/male.mp3");
+	mp3_open(3,"samples/female.mp3");
 	FFT_Init();
 	MIC_In_Init(NFFT/2);	
 //	StdFreqs();
@@ -578,6 +638,7 @@ int main()
 		bool didOut=false;
 		int gscount=0;
 		CSound s;
+		Mp3Exclusive();
 		while(s.snd_bufhealth()<1024*2+NFFT)
 		{
 			gscount++;
