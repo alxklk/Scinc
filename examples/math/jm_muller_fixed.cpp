@@ -1,6 +1,7 @@
 #define FIXED_DIGITS 155
 #define FIXED_FRACTS 145
 
+#include "fixed_digistream.h"
 #include "fixed.h"
 
 fixed  muller_recurrence(fixed& y, fixed& z)

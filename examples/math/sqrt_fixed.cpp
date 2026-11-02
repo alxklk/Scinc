@@ -1,6 +1,7 @@
 #define FIXED_DIGITS 150
 #define FIXED_FRACTS 130
 
+#include "fixed_digistream.h"
 #include "fixed.h"
 
 int main(

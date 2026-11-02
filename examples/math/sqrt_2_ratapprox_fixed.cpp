@@ -1,5 +1,6 @@
 #define FIXED_DIGITS 250
 
+#include "fixed_digistream.h"
 #include "fixed.h"
 
 int main(

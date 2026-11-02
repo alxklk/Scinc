@@ -1,8 +1,5 @@
 #include <stdio.h>
 
-#ifdef __SCINC__
-#define const
-#endif
 
 #ifndef FIXED_DIGITS
 #define FIXED_DIGITS 250
@@ -410,6 +407,12 @@ public:
 		}
 		n.sign=newsign;
 		return n;
+	}
+
+	void Print()
+	{
+		CDigitStream out;
+		Print(out);
 	}
 
 	void Print(CDigitStream& out)
