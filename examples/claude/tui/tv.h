@@ -19,6 +19,7 @@ int  TvAppMouse(int win, int ev, int x, int y);      // x,y relative to the wind
 void TvAppCommand(int cmd);                          // menu, status line and hot keys
 void TvAppButton(int win, int ctl, int cmd);         // a non-modal window's button
 void TvAppClosed(int win);
+void TvAppListItem(int win, int ctl, int i, char* out, int max); // items of a virtual list
 
 // ---------------------------------------------------------------- keys and events
 
@@ -284,17 +285,72 @@ void StrCpy(char* d, char* s, int max)
 	d[i]=0;
 }
 
-// Returns the column after the text.
-int TvText(int x, int y, char* s, int at)
+// Decodes the UTF-8 character at s[i] and moves i past it. Invalid bytes give '?'.
+int TvUtf8(char* s, int& i)
 {
+	int c=s[i];
+	i++;
+	if(c<0x80)return c;
+	int more=0;
+	int v=0;
+	if((c>=0xC2)&&(c<0xE0))
+	{
+		more=1;
+		v=c&31;
+	}
+	else if((c>=0xE0)&&(c<0xF0))
+	{
+		more=2;
+		v=c&15;
+	}
+	else if((c>=0xF0)&&(c<0xF5))
+	{
+		more=3;
+		v=c&7;
+	}
+	else return '?';
+	for(int k=0;k<more;k++)
+	{
+		int n=s[i];
+		if((n&0xC0)!=0x80)return '?';
+		v=(v<<6)|(n&63);
+		i++;
+	}
+	// beyond the three-byte range OutUtf8 can send
+	if(v>0xFFFF)return '?';
+	return v;
+}
+
+// The number of screen columns a string takes.
+int TvCols(char* s)
+{
+	int n=0;
 	int i=0;
 	while(s[i]!=0)
 	{
-		TvPut(x,y,s[i],at);
+		TvUtf8(s,i);
+		n++;
+	}
+	return n;
+}
+
+// Draws at most maxCols columns. Returns the column after the text.
+int TvTextN(int x, int y, char* s, int at, int maxCols)
+{
+	int i=0;
+	int n=0;
+	while((s[i]!=0)&&(n<maxCols))
+	{
+		TvPut(x,y,TvUtf8(s,i),at);
 		x++;
-		i++;
+		n++;
 	}
 	return x;
+}
+
+int TvText(int x, int y, char* s, int at)
+{
+	return TvTextN(x,y,s,at,1000000);
 }
 
 // "~F~ile": text between tildes is drawn in the hot colour.
@@ -437,6 +493,18 @@ int TvVBarHit(int y, int h, int pos, int max, int my)
 	return 2;
 }
 
+// The scroll position for a thumb dragged to row my, the inverse of the thumb
+// placement in TvVBar. Rounds up so that the thumb lands on the row under the mouse.
+int TvVBarPos(int y, int h, int max, int my)
+{
+	int cells=h-3;
+	if(cells<=0)return 0;
+	int row=my-(y+1);
+	if(row<0)row=0;
+	if(row>cells)row=cells;
+	return (row*max+cells-1)/cells;
+}
+
 // ---------------------------------------------------------------- windows and controls
 
 #define TV_MAXWIN 16
@@ -488,6 +556,7 @@ struct TWin
 	int c;
 	int d;
 	int e;
+	int f;
 	char title[48];
 };
 
@@ -505,6 +574,8 @@ struct TCtl
 	int cmd;
 	int isDefault;
 	int group;
+	int virt;   // a list asks TvAppListItem for its items
+	int count;  // the item count of a virtual list
 	char text[200];
 };
 
@@ -516,7 +587,7 @@ int tvRunning=1;
 int tvDirty=1;
 
 int dragWin=-1;
-int dragMode=0;      // 1 move, 2 resize, 3 pressed button
+int dragMode=0;      // 1 move, 2 resize, 3 pressed button, 4 captured by the app, 5 list thumb
 int dragDX=0;
 int dragDY=0;
 int dragCtl=-1;
@@ -563,6 +634,7 @@ int TvNew(int type, char* title, int x, int y, int w, int h, int flags)
 	t.c=0;
 	t.d=0;
 	t.e=0;
+	t.f=0;
 	StrCpy(&t.title[0],title,48);
 	// the smallest free number, for the Alt+digit shortcut
 	t.num=0;
@@ -639,6 +711,8 @@ int TvAdd(int win, int type, int x, int y, int w, int h, char* text, int cmd)
 	c.cmd=cmd;
 	c.isDefault=0;
 	c.group=0;
+	c.virt=0;
+	c.count=0;
 	StrCpy(&c.text[0],text,200);
 	if(type!=C_LABEL)
 		if(tvWin[win].focus<0)tvWin[win].focus=id;
@@ -677,6 +751,12 @@ void TvItemAt(char* s, int n, char* out, int max)
 		i++;
 	}
 	out[o]=0;
+}
+
+int TvListCount(TCtl& c)
+{
+	if(c.virt)return c.count;
+	return TvItemCount(&c.text[0]);
 }
 
 void TvDrawCtl(int id, TWin& t)
@@ -741,8 +821,10 @@ void TvDrawCtl(int id, TWin& t)
 	}
 	else if(c.type==C_LIST)
 	{
-		int n=TvItemCount(&c.text[0]);
-		char item[64];
+		int n=TvListCount(c);
+		char item[256];
+		int saveX1=clipX1;
+		if(clipX1>x+c.w-1)clipX1=x+c.w-1;
 		if(c.val<c.top)c.top=c.val;
 		if(c.val>=c.top+c.h)c.top=c.val-c.h+1;
 		for(int j=0;j<c.h;j++)
@@ -757,10 +839,12 @@ void TvDrawCtl(int id, TWin& t)
 			TvFill(x,y+j,c.w-1,1,' ',at);
 			if(k<n)
 			{
-				TvItemAt(&c.text[0],k,&item[0],64);
+				if(c.virt)TvAppListItem(c.win,id,k,&item[0],256);
+				else TvItemAt(&c.text[0],k,&item[0],256);
 				TvText(x+1,y+j,&item[0],at);
 			}
 		}
+		clipX1=saveX1;
 		int mx=n-c.h;
 		if(mx<0)mx=0;
 		TvVBar(x+c.w-1,y,c.h,c.top,mx,0x31);
@@ -790,12 +874,13 @@ void TvDrawWin(int id)
 	if(dragging)at=at&0xF0|0x0A;
 	TvFrame(t.x,t.y,t.w,t.h,active&&!dragging,at);
 	// title
-	int tl=StrLen(&t.title[0]);
+	int tl=TvCols(&t.title[0]);
+	if(tl>t.w-16)tl=t.w-16;
 	if(tl>0)
 	{
 		int tx=t.x+(t.w-tl-2)/2;
 		TvPut(tx,t.y,' ',at);
-		int e=TvText(tx+1,t.y,&t.title[0],at);
+		int e=TvTextN(tx+1,t.y,&t.title[0],at,tl);
 		TvPut(e,t.y,' ',at);
 	}
 	if(active&&!dragging)
@@ -1350,7 +1435,7 @@ int TvCtlKey(int win, int key)
 	}
 	if(c.type==C_LIST)
 	{
-		int n=TvItemCount(&c.text[0]);
+		int n=TvListCount(c);
 		int v=c.val;
 		if(key==K_UP)v--;
 		else if(key==K_DOWN)v++;
@@ -1369,6 +1454,19 @@ int TvCtlKey(int win, int key)
 		TvSelect(win,t.focus);
 		return 1;
 	}
+	return 0;
+}
+
+// Presses the window's default button. Returns 1 if it has one.
+int TvFireDefault(int win)
+{
+	for(int i=0;i<TV_MAXCTL;i++)
+		if(tvCtl[i].used)
+			if((tvCtl[i].win==win)&&tvCtl[i].isDefault)
+			{
+				TvFire(win,i);
+				return 1;
+			}
 	return 0;
 }
 
@@ -1392,14 +1490,7 @@ int TvDialogKey(int win, int key)
 				TvFire(win,t.focus);
 				return 1;
 			}
-		for(int i=0;i<TV_MAXCTL;i++)
-			if(tvCtl[i].used)
-				if((tvCtl[i].win==win)&&tvCtl[i].isDefault)
-				{
-					TvFire(win,i);
-					return 1;
-				}
-		return 0;
+		return TvFireDefault(win);
 	}
 	// hot letters: Alt+letter anywhere, the bare letter unless typing in a field
 	int letter=0;
@@ -1453,6 +1544,29 @@ int TvCtlAt(int win, int mx, int my)
 	return -1;
 }
 
+// Sends every EV_MDRAG to this window until the button is released, wherever the
+// pointer goes. For an application's own scroll bar thumb.
+void TvCaptureMouse(int win)
+{
+	dragWin=win;
+	dragMode=4;
+}
+
+void TvListDragThumb(int win, int id, int my)
+{
+	TWin& t=tvWin[win];
+	TCtl& c=tvCtl[id];
+	int mxTop=TvListCount(c)-c.h;
+	if(mxTop<0)mxTop=0;
+	c.top=TvVBarPos(t.y+c.y,c.h,mxTop,my);
+	// drawing scrolls the selection into view, so keep it inside the visible rows
+	if(c.val<c.top)c.val=c.top;
+	if(c.val>=c.top+c.h)c.val=c.top+c.h-1;
+}
+
+int lastClickCtl=-1;
+float lastClickTime=0.;
+
 void TvCtlMouseDown(int win, int id, int mx, int my)
 {
 	TWin& t=tvWin[win];
@@ -1477,13 +1591,20 @@ void TvCtlMouseDown(int win, int id, int mx, int my)
 	}
 	else if(c.type==C_LIST)
 	{
-		int n=TvItemCount(&c.text[0]);
+		int n=TvListCount(c);
 		int ry=my-(t.y+c.y);
 		if(mx==t.x+c.x+c.w-1)
 		{
 			int mxTop=n-c.h;
 			if(mxTop<0)mxTop=0;
 			int h=TvVBarHit(t.y+c.y,c.h,c.top,mxTop,my);
+			if(h==2)
+			{
+				dragWin=win;
+				dragCtl=id;
+				dragMode=5;
+				return;
+			}
 			int v=c.val;
 			if(h==0)v--;
 			if(h==1)v=v-c.h;
@@ -1494,7 +1615,20 @@ void TvCtlMouseDown(int win, int id, int mx, int my)
 			c.val=v;
 		}
 		else if(c.top+ry<n)
-			c.val=c.top+ry;
+		{
+			// a second click on the same row soon after is a double click
+			int k=c.top+ry;
+			float now=Time();
+			if((k==c.val)&&(id==lastClickCtl)&&(now-lastClickTime<0.4))
+			{
+				lastClickCtl=-1;
+				TvFireDefault(win);
+				return;
+			}
+			c.val=k;
+			lastClickCtl=id;
+			lastClickTime=now;
+		}
 	}
 }
 
@@ -1657,7 +1791,17 @@ void TvMouse()
 			pressedInside=(TvCtlAt(dragWin,evX,evY)==dragCtl);
 			return;
 		}
+		if(dragMode==5)
+		{
+			TvListDragThumb(dragWin,dragCtl,evY);
+			return;
+		}
 		TWin& t=tvWin[dragWin];
+		if(dragMode==4)
+		{
+			TvAppMouse(dragWin,EV_MDRAG,evX-t.x,evY-t.y);
+			return;
+		}
 		if(dragMode==1)
 		{
 			t.x=evX-dragDX;
@@ -1689,12 +1833,7 @@ void TvMouse()
 		if(TvMenuMouse(ev))
 			return;
 	if(ev!=EV_MDOWN)
-	{
-		// dragging with no target: forward to the top window
-		if((top>=0)&&(ev==EV_MDRAG))
-			TvAppMouse(top,EV_MDRAG,evX-tvWin[top].x,evY-tvWin[top].y);
 		return;
-	}
 	tvDirty=1;
 	if(evY==tvH-1)
 	{

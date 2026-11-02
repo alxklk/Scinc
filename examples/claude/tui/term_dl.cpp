@@ -1,10 +1,19 @@
-// The terminal services Scinc has no intrinsics for: raw mode, reading a key with
-// a timeout, the terminal size and the local time. All drawing is plain ANSI
-// output from the Scinc side.
+// The services Scinc has no intrinsics for: raw mode, reading a key with a timeout,
+// the terminal size, the local time and listing directories. All drawing is plain
+// ANSI output from the Scinc side.
+#include <algorithm>
+#include <climits>
+#include <cstdio>
+#include <cstring>
 #include <ctime>
 #include <csignal>
 #include <cstdlib>
+#include <string>
+#include <vector>
+#include <dirent.h>
 #include <poll.h>
+#include <strings.h>
+#include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -119,9 +128,140 @@ static int term_time(int what)
 	return t->tm_mday;
 }
 
+// ---------------------------------------------------------------- directory listing
+
+struct DirEntry
+{
+	std::string name;
+	int isDir;
+	std::string info;
+};
+
+static std::vector<DirEntry> listing;
+
+static void copyOut(char* out, int max, const std::string& s)
+{
+	snprintf(out,max,"%s",s.c_str());
+}
+
+static bool entryLess(const DirEntry& a, const DirEntry& b)
+{
+	if(a.name=="..")return b.name!="..";
+	if(b.name=="..")return false;
+	if(a.isDir!=b.isDir)return a.isDir>b.isDir;
+	int c=strcasecmp(a.name.c_str(),b.name.c_str());
+	if(c)return c<0;
+	return a.name<b.name;
+}
+
+static std::string describe(const struct stat& st)
+{
+	char when[32];
+	char line[80];
+	time_t t=st.st_mtime;
+	strftime(when,sizeof(when),"%Y-%m-%d %H:%M",localtime(&t));
+	if(S_ISDIR(st.st_mode))
+		snprintf(line,sizeof(line),"<DIR>  %s",when);
+	else
+		snprintf(line,sizeof(line),"%lld bytes  %s",(long long)st.st_size,when);
+	return line;
+}
+
+// Reads a directory, directories first. Writes its absolute path to resolved and
+// returns the entry count, or -1 with the previous listing kept.
+static int fs_list(const char* path, char* resolved, int max, int showHidden)
+{
+	char full[PATH_MAX];
+	if(!realpath(path,full))
+		return -1;
+	DIR* d=opendir(full);
+	if(!d)
+		return -1;
+	std::vector<DirEntry> entries;
+	while(dirent* e=readdir(d))
+	{
+		std::string name=e->d_name;
+		if(name==".")
+			continue;
+		if(name==".."&&!strcmp(full,"/"))
+			continue;
+		if(name[0]=='.'&&name!=".."&&!showHidden)
+			continue;
+		DirEntry entry;
+		entry.name=name;
+		entry.isDir=0;
+		std::string target=std::string(full)+"/"+name;
+		struct stat st;
+		if(!stat(target.c_str(),&st))
+		{
+			entry.isDir=S_ISDIR(st.st_mode)?1:0;
+			entry.info=describe(st);
+		}
+		else
+			entry.info="unreadable";
+		entries.push_back(entry);
+	}
+	closedir(d);
+	std::sort(entries.begin(),entries.end(),entryLess);
+	listing.swap(entries);
+	copyOut(resolved,max,full);
+	return (int)listing.size();
+}
+
+// Writes the entry's name. Returns 1 for a directory, 0 for anything else.
+static int fs_name(int i, char* out, int max)
+{
+	out[0]=0;
+	if(i<0||i>=(int)listing.size())
+		return 0;
+	copyOut(out,max,listing[i].name);
+	return listing[i].isDir;
+}
+
+static void fs_info(int i, char* out, int max)
+{
+	out[0]=0;
+	if(i>=0&&i<(int)listing.size())
+		copyOut(out,max,listing[i].info);
+}
+
+static int fs_index(const char* name)
+{
+	for(int i=0;i<(int)listing.size();i++)
+		if(listing[i].name==name)
+			return i;
+	return -1;
+}
+
+// The next entry after start whose name begins with this letter, wrapping around.
+static int fs_find(int letter, int start)
+{
+	int n=(int)listing.size();
+	for(int k=1;k<=n;k++)
+	{
+		int i=(start+k)%n;
+		unsigned char c=listing[i].name[0];
+		if(c<128&&tolower(c)==tolower(letter))
+			return i;
+	}
+	return -1;
+}
+
+static void fs_home(char* out, int max)
+{
+	const char* home=getenv("HOME");
+	copyOut(out,max,home?home:"/");
+}
+
 extern "C" int term_open_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_open);return 0;}
 extern "C" int term_close_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_close);return 0;}
 extern "C" int term_read_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_read);return 0;}
 extern "C" int term_cols_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_cols);return 0;}
 extern "C" int term_rows_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_rows);return 0;}
 extern "C" int term_time_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_time);return 0;}
+extern "C" int fs_list_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_list);return 0;}
+extern "C" int fs_name_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_name);return 0;}
+extern "C" int fs_info_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_info);return 0;}
+extern "C" int fs_index_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_index);return 0;}
+extern "C" int fs_find_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_find);return 0;}
+extern "C" int fs_home_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_home);return 0;}

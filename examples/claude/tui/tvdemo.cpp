@@ -1,6 +1,6 @@
 // A Turbo Vision style desktop in the terminal, written in Scinc and drawn with
-// ANSI escape sequences: file viewers, a calculator, a calendar, an ASCII table,
-// a sliding puzzle and a dialog with the standard controls.
+// ANSI escape sequences: a file browser and viewers, a calculator, a calendar, an
+// ASCII table, a sliding puzzle and a dialog with the standard controls.
 //
 //   ./build_so.sh                  once, builds the terminal input library
 //   Scinc tvdemo.cpp [file]        from this folder
@@ -17,6 +17,7 @@ typedef char* pchar;
 #define W_ASCII 4
 #define W_PUZZLE 5
 #define W_CONTROLS 6
+#define W_FILES 7
 
 #define CM_QUIT 100
 #define CM_OPEN 101
@@ -27,6 +28,8 @@ typedef char* pchar;
 #define CM_CONTROLS 106
 #define CM_ABOUT 107
 #define CM_HELP 108
+#define CM_DIRUP 109
+#define CM_DIRHOME 110
 #define CM_CALCKEY 200
 
 // ---------------------------------------------------------------- text viewer
@@ -39,13 +42,261 @@ int* vwLine;
 int vwTextN=0;
 int vwLineN=0;
 
-// Window fields: a top line, b left column, c first line in vwLine, d line count.
+// ---------------------------------------------------------------- C/C++ highlighting
+
+#define HL_TEXT 0x1E
+#define HL_KEYWORD 0x1F
+#define HL_COMMENT 0x17
+#define HL_STRING 0x1B
+#define HL_NUMBER 0x1D
+#define HL_PREPROC 0x1A
+#define HL_SYMBOL 0x1C
+
+// The state a line starts in, carried over from the line before it.
+#define HS_NORMAL 0
+#define HS_COMMENT 1  // inside /* */
+#define HS_STRING 2   // a string continued with a backslash
+#define HS_PREPROC 3  // a directive continued with a backslash
+
+int* vwState;       // the starting state of every line in vwLine
+int hlRun=0;        // the state while a file is loading
+int hlAt[1100];     // the colour of each byte of the line last scanned
+
+char* hlWords;
+int hlFirst[128];   // where the words with this first letter start in hlWords, or -1
+
+void HlInit()
+{
+	// grouped by first letter, which is all the lookup needs
+	hlWords="asm|auto|bool|break|case|catch|char|class|const|constexpr|const_cast|continue|"
+		"decltype|default|delete|do|double|dynamic_cast|else|enum|explicit|extern|false|float|"
+		"for|friend|goto|if|inline|int|long|mutable|namespace|new|noexcept|nullptr|operator|"
+		"private|protected|public|register|reinterpret_cast|return|short|signed|sizeof|static|"
+		"static_cast|struct|switch|template|this|throw|true|try|typedef|typename|union|unsigned|"
+		"using|virtual|void|volatile|wchar_t|while|";
+	for(int i=0;i<128;i++)
+		hlFirst[i]=-1;
+	int i=0;
+	int atStart=1;
+	while(hlWords[i]!=0)
+	{
+		int c=hlWords[i];
+		if(atStart)
+			if(hlFirst[c]<0)hlFirst[c]=i;
+		atStart=(c=='|');
+		i++;
+	}
+}
+
+// Is the n bytes of text at vwText[p] a keyword?
+int HlIsKeyword(int p, int n)
+{
+	int first=vwText[p];
+	if(first>=128)return 0;
+	int w=hlFirst[first];
+	if(w<0)return 0;
+	while(hlWords[w]==first)
+	{
+		int k=0;
+		while((k<n)&&(hlWords[w+k]==vwText[p+k]))
+			k++;
+		if((k==n)&&(hlWords[w+k]=='|'))
+			return 1;
+		while(hlWords[w]!='|')
+			w++;
+		w++;
+	}
+	return 0;
+}
+
+int HlIdentStart(int c)
+{
+	if((c>='a')&&(c<='z'))return 1;
+	if((c>='A')&&(c<='Z'))return 1;
+	return c=='_';
+}
+
+int HlDigit(int c)
+{
+	return (c>='0')&&(c<='9');
+}
+
+// Colours the line starting at vwText[start] into hlAt and returns the state the
+// next line starts in.
+int HlLine(int start, int state)
+{
+	int i=start;
+	int pre=(state==HS_PREPROC);
+	int blank=1;      // only spaces so far, so a # begins a directive
+	int inString=(state==HS_STRING);
+	int quote='"';
+	int stringAt=HL_STRING;
+	while(vwText[i]!=0)
+	{
+		int c=vwText[i];
+		int n=vwText[i+1];
+		if(state==HS_COMMENT)
+		{
+			hlAt[i-start]=HL_COMMENT;
+			i++;
+			if((c=='*')&&(n=='/'))
+			{
+				hlAt[i-start]=HL_COMMENT;
+				i++;
+				state=HS_NORMAL;
+				if(pre)state=HS_PREPROC;
+			}
+		}
+		else if(inString)
+		{
+			hlAt[i-start]=stringAt;
+			i++;
+			if((c==92)&&(n!=0))
+			{
+				hlAt[i-start]=stringAt;
+				i++;
+			}
+			else if(c==quote)
+			{
+				inString=0;
+				state=HS_NORMAL;
+				if(pre)state=HS_PREPROC;
+			}
+		}
+		else if((c=='/')&&(n=='/'))
+		{
+			while(vwText[i]!=0)
+			{
+				hlAt[i-start]=HL_COMMENT;
+				i++;
+			}
+		}
+		else if((c=='/')&&(n=='*'))
+		{
+			hlAt[i-start]=HL_COMMENT;
+			hlAt[i+1-start]=HL_COMMENT;
+			i=i+2;
+			state=HS_COMMENT;
+		}
+		else if((c=='"')||(c==39))
+		{
+			quote=c;
+			stringAt=HL_STRING;
+			if(pre)stringAt=HL_PREPROC;
+			inString=1;
+			hlAt[i-start]=stringAt;
+			i++;
+		}
+		else if(pre)
+		{
+			hlAt[i-start]=HL_PREPROC;
+			i++;
+		}
+		else if((c=='#')&&blank)
+		{
+			pre=1;
+			state=HS_PREPROC;
+			hlAt[i-start]=HL_PREPROC;
+			i++;
+		}
+		else if(HlDigit(c)||((c=='.')&&HlDigit(n)))
+		{
+			// also takes in 0x1F, 1.5e-3 and suffixes
+			while(HlDigit(vwText[i])||HlIdentStart(vwText[i])||(vwText[i]=='.'))
+			{
+				int e=vwText[i];
+				hlAt[i-start]=HL_NUMBER;
+				i++;
+				if((e=='e')||(e=='E'))
+					if((vwText[i]=='-')||(vwText[i]=='+'))
+					{
+						hlAt[i-start]=HL_NUMBER;
+						i++;
+					}
+			}
+		}
+		else if(HlIdentStart(c))
+		{
+			int p=i;
+			while(HlIdentStart(vwText[i])||HlDigit(vwText[i]))
+				i++;
+			int at=HL_TEXT;
+			if(HlIsKeyword(p,i-p))at=HL_KEYWORD;
+			for(int k=p;k<i;k++)
+				hlAt[k-start]=at;
+		}
+		else
+		{
+			// spaces and UTF-8 bytes stay plain, the rest is punctuation
+			hlAt[i-start]=HL_TEXT;
+			if((c>' ')&&(c<127))hlAt[i-start]=HL_SYMBOL;
+			i++;
+		}
+		if((c!=' ')&&(c!=9))blank=0;
+	}
+	if(state==HS_COMMENT)return HS_COMMENT;
+	int continued=0;
+	if(i>start)
+		if(vwText[i-1]==92)continued=1;
+	if(continued)
+	{
+		if(inString&&(quote=='"')&&!pre)return HS_STRING;
+		if(pre)return HS_PREPROC;
+	}
+	return HS_NORMAL;
+}
+
+// Does this file name end in a C or C++ extension?
+int HlIsCFile(char* name)
+{
+	int dot=-1;
+	int k=0;
+	while(name[k]!=0)
+	{
+		if(name[k]=='.')dot=k;
+		k++;
+	}
+	if(dot<0)return 0;
+	char ext[8];
+	int n=0;
+	k=dot+1;
+	while((name[k]!=0)&&(n<7))
+	{
+		ext[n]=LowerKey(name[k]);
+		n++;
+		k++;
+	}
+	ext[n]=0;
+	char* known="c|cc|cpp|cxx|h|hh|hpp|hxx|inl";
+	char item[8];
+	for(int i=0;i<9;i++)
+	{
+		TvItemAt(known,i,&item[0],8);
+		int same=1;
+		int j=0;
+		while((ext[j]!=0)||(item[j]!=0))
+		{
+			if(ext[j]!=item[j])same=0;
+			if((ext[j]==0)||(item[j]==0))break;
+			j++;
+		}
+		if(same)return 1;
+	}
+	return 0;
+}
+
+// Window fields: a top line, b left column, c first line in vwLine, d line count,
+// e set if the text did not fit in the pool, f set to highlight C/C++ syntax.
 
 void VwAddLine(TWin& t, char* s)
 {
-	if(vwLineN>=VW_MAXLINES)return;
 	int n=StrLen(s);
-	if(vwTextN+n+1>=VW_POOL)return;
+	if((vwLineN>=VW_MAXLINES)||(vwTextN+n+1>=VW_POOL))
+	{
+		t.e=1;
+		return;
+	}
+	int lineStart=vwTextN;
 	vwLine[vwLineN]=vwTextN;
 	vwLineN++;
 	int k=0;
@@ -60,6 +311,34 @@ void VwAddLine(TWin& t, char* s)
 	vwText[vwTextN]=0;
 	vwTextN++;
 	t.d++;
+	if(t.f)
+	{
+		vwState[vwLineN-1]=hlRun;
+		hlRun=HlLine(lineStart,hlRun);
+	}
+}
+
+// Gives a closed viewer's text and lines back to the pools.
+void VwRelease(TWin& t)
+{
+	if(t.d==0)return;
+	int next=t.c+t.d;
+	int a=vwLine[t.c];
+	int b=vwTextN;
+	if(next<vwLineN)b=vwLine[next];
+	int size=b-a;
+	memmove(&vwText[a],&vwText[b],vwTextN-b);
+	vwTextN=vwTextN-size;
+	for(int i=next;i<vwLineN;i++)
+	{
+		vwLine[i-t.d]=vwLine[i]-size;
+		vwState[i-t.d]=vwState[i];
+	}
+	vwLineN=vwLineN-t.d;
+	for(int i=0;i<TV_MAXWIN;i++)
+		if(tvWin[i].used)
+			if((tvWin[i].type==W_VIEW)&&(tvWin[i].c>t.c))
+				tvWin[i].c=tvWin[i].c-t.d;
 }
 
 int NewViewer(char* title)
@@ -86,17 +365,30 @@ int OpenFile(char* name)
 		TvMessage("Error","Cannot open this file.",0);
 		return -1;
 	}
-	int win=NewViewer(name);
+	// the title is the part after the last slash
+	int base=0;
+	int k=0;
+	while(name[k]!=0)
+	{
+		if(name[k]=='/')base=k+1;
+		k++;
+	}
+	int win=NewViewer(&name[base]);
 	if(win<0)
 	{
 		fclose(f);
+		TvMessage("Error","Too many windows are open.",0);
 		return -1;
 	}
 	TWin& t=tvWin[win];
+	t.f=HlIsCFile(name);
+	hlRun=HS_NORMAL;
 	char line[1024];
 	while(fgets(&line[0],1024,f)!=0)
 		VwAddLine(t,&line[0]);
 	fclose(f);
+	if(t.e)
+		TvMessage("Warning","The file is too large,\nshowing only its beginning.",0);
 	return win;
 }
 
@@ -111,10 +403,14 @@ void DrawViewer(int win)
 		if(k<t.d)
 		{
 			int p=vwLine[t.c+k];
+			int lineStart=p;
 			int col=0;
+			if(t.f)HlLine(p,vwState[t.c+k]);
 			while(vwText[p]!=0)
 			{
-				int c=vwText[p];
+				int at=0x1E;
+				if(t.f)at=hlAt[p-lineStart];
+				int c=TvUtf8(vwText,p);
 				if(c==9)
 				{
 					col=(col/4+1)*4;
@@ -123,13 +419,9 @@ void DrawViewer(int win)
 				{
 					int px=col-t.b;
 					if((px>=0)&&(px<cols))
-					{
-						if(c>=0x80)c='?';
-						TvPut(t.x+1+px,t.y+1+j,c,0x1E);
-					}
+						TvPut(t.x+1+px,t.y+1+j,c,at);
 					col++;
 				}
-				p++;
 			}
 		}
 	}
@@ -197,12 +489,21 @@ int ViewerMouse(int win, int ev, int x, int y)
 			int mxTop=t.d-rows;
 			if(mxTop<0)mxTop=0;
 			int h=TvVBarHit(1,rows,t.a,mxTop,y);
+			if(h==2)TvCaptureMouse(win);
 			if(h==0)t.a--;
 			if(h==1)t.a=t.a-rows;
 			if(h==3)t.a=t.a+rows;
 			if(h==4)t.a++;
 			ViewerClamp(t);
 		}
+		return 1;
+	}
+	if(ev==EV_MDRAG)
+	{
+		// only arrives after TvCaptureMouse, so this is the thumb being dragged
+		int mxTop=t.d-rows;
+		if(mxTop<0)mxTop=0;
+		t.a=TvVBarPos(1,rows,mxTop,y);
 		return 1;
 	}
 	return 0;
@@ -701,27 +1002,216 @@ void RunControls()
 		TvClose(win);
 }
 
-// ---------------------------------------------------------------- open dialog
+// ---------------------------------------------------------------- file browser
 
-char openName[200];
+#define FD_PATH 512
+
+char fdDir[FD_PATH];
+int fdList=-1;
+int fdHiddenBox=-1;
+int fdHidden=0;
+
+// Lists a directory and selects selectName if it is there. Returns 0 on failure,
+// leaving the current directory and listing as they were.
+int FdLoad(char* path, char* selectName)
+{
+	char resolved[FD_PATH];
+	int n=fs_list(path,&resolved[0],FD_PATH,fdHidden);
+	if(n<0)return 0;
+	StrCpy(&fdDir[0],&resolved[0],FD_PATH);
+	TCtl& c=tvCtl[fdList];
+	c.count=n;
+	c.val=0;
+	c.top=0;
+	int k=fs_index(selectName);
+	if(k>=0)c.val=k;
+	return 1;
+}
+
+void FdJoin(char* out, char* name)
+{
+	snprintf(out,FD_PATH,"%s/%s",&fdDir[0],name);
+}
+
+// Lists the parent directory with the directory we left selected.
+void FdGoUp()
+{
+	int base=0;
+	int k=0;
+	while(fdDir[k]!=0)
+	{
+		if(fdDir[k]=='/')base=k+1;
+		k++;
+	}
+	char left[256];
+	StrCpy(&left[0],&fdDir[base],256);
+	char path[FD_PATH];
+	FdJoin(&path[0],"..");
+	if(!FdLoad(&path[0],&left[0]))
+		TvMessage("Error","Cannot read the parent directory.",0);
+}
+
+void TvAppListItem(int win, int ctl, int i, char* out, int max)
+{
+	int isDir=fs_name(i,out,max-1);
+	if(isDir)
+	{
+		int n=StrLen(out);
+		out[n]='/';
+		out[n+1]=0;
+	}
+}
+
+void DrawFiles(int win)
+{
+	TWin& t=tvWin[win];
+	// the check box has no callback, so notice a change here
+	if(tvCtl[fdHiddenBox].val!=fdHidden)
+	{
+		fdHidden=tvCtl[fdHiddenBox].val;
+		t.focus=fdList;
+		char keep[256];
+		fs_name(tvCtl[fdList].val,&keep[0],256);
+		char path[FD_PATH];
+		StrCpy(&path[0],&fdDir[0],FD_PATH);
+		FdLoad(&path[0],&keep[0]);
+	}
+	// the end of a long path is the part worth showing
+	int room=t.w-6;
+	int cols=TvCols(&fdDir[0]);
+	int skip=0;
+	if(cols>room)skip=cols-room+1;
+	int i=0;
+	for(int k=0;k<skip;k++)
+		TvUtf8(&fdDir[0],i);
+	int x=t.x+3;
+	if(skip>0)
+	{
+		TvPut(x,t.y+2,G_LEFT,0x71);
+		x++;
+	}
+	TvText(x,t.y+2,&fdDir[i],0x70);
+	// details of the selected entry
+	char info[80];
+	char name[256];
+	TCtl& c=tvCtl[fdList];
+	fs_name(c.val,&name[0],256);
+	fs_info(c.val,&info[0],80);
+	int y=t.y+t.h-3;
+	TvFill(t.x+2,y,t.w-4,1,' ',0x30);
+	int e=TvTextN(t.x+3,y,&name[0],0x3F,t.w-StrLen(&info[0])-10);
+	TvText(t.x+t.w-3-StrLen(&info[0]),y,&info[0],0x30);
+}
+
+// Letters jump to the next entry that starts with them, Backspace goes up.
+int FilesKey(int win, int key)
+{
+	TWin& t=tvWin[win];
+	if(t.focus!=fdList)return 0;
+	if(key==K_BACKSPACE)
+	{
+		t.result=CM_DIRUP;
+		return 1;
+	}
+	if((key>' ')&&(key<127))
+	{
+		TCtl& c=tvCtl[fdList];
+		if(c.count>0)
+		{
+			int k=fs_find(key,c.val);
+			if(k>=0)c.val=k;
+		}
+		return 1;
+	}
+	return 0;
+}
 
 void RunOpen()
 {
-	int win=TvNewCentered(0,"Open a file",50,9,WF_DIALOG);
+	if((tvW<50)||(tvH<18))
+	{
+		TvMessage("Open a file","The terminal is too small.",0);
+		return;
+	}
+	int w=72;
+	if(w>tvW-2)w=tvW-2;
+	int h=24;
+	if(h>tvH-2)h=tvH-2;
+	int win=TvNewCentered(W_FILES,"Open a file",w,h,WF_DIALOG);
 	if(win<0)return;
-	TvAdd(win,C_LABEL,3,2,10,1,"~F~ile name:",0);
-	int inp=TvAdd(win,C_INPUT,3,3,44,1,&openName[0],0);
-	tvCtl[inp].val=StrLen(&openName[0]);
-	int ok=TvAdd(win,C_BUTTON,11,5,12,2,"O~K~",CM_OK);
-	tvCtl[ok].isDefault=1;
-	TvAdd(win,C_BUTTON,27,5,12,2,"Cancel",CM_CANCEL);
-	tvWin[win].focus=inp;
-	int res=TvExec(win);
-	if(res==CM_OK)
-		StrCpy(&openName[0],&tvCtl[inp].text[0],200);
+	TvAdd(win,C_LABEL,3,3,10,1,"~F~iles",0);
+	fdList=TvAdd(win,C_LIST,3,4,w-23,h-8,"",0);
+	tvCtl[fdList].virt=1;
+	int bx=w-18;
+	int b=TvAdd(win,C_BUTTON,bx,4,14,2,"~O~pen",CM_OK);
+	tvCtl[b].isDefault=1;
+	TvAdd(win,C_BUTTON,bx,6,14,2,"~U~p",CM_DIRUP);
+	TvAdd(win,C_BUTTON,bx,8,14,2,"Ho~m~e",CM_DIRHOME);
+	TvAdd(win,C_BUTTON,bx,10,14,2,"Cancel",CM_CANCEL);
+	fdHiddenBox=TvAdd(win,C_CHECK,bx-1,12,16,1,"~H~idden",0);
+	tvCtl[fdHiddenBox].val=fdHidden;
+	tvWin[win].focus=fdList;
+	char path[FD_PATH];
+	if(fdDir[0]==0)
+		StrCpy(&path[0],".",FD_PATH);
+	else
+		StrCpy(&path[0],&fdDir[0],FD_PATH);
+	if(!FdLoad(&path[0],""))
+		if(!FdLoad("/",""))
+		{
+			TvClose(win);
+			TvMessage("Error","Cannot read this directory.",0);
+			return;
+		}
+	while(tvRunning)
+	{
+		// after a button changes the directory, the keys belong to the list again
+		tvWin[win].focus=fdList;
+		int res=TvExec(win);
+		if(res==CM_DIRUP)
+			FdGoUp();
+		else if(res==CM_DIRHOME)
+		{
+			fs_home(&path[0],FD_PATH);
+			if(!FdLoad(&path[0],""))
+				TvMessage("Error","Cannot read the home directory.",0);
+		}
+		else if(res==CM_OK)
+		{
+			char name[256];
+			int isDir=fs_name(tvCtl[fdList].val,&name[0],256);
+			if(name[0]!=0)
+			{
+				if(isDir)
+				{
+					if(name[0]=='.')
+					{
+						if((name[1]=='.')&&(name[2]==0))
+						{
+							FdGoUp();
+							isDir=2;
+						}
+					}
+					if(isDir==1)
+					{
+						FdJoin(&path[0],&name[0]);
+						if(!FdLoad(&path[0],""))
+							TvMessage("Error","Cannot read this directory.",0);
+					}
+				}
+				else
+				{
+					FdJoin(&path[0],&name[0]);
+					TvClose(win);
+					OpenFile(&path[0]);
+					return;
+				}
+			}
+		}
+		else
+			break;
+	}
 	TvClose(win);
-	if(res==CM_OK)
-		OpenFile(&openName[0]);
 }
 
 // ---------------------------------------------------------------- help
@@ -741,13 +1231,14 @@ void OpenHelp()
 		"\n"
 		"Keyboard\n"
 		"  F10, Alt+letter   open a menu\n"
-		"  F3                open a file\n"
+		"  F3                browse for a file to open\n"
 		"  F5, Ctrl+W        zoom, close the window\n"
 		"  F6, F7            next, previous window\n"
 		"  Alt+1..9          go to a window by number\n"
 		"  Tab, Shift+Tab    move between dialog controls\n"
 		"  Space, Enter      toggle, press\n"
 		"  Esc               cancel a dialog or close a menu\n"
+		"  In the file list: letters jump to a name, Backspace goes up\n"
 		"  Alt+X, Ctrl+Q     quit\n"
 		"\n"
 		"Mouse\n"
@@ -755,7 +1246,8 @@ void OpenHelp()
 		"  corner to resize it.\n"
 		"  Click the box on the left of the title to close the\n"
 		"  window, and the arrow on the right to zoom it.\n"
-		"  The wheel scrolls viewers and lists.\n"
+		"  Drag a scroll bar thumb, or use the wheel, to scroll.\n"
+		"  Double click a list entry to open it.\n"
 		"\n"
 		"Your terminal may catch F10 or Alt keys for itself. If it\n"
 		"does, use the mouse or Ctrl+Q.\n";
@@ -797,6 +1289,7 @@ void TvAppDraw(int win)
 	else if(type==W_CAL)DrawCalendar(win);
 	else if(type==W_ASCII)DrawAscii(win);
 	else if(type==W_PUZZLE)DrawPuzzle(win);
+	else if(type==W_FILES)DrawFiles(win);
 }
 
 int TvAppKey(int win, int key)
@@ -807,6 +1300,7 @@ int TvAppKey(int win, int key)
 	if(type==W_CALC)return CalcFromKeyboard(key);
 	if(type==W_ASCII)return AsciiKey(t,key);
 	if(type==W_PUZZLE)return PuzzleKey(key);
+	if(type==W_FILES)return FilesKey(win,key);
 	if(type==W_CAL)
 	{
 		if((key==K_LEFT)||(key==K_PGUP))
@@ -865,6 +1359,8 @@ void TvAppButton(int win, int ctl, int cmd)
 
 void TvAppClosed(int win)
 {
+	if(tvWin[win].type==W_VIEW)
+		VwRelease(tvWin[win]);
 }
 
 void TvAppCommand(int cmd)
@@ -928,8 +1424,10 @@ int main(int argc, pchar* argv)
 	}
 	vwText=malloc(VW_POOL);
 	vwLine=malloc(VW_MAXLINES*4);
+	vwState=malloc(VW_MAXLINES*4);
+	HlInit();
 	StrCpy(&ctlName[0],"Scinc",64);
-	StrCpy(&openName[0],"tvdemo.cpp",200);
+	fdDir[0]=0;
 	TvInit();
 
 	TvMenuAdd("~=~");
