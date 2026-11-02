@@ -4,11 +4,11 @@ struct flt2
 {
 	float x;
 	float y;
-	float length()
+	float length() const
 	{
 		return sqrt(x*x+y*y);
 	}
-	float lengthSq()
+	float lengthSq() const
 	{
 		return (x*x+y*y);
 	}
@@ -24,7 +24,7 @@ struct flt2
 		x=newx;
 		y=newy;
 	}
-	flt2 normalized()
+	flt2 normalized() const
 	{
 		float r=1.0/length();
 		flt2 result;
@@ -32,7 +32,7 @@ struct flt2
 		result.y=y*r;
 		return result;
 	}
-	flt2 perp()
+	flt2 perp() const
 	{
 		flt2 result;
 		result.x=y;
@@ -50,21 +50,21 @@ struct flt2
 		x=0;
 		y=0;
 	}
-	flt2 operator- ()
+	flt2 operator- () const
 	{
 		flt2 result;
 		result.x=-x;
 		result.y=-y;
 		return result;
 	}
-	flt2 operator- (flt2 r)
+	flt2 operator- (flt2 r) const
 	{
 		flt2 result;
 		result.x=x-r.x;
 		result.y=y-r.y;
 		return result;
 	}
-	flt2 operator+ (flt2 r)
+	flt2 operator+ (flt2 r) const
 	{
 		flt2 result;
 		result.x=x+r.x;
@@ -85,7 +85,7 @@ struct flt2
 		result.y=y=y-r.y;
 		return result;
 	}
-	flt2 operator* (float r)
+	flt2 operator* (float r) const
 	{
 		flt2 result;
 		result.x=x*r;
@@ -100,7 +100,7 @@ struct flt2
 		*this=result;
 		return result;
 	}
-	flt2 operator/ (float r)
+	flt2 operator/ (float r) const
 	{
 		float rr=1.0/r;
 		flt2 result;
@@ -108,7 +108,7 @@ struct flt2
 		result.y=y*rr;
 		return result;
 	}
-	flt2 operator/ (flt2 r)
+	flt2 operator/ (flt2 r) const
 	{
 		flt2 result;
 		result.x=x/r.x;

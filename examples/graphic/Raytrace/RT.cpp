@@ -17,9 +17,6 @@
 #define G_SCREEN_SCALE 4
 #define USE_AA 3
 
-#ifdef __SCINC__
-#define const
-#endif
 
 #define GRAPH
 

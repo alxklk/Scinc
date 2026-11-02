@@ -7,9 +7,6 @@
 
 #define M_PI 3.141592654
 
-#ifdef __SCINC__
-#define const
-#endif
 
 CSound snd;
 
