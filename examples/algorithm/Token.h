@@ -1,3 +1,6 @@
+#ifndef TOKEN_H
+#define TOKEN_H
+
 #define END  0
 #define NUM  1
 #define OP   2
@@ -48,3 +51,5 @@ struct SToken
 	float GetNumber(){return *((float*)value);}
 	bool IsOperator(int op){return (type==OP)&&(value[0]==op);}
 };
+
+#endif // TOKEN_H
