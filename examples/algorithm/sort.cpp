@@ -1,7 +1,22 @@
 #include <stdio.h>
 #include "graphics.h"
+#include "../ws.h"
 
+#define GTEXT_SX 0.1667 // one character advances one t_x unit
+#define GTEXT_SY -0.1 // callers pass t_y with y pointing up
 Graph g;
+
+#include "../graphic/font.h"
+#include "../graphic/letters.h"
+#include "../graphic/gtext.h"
+
+CFont* pfont;
+
+// Adds a string to the current path. Scale and position come from g.t_0/t_x/t_y.
+void gtext(char* s)
+{
+	DrawText(g,*pfont,s,0,0.,0.,GTEXT_SX,GTEXT_SY);
+}
 
 #define N 50
 
@@ -207,6 +222,10 @@ void ShellSort(int *a, int n)
 
 int main()
 {
+	pfont=(CFont*)malloc(sizeof(CFont));
+	CFontMaker fm;
+	fm.Init(*pfont,6);
+	MakeLetters(fm);
 	message="Sorting algorithms";
 	int testArray[N];
 
