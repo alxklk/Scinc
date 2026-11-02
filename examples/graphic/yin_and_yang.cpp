@@ -3,6 +3,7 @@
 #define G_SCREEN_HEIGHT 512
 #define G_SCREEN_SCALE 2
 #include "graphics.h"
+#include "../ws.h"
 
 Graph g;
 
