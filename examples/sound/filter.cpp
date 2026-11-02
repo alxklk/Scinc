@@ -3,6 +3,8 @@
 #define G_SCREEN_SCALE 3
 #define G_SCREEN_MODE 1
 
+#define NO_GREEDY_EVENT // events are read in the main loop, Present() must not discard them
+
 #define NFFT 2048
 
 #include <stdio.h>
