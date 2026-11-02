@@ -1,0 +1,2001 @@
+// A small Turbo Vision style text UI: overlapping windows, pull-down menus, a
+// status line, modal dialogs and the usual controls, driven by keyboard and mouse.
+//
+// A program defines the TvApp* functions declared below, builds its menus and
+// status line, opens windows and calls TvRun(-1).
+//
+// Scinc notes: && and || evaluate both sides, so bounds are checked in a separate
+// if. Colours are VGA attributes, background<<4 | foreground, as in Turbo Vision.
+#ifndef TV_H
+#define TV_H
+
+#include "term.h"
+
+// ---------------------------------------------------------------- application hooks
+
+void TvAppDraw(int win);                             // paint the window interior
+int  TvAppKey(int win, int key);                     // return 1 if the key was used
+int  TvAppMouse(int win, int ev, int x, int y);      // x,y relative to the window
+void TvAppCommand(int cmd);                          // menu, status line and hot keys
+void TvAppButton(int win, int ctl, int cmd);         // a non-modal window's button
+void TvAppClosed(int win);
+
+// ---------------------------------------------------------------- keys and events
+
+#define K_ENTER 13
+#define K_TAB 9
+#define K_ESC 27
+#define K_BACKSPACE 127
+#define K_UP 1000
+#define K_DOWN 1001
+#define K_LEFT 1002
+#define K_RIGHT 1003
+#define K_HOME 1004
+#define K_END 1005
+#define K_PGUP 1006
+#define K_PGDN 1007
+#define K_INS 1008
+#define K_DEL 1009
+#define K_BTAB 1010
+#define K_F1 1101
+#define K_F2 1102
+#define K_F3 1103
+#define K_F4 1104
+#define K_F5 1105
+#define K_F6 1106
+#define K_F7 1107
+#define K_F8 1108
+#define K_F9 1109
+#define K_F10 1110
+#define K_F11 1111
+#define K_F12 1112
+#define K_ALT 2000 // K_ALT+'x'
+
+#define EV_NONE 0
+#define EV_KEY 1
+#define EV_MDOWN 2
+#define EV_MUP 3
+#define EV_MDRAG 4
+#define EV_WHEEL 5
+
+int evType=0;
+int evKey=0;
+int evX=0;
+int evY=0;
+int evBtn=0;
+int evWheel=0;
+
+// ---------------------------------------------------------------- screen
+
+#define TV_MAXW 240
+#define TV_MAXH 80
+#define TV_CELLS 19200
+#define TV_OUTMAX 8192
+
+#define G_DHORZ 0x2550
+#define G_DVERT 0x2551
+#define G_DTL 0x2554
+#define G_DTR 0x2557
+#define G_DBL 0x255A
+#define G_DBR 0x255D
+#define G_HORZ 0x2500
+#define G_VERT 0x2502
+#define G_TL 0x250C
+#define G_TR 0x2510
+#define G_BL 0x2514
+#define G_BR 0x2518
+#define G_LIGHT 0x2591
+#define G_MEDIUM 0x2592
+#define G_FULL 0x2588
+#define G_LOWHALF 0x2584
+#define G_UPHALF 0x2580
+#define G_UP 0x25B2
+#define G_DOWN 0x25BC
+#define G_LEFT 0x25C4
+#define G_RIGHT 0x25BA
+#define G_BOX 0x25A0
+#define G_ZOOM 0x2195
+#define G_MENU 0x2261
+#define G_DOT 0x2022
+
+int tvCh[TV_CELLS];
+int tvAt[TV_CELLS];
+int tvPrevCh[TV_CELLS];
+int tvPrevAt[TV_CELLS];
+int tvW=80;
+int tvH=25;
+int clipX0=0;
+int clipY0=0;
+int clipX1=80;
+int clipY1=25;
+int tvCurX=-1;
+int tvCurY=-1;
+int tvCurShown=0;
+int tvVga[8];
+
+char tvOut[TV_OUTMAX];
+int tvOutN=0;
+
+void OutFlush()
+{
+	tvOut[tvOutN]=0;
+	fputs(&tvOut[0],stdout);
+	fflush(stdout);
+	tvOutN=0;
+}
+
+void OutByte(int c)
+{
+	tvOut[tvOutN]=c;
+	tvOutN++;
+	if(tvOutN>=TV_OUTMAX-1)
+		OutFlush();
+}
+
+void OutStr(char* s)
+{
+	int i=0;
+	while(s[i]!=0)
+	{
+		OutByte(s[i]);
+		i++;
+	}
+}
+
+void OutInt(int n)
+{
+	if(n>=100)OutByte('0'+n/100);
+	if(n>=10)OutByte('0'+n/10%10);
+	OutByte('0'+n%10);
+}
+
+void OutUtf8(int c)
+{
+	if(c<0x80)
+		OutByte(c);
+	else if(c<0x800)
+	{
+		OutByte(0xC0|(c>>6));
+		OutByte(0x80|(c&63));
+	}
+	else
+	{
+		OutByte(0xE0|(c>>12));
+		OutByte(0x80|((c>>6)&63));
+		OutByte(0x80|(c&63));
+	}
+}
+
+void OutMove(int x, int y)
+{
+	OutByte(27);
+	OutByte('[');
+	OutInt(y+1);
+	OutByte(';');
+	OutInt(x+1);
+	OutByte('H');
+}
+
+void OutAttr(int at)
+{
+	int fg=at&15;
+	int bg=(at>>4)&15;
+	int f=tvVga[fg&7]+30;
+	if(fg>7)f=f+60;
+	int b=tvVga[bg&7]+40;
+	if(bg>7)b=b+60;
+	OutByte(27);
+	OutByte('[');
+	OutInt(f);
+	OutByte(';');
+	OutInt(b);
+	OutByte('m');
+}
+
+// Sends only the cells that changed since the last call.
+void TvFlush()
+{
+	int curAt=-1;
+	int penX=-1;
+	int penY=-1;
+	for(int y=0;y<tvH;y++)
+	{
+		int row=y*TV_MAXW;
+		for(int x=0;x<tvW;x++)
+		{
+			int i=row+x;
+			int ch=tvCh[i];
+			int at=tvAt[i];
+			if((ch!=tvPrevCh[i])||(at!=tvPrevAt[i]))
+			{
+				tvPrevCh[i]=ch;
+				tvPrevAt[i]=at;
+				if((x!=penX)||(y!=penY))
+					OutMove(x,y);
+				if(at!=curAt)
+				{
+					OutAttr(at);
+					curAt=at;
+				}
+				OutUtf8(ch);
+				penX=x+1;
+				penY=y;
+			}
+		}
+	}
+	if(tvCurX>=0)
+	{
+		OutMove(tvCurX,tvCurY);
+		if(!tvCurShown)OutStr("\x1b[?25h");
+		tvCurShown=1;
+	}
+	else
+	{
+		if(tvCurShown)OutStr("\x1b[?25l");
+		tvCurShown=0;
+	}
+	OutFlush();
+}
+
+void TvClip(int x0, int y0, int x1, int y1)
+{
+	clipX0=x0;
+	clipY0=y0;
+	clipX1=x1;
+	clipY1=y1;
+	if(clipX0<0)clipX0=0;
+	if(clipY0<0)clipY0=0;
+	if(clipX1>tvW)clipX1=tvW;
+	if(clipY1>tvH)clipY1=tvH;
+}
+
+void TvPut(int x, int y, int ch, int at)
+{
+	if((x<clipX0)||(x>=clipX1)||(y<clipY0)||(y>=clipY1))
+		return;
+	int i=y*TV_MAXW+x;
+	tvCh[i]=ch;
+	tvAt[i]=at;
+}
+
+void TvFill(int x, int y, int w, int h, int ch, int at)
+{
+	for(int j=0;j<h;j++)
+		for(int i=0;i<w;i++)
+			TvPut(x+i,y+j,ch,at);
+}
+
+int StrLen(char* s)
+{
+	int n=0;
+	while(s[n]!=0)n++;
+	return n;
+}
+
+void StrCpy(char* d, char* s, int max)
+{
+	int i=0;
+	while(i<max-1)
+	{
+		if(s[i]==0)break;
+		d[i]=s[i];
+		i++;
+	}
+	d[i]=0;
+}
+
+// Returns the column after the text.
+int TvText(int x, int y, char* s, int at)
+{
+	int i=0;
+	while(s[i]!=0)
+	{
+		TvPut(x,y,s[i],at);
+		x++;
+		i++;
+	}
+	return x;
+}
+
+// "~F~ile": text between tildes is drawn in the hot colour.
+int TvHotText(int x, int y, char* s, int at, int hot)
+{
+	int i=0;
+	int cur=at;
+	while(s[i]!=0)
+	{
+		if(s[i]=='~')
+		{
+			if(cur==at)cur=hot;
+			else cur=at;
+		}
+		else
+		{
+			TvPut(x,y,s[i],cur);
+			x++;
+		}
+		i++;
+	}
+	return x;
+}
+
+int HotLen(char* s)
+{
+	int n=0;
+	int i=0;
+	while(s[i]!=0)
+	{
+		if(s[i]!='~')n++;
+		i++;
+	}
+	return n;
+}
+
+int LowerKey(int c)
+{
+	if((c>='A')&&(c<='Z'))
+		return c+32;
+	return c;
+}
+
+// The lower-case hot character of "~F~ile", or 0.
+int HotChar(char* s)
+{
+	int i=0;
+	while(s[i]!=0)
+	{
+		if(s[i]=='~')
+		{
+			if(s[i+1]==0)return 0;
+			return LowerKey(s[i+1]);
+		}
+		i++;
+	}
+	return 0;
+}
+
+void TvFrame(int x, int y, int w, int h, int dbl, int at)
+{
+	int hz=G_HORZ;
+	int vt=G_VERT;
+	int tl=G_TL;
+	int tr=G_TR;
+	int bl=G_BL;
+	int br=G_BR;
+	if(dbl)
+	{
+		hz=G_DHORZ;
+		vt=G_DVERT;
+		tl=G_DTL;
+		tr=G_DTR;
+		bl=G_DBL;
+		br=G_DBR;
+	}
+	for(int i=1;i<w-1;i++)
+	{
+		TvPut(x+i,y,hz,at);
+		TvPut(x+i,y+h-1,hz,at);
+	}
+	for(int j=1;j<h-1;j++)
+	{
+		TvPut(x,y+j,vt,at);
+		TvPut(x+w-1,y+j,vt,at);
+	}
+	TvPut(x,y,tl,at);
+	TvPut(x+w-1,y,tr,at);
+	TvPut(x,y+h-1,bl,at);
+	TvPut(x+w-1,y+h-1,br,at);
+}
+
+// Darkens what is under the shadow and keeps the characters visible.
+void TvShadow(int x, int y, int w, int h)
+{
+	for(int j=1;j<=h;j++)
+	{
+		for(int i=0;i<2;i++)
+		{
+			int px=x+w+i;
+			int py=y+j;
+			if((px>=clipX0)&&(px<clipX1)&&(py>=clipY0)&&(py<clipY1))
+				tvAt[py*TV_MAXW+px]=0x08;
+		}
+	}
+	for(int i=2;i<w;i++)
+	{
+		int px=x+i;
+		int py=y+h;
+		if((px>=clipX0)&&(px<clipX1)&&(py>=clipY0)&&(py<clipY1))
+			tvAt[py*TV_MAXW+px]=0x08;
+	}
+}
+
+// A vertical scroll bar with arrows and a thumb.
+void TvVBar(int x, int y, int h, int pos, int max, int at)
+{
+	TvPut(x,y,G_UP,at);
+	TvPut(x,y+h-1,G_DOWN,at);
+	for(int j=1;j<h-1;j++)
+		TvPut(x,y+j,G_MEDIUM,at);
+	if(h<3)
+		return;
+	int t=0;
+	if(max>0)
+		t=pos*(h-3)/max;
+	TvPut(x,y+1+t,G_BOX,at);
+}
+
+// Where a click at row my lands: 0 up arrow, 1 page up, 2 thumb, 3 page down, 4 down arrow.
+int TvVBarHit(int y, int h, int pos, int max, int my)
+{
+	if(my<=y)return 0;
+	if(my>=y+h-1)return 4;
+	int t=0;
+	if(max>0)
+		t=pos*(h-3)/max;
+	if(my<y+1+t)return 1;
+	if(my>y+1+t)return 3;
+	return 2;
+}
+
+// ---------------------------------------------------------------- windows and controls
+
+#define TV_MAXWIN 16
+#define TV_MAXCTL 96
+
+#define C_LABEL 0
+#define C_BUTTON 1
+#define C_CHECK 2
+#define C_RADIO 3
+#define C_INPUT 4
+#define C_LIST 5
+
+#define CM_OK 1
+#define CM_CANCEL 2
+#define CM_YES 3
+#define CM_NO 4
+#define CM_NEXT 10
+#define CM_PREV 11
+#define CM_ZOOM 12
+#define CM_CLOSE 13
+#define CM_CASCADE 14
+#define CM_TILE 15
+#define CM_MENU 16
+#define CM_USER 100
+
+#define WF_RESIZE 1
+#define WF_DIALOG 2
+
+struct TWin
+{
+	int used;
+	int type;
+	int flags;
+	int modal;
+	int result;
+	int num;
+	int x;
+	int y;
+	int w;
+	int h;
+	int zoomed;
+	int zx;
+	int zy;
+	int zw;
+	int zh;
+	int focus;
+	int a;
+	int b;
+	int c;
+	int d;
+	int e;
+	char title[48];
+};
+
+struct TCtl
+{
+	int used;
+	int win;
+	int type;
+	int x;
+	int y;
+	int w;
+	int h;
+	int val;
+	int top;
+	int cmd;
+	int isDefault;
+	int group;
+	char text[200];
+};
+
+TWin tvWin[TV_MAXWIN];
+TCtl tvCtl[TV_MAXCTL];
+int tvZ[TV_MAXWIN];  // back to front
+int tvNZ=0;
+int tvRunning=1;
+int tvDirty=1;
+
+int dragWin=-1;
+int dragMode=0;      // 1 move, 2 resize, 3 pressed button
+int dragDX=0;
+int dragDY=0;
+int dragCtl=-1;
+int pressedInside=0;
+
+int TvTop()
+{
+	if(tvNZ==0)return -1;
+	return tvZ[tvNZ-1];
+}
+
+void TvToFront(int id)
+{
+	int found=-1;
+	for(int i=0;i<tvNZ;i++)
+		if(tvZ[i]==id)found=i;
+	if(found<0)return;
+	for(int i=found;i<tvNZ-1;i++)
+		tvZ[i]=tvZ[i+1];
+	tvZ[tvNZ-1]=id;
+	tvDirty=1;
+}
+
+int TvNew(int type, char* title, int x, int y, int w, int h, int flags)
+{
+	int id=-1;
+	for(int i=TV_MAXWIN-1;i>=0;i--)
+		if(!tvWin[i].used)id=i;
+	if(id<0)return -1;
+	TWin& t=tvWin[id];
+	t.used=1;
+	t.type=type;
+	t.flags=flags;
+	t.modal=0;
+	t.result=0;
+	t.x=x;
+	t.y=y;
+	t.w=w;
+	t.h=h;
+	t.zoomed=0;
+	t.focus=-1;
+	t.a=0;
+	t.b=0;
+	t.c=0;
+	t.d=0;
+	t.e=0;
+	StrCpy(&t.title[0],title,48);
+	// the smallest free number, for the Alt+digit shortcut
+	t.num=0;
+	if(!(flags&WF_DIALOG))
+	{
+		for(int n=9;n>=1;n--)
+		{
+			int taken=0;
+			for(int i=0;i<TV_MAXWIN;i++)
+				if(tvWin[i].used)
+					if((i!=id)&&(tvWin[i].num==n))taken=1;
+			if(!taken)t.num=n;
+		}
+	}
+	tvZ[tvNZ]=id;
+	tvNZ++;
+	tvDirty=1;
+	return id;
+}
+
+// A window of size w*h in the middle of the desktop.
+int TvNewCentered(int type, char* title, int w, int h, int flags)
+{
+	int x=(tvW-w)/2;
+	int y=1+(tvH-2-h)/2;
+	if(x<0)x=0;
+	if(y<1)y=1;
+	return TvNew(type,title,x,y,w,h,flags);
+}
+
+void TvClose(int id)
+{
+	if(id<0)return;
+	if(!tvWin[id].used)return;
+	TvAppClosed(id);
+	for(int i=0;i<TV_MAXCTL;i++)
+		if(tvCtl[i].used)
+			if(tvCtl[i].win==id)tvCtl[i].used=0;
+	int n=0;
+	for(int i=0;i<tvNZ;i++)
+	{
+		if(tvZ[i]!=id)
+		{
+			tvZ[n]=tvZ[i];
+			n++;
+		}
+	}
+	tvNZ=n;
+	tvWin[id].used=0;
+	if(dragWin==id)
+	{
+		dragWin=-1;
+		dragMode=0;
+	}
+	tvDirty=1;
+}
+
+int TvAdd(int win, int type, int x, int y, int w, int h, char* text, int cmd)
+{
+	int id=-1;
+	for(int i=TV_MAXCTL-1;i>=0;i--)
+		if(!tvCtl[i].used)id=i;
+	if(id<0)return -1;
+	TCtl& c=tvCtl[id];
+	c.used=1;
+	c.win=win;
+	c.type=type;
+	c.x=x;
+	c.y=y;
+	c.w=w;
+	c.h=h;
+	c.val=0;
+	c.top=0;
+	c.cmd=cmd;
+	c.isDefault=0;
+	c.group=0;
+	StrCpy(&c.text[0],text,200);
+	if(type!=C_LABEL)
+		if(tvWin[win].focus<0)tvWin[win].focus=id;
+	return id;
+}
+
+// List items are stored in the control text, separated by '|'.
+int TvItemCount(char* s)
+{
+	if(s[0]==0)return 0;
+	int n=1;
+	int i=0;
+	while(s[i]!=0)
+	{
+		if(s[i]=='|')n++;
+		i++;
+	}
+	return n;
+}
+
+void TvItemAt(char* s, int n, char* out, int max)
+{
+	int i=0;
+	while(n>0)
+	{
+		if(s[i]==0)break;
+		if(s[i]=='|')n--;
+		i++;
+	}
+	int o=0;
+	while(o<max-1)
+	{
+		if((s[i]==0)||(s[i]=='|'))break;
+		out[o]=s[i];
+		o++;
+		i++;
+	}
+	out[o]=0;
+}
+
+void TvDrawCtl(int id, TWin& t)
+{
+	TCtl& c=tvCtl[id];
+	int x=t.x+c.x;
+	int y=t.y+c.y;
+	int focused=(t.focus==id)&&(TvTop()==c.win);
+	if(c.type==C_LABEL)
+	{
+		TvHotText(x,y,&c.text[0],0x70,0x7E);
+	}
+	else if(c.type==C_BUTTON)
+	{
+		int pressed=(dragMode==3)&&(dragCtl==id)&&pressedInside;
+		int at=0x20;
+		if(c.isDefault)at=0x2B;
+		if(focused)at=0x2F;
+		int bx=x;
+		if(pressed)bx=x+1;
+		TvFill(bx,y,c.w,1,' ',at);
+		TvHotText(bx+(c.w-HotLen(&c.text[0]))/2,y,&c.text[0],at,0x2E);
+		if(!pressed)
+		{
+			TvPut(x+c.w,y,G_LOWHALF,0x70);
+			for(int i=1;i<=c.w;i++)
+				TvPut(x+i,y+1,G_UPHALF,0x70);
+		}
+	}
+	else if((c.type==C_CHECK)||(c.type==C_RADIO))
+	{
+		int at=0x30;
+		if(focused)at=0x3F;
+		TvFill(x,y,c.w,1,' ',at);
+		if(c.type==C_CHECK)
+		{
+			TvText(x+1,y,"[ ]",at);
+			if(c.val)TvPut(x+2,y,'X',at);
+		}
+		else
+		{
+			TvText(x+1,y,"( )",at);
+			if(c.val)TvPut(x+2,y,G_DOT,at);
+		}
+		TvHotText(x+5,y,&c.text[0],at,0x3E);
+	}
+	else if(c.type==C_INPUT)
+	{
+		int len=StrLen(&c.text[0]);
+		if(c.val>len)c.val=len;
+		if(c.val<c.top)c.top=c.val;
+		if(c.val>c.top+c.w-1)c.top=c.val-c.w+1;
+		TvFill(x,y,c.w,1,' ',0x1F);
+		for(int i=c.top;i<len;i++)
+			if(i-c.top<c.w)TvPut(x+i-c.top,y,c.text[i],0x1F);
+		if(c.top>0)TvPut(x,y,G_LEFT,0x1A);
+		if(focused)
+		{
+			tvCurX=x+c.val-c.top;
+			tvCurY=y;
+		}
+	}
+	else if(c.type==C_LIST)
+	{
+		int n=TvItemCount(&c.text[0]);
+		char item[64];
+		if(c.val<c.top)c.top=c.val;
+		if(c.val>=c.top+c.h)c.top=c.val-c.h+1;
+		for(int j=0;j<c.h;j++)
+		{
+			int at=0x30;
+			int k=c.top+j;
+			if(k==c.val)
+			{
+				at=0x3E;
+				if(focused)at=0x2F;
+			}
+			TvFill(x,y+j,c.w-1,1,' ',at);
+			if(k<n)
+			{
+				TvItemAt(&c.text[0],k,&item[0],64);
+				TvText(x+1,y+j,&item[0],at);
+			}
+		}
+		int mx=n-c.h;
+		if(mx<0)mx=0;
+		TvVBar(x+c.w-1,y,c.h,c.top,mx,0x31);
+	}
+}
+
+void TvDrawWin(int id)
+{
+	TWin& t=tvWin[id];
+	int active=(TvTop()==id);
+	int dialog=t.flags&WF_DIALOG;
+	int bg=0x1E;
+	int fr=0x1F;
+	int pas=0x17;
+	if(dialog)
+	{
+		bg=0x70;
+		fr=0x7F;
+		pas=0x78;
+	}
+	TvClip(0,1,tvW,tvH-1);
+	TvShadow(t.x,t.y,t.w,t.h);
+	TvFill(t.x,t.y,t.w,t.h,' ',bg);
+	int at=pas;
+	if(active)at=fr;
+	int dragging=(dragWin==id)&&((dragMode==1)||(dragMode==2));
+	if(dragging)at=at&0xF0|0x0A;
+	TvFrame(t.x,t.y,t.w,t.h,active&&!dragging,at);
+	// title
+	int tl=StrLen(&t.title[0]);
+	if(tl>0)
+	{
+		int tx=t.x+(t.w-tl-2)/2;
+		TvPut(tx,t.y,' ',at);
+		int e=TvText(tx+1,t.y,&t.title[0],at);
+		TvPut(e,t.y,' ',at);
+	}
+	if(active&&!dragging)
+	{
+		TvPut(t.x+2,t.y,'[',at);
+		TvPut(t.x+3,t.y,G_BOX,at&0xF0|0x0A);
+		TvPut(t.x+4,t.y,']',at);
+		if(t.flags&WF_RESIZE)
+		{
+			TvPut(t.x+t.w-5,t.y,'[',at);
+			TvPut(t.x+t.w-4,t.y,G_ZOOM,at&0xF0|0x0A);
+			TvPut(t.x+t.w-3,t.y,']',at);
+			TvPut(t.x+t.w-1,t.y+t.h-1,G_BR,at&0xF0|0x0A);
+			TvPut(t.x+t.w-2,t.y+t.h-1,G_HORZ,at&0xF0|0x0A);
+		}
+	}
+	if((t.num>0)&&(t.w>12))
+		TvPut(t.x+t.w-7,t.y,'0'+t.num,at);
+	TvClip(t.x+1,t.y+1,t.x+t.w-1,t.y+t.h-1);
+	if(clipY0<1)clipY0=1;
+	if(clipY1>tvH-1)clipY1=tvH-1;
+	int cx0=clipX0;
+	int cy0=clipY0;
+	int cx1=clipX1;
+	int cy1=clipY1;
+	TvAppDraw(id);
+	for(int i=0;i<TV_MAXCTL;i++)
+	{
+		if(tvCtl[i].used)
+			if(tvCtl[i].win==id)
+			{
+				clipX0=cx0;
+				clipY0=cy0;
+				clipX1=cx1;
+				clipY1=cy1;
+				TvDrawCtl(i,t);
+			}
+	}
+}
+
+// ---------------------------------------------------------------- menus and status line
+
+#define TV_MAXMENU 8
+#define TV_MAXITEM 48
+#define TV_MAXSTATUS 10
+
+struct TMenu
+{
+	char title[16];
+	int first;
+	int count;
+};
+
+struct TItem
+{
+	char text[32];
+	char hint[12];
+	int cmd;
+	int key;
+};
+
+struct TStatus
+{
+	char text[24];
+	int cmd;
+	int key;
+};
+
+TMenu tvMenu[TV_MAXMENU];
+TItem tvItem[TV_MAXITEM];
+TStatus tvStatus[TV_MAXSTATUS];
+int tvNMenu=0;
+int tvNItem=0;
+int tvNStatus=0;
+int menuOpen=-1;
+int menuSel=0;
+int tvClockSec=-1;
+
+void TvMenuAdd(char* title)
+{
+	TMenu& m=tvMenu[tvNMenu];
+	StrCpy(&m.title[0],title,16);
+	m.first=tvNItem;
+	m.count=0;
+	tvNMenu++;
+}
+
+void TvMenuItem(char* text, char* hint, int cmd, int key)
+{
+	TItem& it=tvItem[tvNItem];
+	StrCpy(&it.text[0],text,32);
+	StrCpy(&it.hint[0],hint,12);
+	it.cmd=cmd;
+	it.key=key;
+	tvNItem++;
+	tvMenu[tvNMenu-1].count++;
+}
+
+void TvMenuLine()
+{
+	TvMenuItem("","",0,0);
+}
+
+void TvStatusAdd(char* text, int cmd, int key)
+{
+	TStatus& s=tvStatus[tvNStatus];
+	StrCpy(&s.text[0],text,24);
+	s.cmd=cmd;
+	s.key=key;
+	tvNStatus++;
+}
+
+int TvMenuX(int n)
+{
+	int x=1;
+	for(int i=0;i<n;i++)
+		x=x+HotLen(&tvMenu[i].title[0])+2;
+	return x;
+}
+
+void TvMenuBox(int n, int& x, int& y, int& w, int& h)
+{
+	int wid=10;
+	TMenu& m=tvMenu[n];
+	for(int i=0;i<m.count;i++)
+	{
+		TItem& it=tvItem[m.first+i];
+		int l=HotLen(&it.text[0])+StrLen(&it.hint[0])+6;
+		if(l>wid)wid=l;
+	}
+	x=TvMenuX(n)-1;
+	y=1;
+	w=wid;
+	h=m.count+2;
+	if(x+w>tvW)x=tvW-w;
+	if(x<0)x=0;
+}
+
+void TvDrawMenuBar()
+{
+	TvClip(0,0,tvW,tvH);
+	TvFill(0,0,tvW,1,' ',0x70);
+	for(int i=0;i<tvNMenu;i++)
+	{
+		int x=TvMenuX(i);
+		int at=0x70;
+		int hot=0x74;
+		if(menuOpen==i)
+		{
+			at=0x20;
+			hot=0x24;
+			TvFill(x-1,0,HotLen(&tvMenu[i].title[0])+2,1,' ',at);
+		}
+		TvHotText(x,0,&tvMenu[i].title[0],at,hot);
+	}
+	char clk[16];
+	snprintf(&clk[0],16,"%02i:%02i:%02i",term_time(0),term_time(1),term_time(2));
+	TvText(tvW-9,0,&clk[0],0x70);
+}
+
+void TvDrawDropDown()
+{
+	if(menuOpen<0)return;
+	int x;
+	int y;
+	int w;
+	int h;
+	TvMenuBox(menuOpen,x,y,w,h);
+	TvClip(0,0,tvW,tvH);
+	TvShadow(x,y,w,h);
+	TvFill(x,y,w,h,' ',0x70);
+	TvFrame(x,y,w,h,0,0x70);
+	TMenu& m=tvMenu[menuOpen];
+	for(int i=0;i<m.count;i++)
+	{
+		TItem& it=tvItem[m.first+i];
+		int ry=y+1+i;
+		if(it.text[0]==0)
+		{
+			for(int k=1;k<w-1;k++)
+				TvPut(x+k,ry,G_HORZ,0x70);
+			TvPut(x,ry,0x251C,0x70);
+			TvPut(x+w-1,ry,0x2524,0x70);
+		}
+		else
+		{
+			int at=0x70;
+			int hot=0x74;
+			if(i==menuSel)
+			{
+				at=0x20;
+				hot=0x24;
+				TvFill(x+1,ry,w-2,1,' ',at);
+			}
+			TvHotText(x+2,ry,&it.text[0],at,hot);
+			TvText(x+w-2-StrLen(&it.hint[0]),ry,&it.hint[0],at);
+		}
+	}
+}
+
+void TvDrawStatus()
+{
+	TvClip(0,0,tvW,tvH);
+	TvFill(0,tvH-1,tvW,1,' ',0x70);
+	int x=1;
+	for(int i=0;i<tvNStatus;i++)
+	{
+		x=TvHotText(x,tvH-1,&tvStatus[i].text[0],0x70,0x74);
+		x=x+2;
+	}
+}
+
+void TvRedraw()
+{
+	tvCurX=-1;
+	TvClip(0,0,tvW,tvH);
+	TvFill(0,1,tvW,tvH-2,G_LIGHT,0x71);
+	for(int i=0;i<tvNZ;i++)
+		TvDrawWin(tvZ[i]);
+	TvDrawMenuBar();
+	TvDrawStatus();
+	TvDrawDropDown();
+	if(menuOpen>=0)tvCurX=-1;
+	TvFlush();
+	tvDirty=0;
+}
+
+// ---------------------------------------------------------------- input decoding
+
+int ReadParam(int& c)
+{
+	int n=0;
+	while((c>='0')&&(c<='9'))
+	{
+		n=n*10+c-'0';
+		c=term_read(50);
+	}
+	return n;
+}
+
+void DecodeMouse()
+{
+	int c=term_read(50);
+	int b=ReadParam(c);
+	c=term_read(50);
+	int x=ReadParam(c);
+	c=term_read(50);
+	int y=ReadParam(c);
+	evX=x-1;
+	evY=y-1;
+	evBtn=b&3;
+	if(b&64)
+	{
+		evType=EV_WHEEL;
+		evWheel=1;
+		if(b&1)evWheel=-1;
+		return;
+	}
+	if(c=='m')
+		evType=EV_MUP;
+	else if(b&32)
+		evType=EV_MDRAG;
+	else
+		evType=EV_MDOWN;
+}
+
+void DecodeCSI()
+{
+	int c=term_read(50);
+	if(c=='<')
+	{
+		DecodeMouse();
+		return;
+	}
+	int p=ReadParam(c);
+	while(c==';')
+	{
+		c=term_read(50);
+		ReadParam(c); // modifiers are ignored
+	}
+	evType=EV_KEY;
+	evKey=0;
+	if(c=='A')evKey=K_UP;
+	if(c=='B')evKey=K_DOWN;
+	if(c=='C')evKey=K_RIGHT;
+	if(c=='D')evKey=K_LEFT;
+	if(c=='H')evKey=K_HOME;
+	if(c=='F')evKey=K_END;
+	if(c=='Z')evKey=K_BTAB;
+	if(c=='~')
+	{
+		if((p==1)||(p==7))evKey=K_HOME;
+		if((p==4)||(p==8))evKey=K_END;
+		if(p==2)evKey=K_INS;
+		if(p==3)evKey=K_DEL;
+		if(p==5)evKey=K_PGUP;
+		if(p==6)evKey=K_PGDN;
+		if((p>=11)&&(p<=15))evKey=K_F1+p-11;
+		if((p>=17)&&(p<=21))evKey=K_F6+p-17;
+		if((p>=23)&&(p<=24))evKey=K_F11+p-23;
+	}
+	if(evKey==0)evType=EV_NONE;
+}
+
+void TvReadEvent(int timeoutMs)
+{
+	evType=EV_NONE;
+	int c=term_read(timeoutMs);
+	if(c<0)return;
+	if(c==27)
+	{
+		int n=term_read(25);
+		if(n<0)
+		{
+			evType=EV_KEY;
+			evKey=K_ESC;
+		}
+		else if(n=='[')
+			DecodeCSI();
+		else if(n=='O')
+		{
+			int k=term_read(50);
+			evType=EV_KEY;
+			evKey=0;
+			if((k>='P')&&(k<='S'))evKey=K_F1+k-'P';
+			if(k=='A')evKey=K_UP;
+			if(k=='B')evKey=K_DOWN;
+			if(k=='C')evKey=K_RIGHT;
+			if(k=='D')evKey=K_LEFT;
+			if(k=='H')evKey=K_HOME;
+			if(k=='F')evKey=K_END;
+			if(evKey==0)evType=EV_NONE;
+		}
+		else
+		{
+			evType=EV_KEY;
+			evKey=K_ALT+LowerKey(n);
+		}
+		return;
+	}
+	if(c>=0xC0)
+	{
+		// a multi-byte UTF-8 character: the fields only hold ASCII
+		int more=1;
+		if(c>=0xE0)more=2;
+		if(c>=0xF0)more=3;
+		for(int i=0;i<more;i++)
+			term_read(10);
+		c='?';
+	}
+	if(c==8)c=K_BACKSPACE;
+	if(c==10)c=K_ENTER;
+	evType=EV_KEY;
+	evKey=c;
+}
+
+// ---------------------------------------------------------------- behaviour
+
+void TvZoom(int id)
+{
+	if(id<0)return;
+	TWin& t=tvWin[id];
+	if(!(t.flags&WF_RESIZE))return;
+	if(t.zoomed)
+	{
+		t.x=t.zx;
+		t.y=t.zy;
+		t.w=t.zw;
+		t.h=t.zh;
+		t.zoomed=0;
+	}
+	else
+	{
+		t.zx=t.x;
+		t.zy=t.y;
+		t.zw=t.w;
+		t.zh=t.h;
+		t.x=0;
+		t.y=1;
+		t.w=tvW;
+		t.h=tvH-2;
+		t.zoomed=1;
+	}
+	tvDirty=1;
+}
+
+void TvCascade()
+{
+	int n=0;
+	for(int i=0;i<tvNZ;i++)
+	{
+		TWin& t=tvWin[tvZ[i]];
+		t.zoomed=0;
+		t.x=n*2;
+		t.y=1+n;
+		if(t.flags&WF_RESIZE)
+		{
+			t.w=tvW-t.x;
+			t.h=tvH-1-t.y;
+		}
+		n++;
+	}
+	tvDirty=1;
+}
+
+void TvTile()
+{
+	int cnt=0;
+	for(int i=0;i<tvNZ;i++)
+		if(tvWin[tvZ[i]].flags&WF_RESIZE)cnt++;
+	if(cnt==0)return;
+	int cols=1;
+	while(cols*cols<cnt)cols++;
+	int rows=(cnt+cols-1)/cols;
+	int cw=tvW/cols;
+	int ch=(tvH-2)/rows;
+	int n=0;
+	for(int i=0;i<tvNZ;i++)
+	{
+		TWin& t=tvWin[tvZ[i]];
+		if(t.flags&WF_RESIZE)
+		{
+			t.zoomed=0;
+			t.x=(n%cols)*cw;
+			t.y=1+(n/cols)*ch;
+			t.w=cw;
+			t.h=ch;
+			if(n%cols==cols-1)t.w=tvW-t.x;
+			if(n/cols==rows-1)t.h=tvH-1-t.y;
+			n++;
+		}
+	}
+	tvDirty=1;
+}
+
+void TvOpenMenu(int n);
+
+void TvCommand(int cmd)
+{
+	tvDirty=1;
+	int top=TvTop();
+	if(cmd==CM_NEXT)
+	{
+		// the back window comes to the front
+		if(tvNZ>1)TvToFront(tvZ[0]);
+	}
+	else if(cmd==CM_PREV)
+	{
+		if(tvNZ>1)
+		{
+			for(int i=tvNZ-1;i>0;i--)
+				tvZ[i]=tvZ[i-1];
+			tvZ[0]=top;
+		}
+	}
+	else if(cmd==CM_ZOOM)TvZoom(top);
+	else if(cmd==CM_CLOSE)TvClose(top);
+	else if(cmd==CM_CASCADE)TvCascade();
+	else if(cmd==CM_TILE)TvTile();
+	else if(cmd==CM_MENU)TvOpenMenu(0);
+	else TvAppCommand(cmd);
+}
+
+void TvFire(int win, int id)
+{
+	TCtl& c=tvCtl[id];
+	if(tvWin[win].modal)
+		tvWin[win].result=c.cmd;
+	else
+		TvAppButton(win,id,c.cmd);
+	tvDirty=1;
+}
+
+void TvSelect(int win, int id)
+{
+	TCtl& c=tvCtl[id];
+	if(c.type==C_CHECK)
+		c.val=!c.val;
+	else if(c.type==C_RADIO)
+	{
+		for(int i=0;i<TV_MAXCTL;i++)
+			if(tvCtl[i].used)
+				if((tvCtl[i].win==win)&&(tvCtl[i].type==C_RADIO)&&(tvCtl[i].group==c.group))
+					tvCtl[i].val=0;
+		c.val=1;
+	}
+	else if(c.type==C_BUTTON)
+		TvFire(win,id);
+	tvDirty=1;
+}
+
+void TvFocusStep(int win, int dir)
+{
+	TWin& t=tvWin[win];
+	int i=t.focus;
+	if(i<0)i=0;
+	for(int k=0;k<TV_MAXCTL;k++)
+	{
+		i=(i+dir+TV_MAXCTL)%TV_MAXCTL;
+		if(tvCtl[i].used)
+			if((tvCtl[i].win==win)&&(tvCtl[i].type!=C_LABEL))
+			{
+				t.focus=i;
+				tvDirty=1;
+				return;
+			}
+	}
+}
+
+// Keys for the focused control. Returns 1 if the key was used.
+int TvCtlKey(int win, int key)
+{
+	TWin& t=tvWin[win];
+	if(t.focus<0)return 0;
+	TCtl& c=tvCtl[t.focus];
+	if(c.type==C_INPUT)
+	{
+		int len=StrLen(&c.text[0]);
+		if(key==K_LEFT){if(c.val>0)c.val--;return 1;}
+		if(key==K_RIGHT){if(c.val<len)c.val++;return 1;}
+		if(key==K_HOME){c.val=0;return 1;}
+		if(key==K_END){c.val=len;return 1;}
+		if(key==K_BACKSPACE)
+		{
+			if(c.val>0)
+			{
+				for(int i=c.val-1;i<len;i++)
+					c.text[i]=c.text[i+1];
+				c.val--;
+			}
+			return 1;
+		}
+		if(key==K_DEL)
+		{
+			if(c.val<len)
+				for(int i=c.val;i<len;i++)
+					c.text[i]=c.text[i+1];
+			return 1;
+		}
+		if((key>=32)&&(key<127))
+		{
+			if(len<198)
+			{
+				for(int i=len+1;i>c.val;i--)
+					c.text[i]=c.text[i-1];
+				c.text[c.val]=key;
+				c.val++;
+			}
+			return 1;
+		}
+		return 0;
+	}
+	if(c.type==C_LIST)
+	{
+		int n=TvItemCount(&c.text[0]);
+		int v=c.val;
+		if(key==K_UP)v--;
+		else if(key==K_DOWN)v++;
+		else if(key==K_PGUP)v=v-c.h;
+		else if(key==K_PGDN)v=v+c.h;
+		else if(key==K_HOME)v=0;
+		else if(key==K_END)v=n-1;
+		else return 0;
+		if(v>=n)v=n-1;
+		if(v<0)v=0;
+		c.val=v;
+		return 1;
+	}
+	if(key==' ')
+	{
+		TvSelect(win,t.focus);
+		return 1;
+	}
+	return 0;
+}
+
+int TvDialogKey(int win, int key)
+{
+	TWin& t=tvWin[win];
+	if(TvCtlKey(win,key))
+	{
+		tvDirty=1;
+		return 1;
+	}
+	if(key==K_TAB){TvFocusStep(win,1);return 1;}
+	if(key==K_BTAB){TvFocusStep(win,-1);return 1;}
+	if((key==K_DOWN)||(key==K_RIGHT)){if(t.focus>=0){TvFocusStep(win,1);return 1;}}
+	if((key==K_UP)||(key==K_LEFT)){if(t.focus>=0){TvFocusStep(win,-1);return 1;}}
+	if(key==K_ENTER)
+	{
+		if(t.focus>=0)
+			if(tvCtl[t.focus].type==C_BUTTON)
+			{
+				TvFire(win,t.focus);
+				return 1;
+			}
+		for(int i=0;i<TV_MAXCTL;i++)
+			if(tvCtl[i].used)
+				if((tvCtl[i].win==win)&&tvCtl[i].isDefault)
+				{
+					TvFire(win,i);
+					return 1;
+				}
+		return 0;
+	}
+	// hot letters: Alt+letter anywhere, the bare letter unless typing in a field
+	int letter=0;
+	if(key>K_ALT)
+		letter=key-K_ALT;
+	else if(key<127)
+	{
+		letter=LowerKey(key);
+		if(t.focus>=0)
+			if(tvCtl[t.focus].type==C_INPUT)letter=0;
+	}
+	if(letter!=0)
+	{
+		for(int i=0;i<TV_MAXCTL;i++)
+			if(tvCtl[i].used)
+				if(tvCtl[i].win==win)
+					if(HotChar(&tvCtl[i].text[0])==letter)
+					{
+						if(tvCtl[i].type==C_LABEL)
+						{
+							// a label moves the focus to the control after it
+							t.focus=i;
+							TvFocusStep(win,1);
+						}
+						else
+						{
+							t.focus=i;
+							TvSelect(win,i);
+						}
+						return 1;
+					}
+	}
+	return 0;
+}
+
+int TvCtlAt(int win, int mx, int my)
+{
+	TWin& t=tvWin[win];
+	for(int i=0;i<TV_MAXCTL;i++)
+	{
+		if(tvCtl[i].used)
+			if((tvCtl[i].win==win)&&(tvCtl[i].type!=C_LABEL))
+			{
+				TCtl& c=tvCtl[i];
+				int x=t.x+c.x;
+				int y=t.y+c.y;
+				if((mx>=x)&&(mx<x+c.w)&&(my>=y)&&(my<y+c.h))
+					return i;
+			}
+	}
+	return -1;
+}
+
+void TvCtlMouseDown(int win, int id, int mx, int my)
+{
+	TWin& t=tvWin[win];
+	TCtl& c=tvCtl[id];
+	t.focus=id;
+	tvDirty=1;
+	if(c.type==C_BUTTON)
+	{
+		dragMode=3;
+		dragCtl=id;
+		dragWin=win;
+		pressedInside=1;
+	}
+	else if((c.type==C_CHECK)||(c.type==C_RADIO))
+		TvSelect(win,id);
+	else if(c.type==C_INPUT)
+	{
+		int p=mx-(t.x+c.x)+c.top;
+		int len=StrLen(&c.text[0]);
+		if(p>len)p=len;
+		c.val=p;
+	}
+	else if(c.type==C_LIST)
+	{
+		int n=TvItemCount(&c.text[0]);
+		int ry=my-(t.y+c.y);
+		if(mx==t.x+c.x+c.w-1)
+		{
+			int mxTop=n-c.h;
+			if(mxTop<0)mxTop=0;
+			int h=TvVBarHit(t.y+c.y,c.h,c.top,mxTop,my);
+			int v=c.val;
+			if(h==0)v--;
+			if(h==1)v=v-c.h;
+			if(h==3)v=v+c.h;
+			if(h==4)v++;
+			if(v>=n)v=n-1;
+			if(v<0)v=0;
+			c.val=v;
+		}
+		else if(c.top+ry<n)
+			c.val=c.top+ry;
+	}
+}
+
+int TvWinAt(int x, int y)
+{
+	for(int i=tvNZ-1;i>=0;i--)
+	{
+		TWin& t=tvWin[tvZ[i]];
+		if((x>=t.x)&&(x<t.x+t.w)&&(y>=t.y)&&(y<t.y+t.h))
+			return tvZ[i];
+	}
+	return -1;
+}
+
+void TvCloseMenu()
+{
+	menuOpen=-1;
+	tvDirty=1;
+}
+
+void TvOpenMenu(int n)
+{
+	menuOpen=n;
+	menuSel=0;
+	if(tvItem[tvMenu[n].first].text[0]==0)menuSel=1;
+	tvDirty=1;
+}
+
+void TvMenuPick()
+{
+	TItem& it=tvItem[tvMenu[menuOpen].first+menuSel];
+	int cmd=it.cmd;
+	TvCloseMenu();
+	if(cmd!=0)TvCommand(cmd);
+}
+
+void TvMenuMove(int dir)
+{
+	TMenu& m=tvMenu[menuOpen];
+	for(int k=0;k<m.count;k++)
+	{
+		menuSel=(menuSel+dir+m.count)%m.count;
+		if(tvItem[m.first+menuSel].text[0]!=0)break;
+	}
+}
+
+void TvMenuKey(int key)
+{
+	tvDirty=1;
+	if(key==K_ESC)TvCloseMenu();
+	else if(key==K_F10)TvCloseMenu();
+	else if(key==K_LEFT)TvOpenMenu((menuOpen+tvNMenu-1)%tvNMenu);
+	else if(key==K_RIGHT)TvOpenMenu((menuOpen+1)%tvNMenu);
+	else if(key==K_UP)TvMenuMove(-1);
+	else if(key==K_DOWN)TvMenuMove(1);
+	else if(key==K_ENTER)TvMenuPick();
+	else if(key>K_ALT)
+	{
+		for(int i=0;i<tvNMenu;i++)
+			if(HotChar(&tvMenu[i].title[0])==key-K_ALT)TvOpenMenu(i);
+	}
+	else if(key<127)
+	{
+		TMenu& m=tvMenu[menuOpen];
+		for(int i=0;i<m.count;i++)
+			if(HotChar(&tvItem[m.first+i].text[0])==LowerKey(key))
+			{
+				menuSel=i;
+				TvMenuPick();
+				return;
+			}
+	}
+}
+
+// Returns 1 if the menu is open or was opened by this click.
+int TvMenuMouse(int ev)
+{
+	if(evY==0)
+	{
+		if((ev==EV_MDOWN)||(menuOpen>=0))
+			for(int i=0;i<tvNMenu;i++)
+			{
+				int x=TvMenuX(i);
+				if((evX>=x-1)&&(evX<x+HotLen(&tvMenu[i].title[0])+1))
+				{
+					if((ev==EV_MDOWN)&&(menuOpen==i))
+						TvCloseMenu();
+					else if(menuOpen!=i)
+						TvOpenMenu(i);
+					return 1;
+				}
+			}
+		if(menuOpen<0)return 1;
+	}
+	if(menuOpen<0)return 0;
+	int x;
+	int y;
+	int w;
+	int h;
+	TvMenuBox(menuOpen,x,y,w,h);
+	if((evX>x)&&(evX<x+w-1)&&(evY>y)&&(evY<y+h-1))
+	{
+		int i=evY-y-1;
+		if(tvItem[tvMenu[menuOpen].first+i].text[0]!=0)
+		{
+			menuSel=i;
+			tvDirty=1;
+			if(ev==EV_MUP)
+				TvMenuPick();
+		}
+		return 1;
+	}
+	if(ev==EV_MDOWN)TvCloseMenu();
+	return 1;
+}
+
+void TvMouse()
+{
+	int ev=evType;
+	if(ev==EV_WHEEL)
+	{
+		int win=TvWinAt(evX,evY);
+		if(win<0)return;
+		int top=TvTop();
+		if(tvWin[top].modal)
+			if(win!=top)return;
+		TWin& t=tvWin[win];
+		int c=TvCtlAt(win,evX,evY);
+		tvDirty=1;
+		if(c>=0)
+			if(tvCtl[c].type==C_LIST)
+			{
+				t.focus=c;
+				if(evWheel>0)TvCtlKey(win,K_UP);
+				else TvCtlKey(win,K_DOWN);
+				return;
+			}
+		TvAppMouse(win,EV_WHEEL,evX-t.x,evY-t.y);
+		return;
+	}
+	// a drag in progress owns the mouse
+	if(dragMode!=0)
+	{
+		tvDirty=1;
+		if(ev==EV_MUP)
+		{
+			int mode=dragMode;
+			int win=dragWin;
+			int ctl=dragCtl;
+			dragMode=0;
+			dragWin=-1;
+			dragCtl=-1;
+			if(mode==3)
+				if(tvCtl[ctl].used&&pressedInside)
+					TvFire(win,ctl);
+			return;
+		}
+		if(dragMode==3)
+		{
+			pressedInside=(TvCtlAt(dragWin,evX,evY)==dragCtl);
+			return;
+		}
+		TWin& t=tvWin[dragWin];
+		if(dragMode==1)
+		{
+			t.x=evX-dragDX;
+			t.y=evY-dragDY;
+			if(t.y<1)t.y=1;
+			if(t.y>tvH-2)t.y=tvH-2;
+			if(t.x>tvW-4)t.x=tvW-4;
+			if(t.x<4-t.w)t.x=4-t.w;
+		}
+		else if(dragMode==2)
+		{
+			t.w=evX-t.x+1;
+			t.h=evY-t.y+1;
+			if(t.w<16)t.w=16;
+			if(t.h<5)t.h=5;
+		}
+		t.zoomed=0;
+		return;
+	}
+	if(ev==EV_MUP)
+	{
+		if(menuOpen>=0)TvMenuMouse(ev);
+		return;
+	}
+	int top=TvTop();
+	int modal=0;
+	if(top>=0)modal=tvWin[top].modal;
+	if(!modal)
+		if(TvMenuMouse(ev))
+			return;
+	if(ev!=EV_MDOWN)
+	{
+		// dragging with no target: forward to the top window
+		if((top>=0)&&(ev==EV_MDRAG))
+			TvAppMouse(top,EV_MDRAG,evX-tvWin[top].x,evY-tvWin[top].y);
+		return;
+	}
+	tvDirty=1;
+	if(evY==tvH-1)
+	{
+		if(modal)return;
+		int x=1;
+		for(int i=0;i<tvNStatus;i++)
+		{
+			int l=HotLen(&tvStatus[i].text[0]);
+			if((evX>=x)&&(evX<x+l))
+			{
+				TvCommand(tvStatus[i].cmd);
+				return;
+			}
+			x=x+l+2;
+		}
+		return;
+	}
+	int win=TvWinAt(evX,evY);
+	if(win<0)return;
+	if(modal)
+		if(win!=top)return;
+	TvToFront(win);
+	TWin& t=tvWin[win];
+	int rx=evX-t.x;
+	int ry=evY-t.y;
+	if(ry==0)
+	{
+		if((rx>=2)&&(rx<=4))
+		{
+			if(modal)t.result=CM_CANCEL;
+			else TvClose(win);
+			return;
+		}
+		if(t.flags&WF_RESIZE)
+			if((rx>=t.w-5)&&(rx<=t.w-3))
+			{
+				TvZoom(win);
+				return;
+			}
+		dragWin=win;
+		dragMode=1;
+		dragDX=rx;
+		dragDY=ry;
+		return;
+	}
+	if((ry==t.h-1)&&(rx>=t.w-2))
+		if(t.flags&WF_RESIZE)
+		{
+			dragWin=win;
+			dragMode=2;
+			return;
+		}
+	int c=TvCtlAt(win,evX,evY);
+	if(c>=0)
+	{
+		TvCtlMouseDown(win,c,evX,evY);
+		return;
+	}
+	TvAppMouse(win,EV_MDOWN,rx,ry);
+}
+
+void TvKey()
+{
+	int key=evKey;
+	tvDirty=1;
+	if(menuOpen>=0)
+	{
+		TvMenuKey(key);
+		return;
+	}
+	int top=TvTop();
+	int modal=0;
+	if(top>=0)modal=tvWin[top].modal;
+	if(!modal)
+	{
+		if(key==K_F10)
+		{
+			TvOpenMenu(0);
+			return;
+		}
+		if(key>K_ALT)
+		{
+			int letter=key-K_ALT;
+			for(int i=0;i<tvNMenu;i++)
+				if(HotChar(&tvMenu[i].title[0])==letter)
+				{
+					TvOpenMenu(i);
+					return;
+				}
+			if((letter>='1')&&(letter<='9'))
+			{
+				for(int i=0;i<TV_MAXWIN;i++)
+					if(tvWin[i].used)
+						if(tvWin[i].num==letter-'0')
+						{
+							TvToFront(i);
+							return;
+						}
+			}
+		}
+		for(int i=0;i<tvNStatus;i++)
+			if((tvStatus[i].key!=0)&&(tvStatus[i].key==key))
+			{
+				TvCommand(tvStatus[i].cmd);
+				return;
+			}
+		for(int i=0;i<tvNItem;i++)
+			if((tvItem[i].key!=0)&&(tvItem[i].key==key))
+			{
+				TvCommand(tvItem[i].cmd);
+				return;
+			}
+	}
+	if(top<0)return;
+	TWin& t=tvWin[top];
+	if(TvAppKey(top,key))return;
+	if(TvDialogKey(top,key))return;
+	if(key==K_ESC)
+	{
+		if(t.modal)t.result=CM_CANCEL;
+		else if(t.flags&WF_DIALOG)TvClose(top);
+	}
+}
+
+void TvCheckSize()
+{
+	int w=term_cols();
+	int h=term_rows();
+	if(w>TV_MAXW)w=TV_MAXW;
+	if(h>TV_MAXH)h=TV_MAXH;
+	if((w==tvW)&&(h==tvH))return;
+	tvW=w;
+	tvH=h;
+	for(int i=0;i<TV_CELLS;i++)
+		tvPrevCh[i]=-1;
+	for(int i=0;i<TV_MAXWIN;i++)
+	{
+		if(tvWin[i].used)
+		{
+			TWin& t=tvWin[i];
+			if(t.zoomed)
+			{
+				t.w=tvW;
+				t.h=tvH-2;
+			}
+			if(t.y>tvH-2)t.y=tvH-2;
+			if(t.x>tvW-4)t.x=tvW-4;
+		}
+	}
+	OutStr("\x1b[0m\x1b[2J");
+	tvDirty=1;
+}
+
+// Runs until the program quits or, with stopWin>=0, until that modal window has a result.
+int TvRun(int stopWin)
+{
+	while(tvRunning)
+	{
+		if(stopWin>=0)
+			if(tvWin[stopWin].result!=0)
+				return tvWin[stopWin].result;
+		if(tvDirty)TvRedraw();
+		TvReadEvent(200);
+		if(evType==EV_NONE)
+		{
+			int sec=term_time(2);
+			if(sec!=tvClockSec)
+			{
+				tvClockSec=sec;
+				tvDirty=1;
+			}
+			TvCheckSize();
+		}
+		else if(evType==EV_KEY)
+			TvKey();
+		else
+			TvMouse();
+	}
+	return 0;
+}
+
+// Runs a window as a modal dialog and returns the command that ended it.
+// The window stays open so the caller can read its controls, then TvClose it.
+int TvExec(int win)
+{
+	tvWin[win].modal=1;
+	tvWin[win].result=0;
+	TvToFront(win);
+	return TvRun(win);
+}
+
+int TvLineCount(char* s)
+{
+	int n=1;
+	int i=0;
+	while(s[i]!=0)
+	{
+		if(s[i]==10)n++;
+		i++;
+	}
+	return n;
+}
+
+// Shows a message with one or two buttons. Returns CM_OK, CM_YES, CM_NO or CM_CANCEL.
+int TvMessage(char* title, char* text, int askYesNo)
+{
+	int lines=TvLineCount(text);
+	int longest=0;
+	int cur=0;
+	int i=0;
+	while(text[i]!=0)
+	{
+		if(text[i]==10)
+		{
+			if(cur>longest)longest=cur;
+			cur=0;
+		}
+		else cur++;
+		i++;
+	}
+	if(cur>longest)longest=cur;
+	int w=longest+6;
+	if(w<30)w=30;
+	int h=lines+6;
+	int win=TvNewCentered(0,title,w,h,WF_DIALOG);
+	// one label per line
+	char buf[200];
+	int line=0;
+	int o=0;
+	i=0;
+	while(true)
+	{
+		int c=text[i];
+		if((c==0)||(c==10))
+		{
+			buf[o]=0;
+			int l=StrLen(&buf[0]);
+			TvAdd(win,C_LABEL,(w-l)/2,2+line,l,1,&buf[0],0);
+			line++;
+			o=0;
+			if(c==0)break;
+		}
+		else if(o<198)
+		{
+			buf[o]=c;
+			o++;
+		}
+		i++;
+	}
+	int by=h-3;
+	if(askYesNo)
+	{
+		int b=TvAdd(win,C_BUTTON,w/2-12,by,10,2,"~Y~es",CM_YES);
+		tvCtl[b].isDefault=1;
+		TvAdd(win,C_BUTTON,w/2+2,by,10,2,"~N~o",CM_NO);
+	}
+	else
+	{
+		int b=TvAdd(win,C_BUTTON,w/2-5,by,10,2,"O~K~",CM_OK);
+		tvCtl[b].isDefault=1;
+	}
+	int r=TvExec(win);
+	TvClose(win);
+	return r;
+}
+
+void TvInit()
+{
+	tvVga[0]=0;
+	tvVga[1]=4;
+	tvVga[2]=2;
+	tvVga[3]=6;
+	tvVga[4]=1;
+	tvVga[5]=5;
+	tvVga[6]=3;
+	tvVga[7]=7;
+	for(int i=0;i<TV_MAXWIN;i++)
+		tvWin[i].used=0;
+	for(int i=0;i<TV_MAXCTL;i++)
+		tvCtl[i].used=0;
+	for(int i=0;i<TV_CELLS;i++)
+	{
+		tvCh[i]=' ';
+		tvAt[i]=0;
+		tvPrevCh[i]=-1;
+		tvPrevAt[i]=-1;
+	}
+	tvW=term_cols();
+	tvH=term_rows();
+	if(tvW>TV_MAXW)tvW=TV_MAXW;
+	if(tvH>TV_MAXH)tvH=TV_MAXH;
+	// alternate screen, no autowrap, hidden cursor, mouse buttons and drags in SGR form
+	OutStr("\x1b[?1049h\x1b[?7l\x1b[?25l\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[0m\x1b[2J");
+	OutFlush();
+}
+
+void TvDone()
+{
+	OutStr("\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?7h\x1b[?25h\x1b[0m\x1b[?1049l");
+	OutFlush();
+	term_close();
+}
+
+#endif // TV_H

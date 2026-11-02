@@ -106,3 +106,22 @@ Found empirically while writing and running these:
 - `sound.h` and `graphics.h` are intrinsics (not real files); windowing
   helpers like `Present()` come from the real `ws.h` at the examples root,
   so a program two levels deep includes it as `../../ws.h`.
+
+## tui/ — a Turbo Vision style text UI (ANSI terminal)
+
+A desktop in the terminal, with overlapping windows, pull-down menus, a status
+line, modal dialogs and keyboard and mouse control. Scinc draws it all with ANSI
+escape sequences. A small native library, `term_dl.so`, adds what Scinc lacks for
+terminals: raw mode, reading a key with a timeout, the terminal size and the time.
+
+Run `./build_so.sh` once, then `Scinc tvdemo.cpp [file]` from this folder.
+
+| File | What it does |
+|------|--------------|
+| `tv.h` | The framework: screen buffer that sends only changed cells, key and xterm mouse decoding, windows (move, resize, zoom, cascade, tile), menus, and button, check box, radio button, input line and list box controls |
+| `tvdemo.cpp` | Text viewer, calculator, calendar, ASCII table, sliding puzzle and a dialog using every control |
+| `term.h`, `term_dl.cpp` | The native terminal library. It restores the terminal on exit, on a crash and on most signals |
+
+`xfce4-terminal` and others may catch F1, F10 or Alt keys for their own menus. The
+mouse and Ctrl+Q always work.
+
