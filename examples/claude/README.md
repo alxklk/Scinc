@@ -112,15 +112,16 @@ Found empirically while writing and running these:
 A desktop in the terminal, with overlapping windows, pull-down menus, a status
 line, modal dialogs and keyboard and mouse control. Scinc draws it all with ANSI
 escape sequences. A small native library, `term_dl.so`, adds what Scinc lacks for
-terminals: raw mode, reading a key with a timeout, the terminal size, the time and
-directory listing.
+terminals: raw mode, reading a key with a timeout, the terminal size, the time,
+directory listing and saving files safely.
 
 Run `./build_so.sh` once, then `Scinc tvdemo.cpp [file]` from this folder.
 
 | File | What it does |
 |------|--------------|
 | `tv.h` | The framework: screen buffer that sends only changed cells, key and xterm mouse decoding, windows (move, resize, zoom, cascade, tile), menus, and button, check box, radio button, input line and list box controls |
-| `tvdemo.cpp` | File browser and text viewer with C/C++ syntax colours, calculator, calendar, ASCII table, sliding puzzle and a dialog using every control |
+| `tvedit.h` | The text editor: C/C++ syntax colours, selection by keyboard and mouse, undo and redo, clipboard, find and replace, go to line, auto-indent, UTF-8. It keeps line ends and permissions, saves through a temporary file, warns about unsaved changes and about files changed on disk, and opens as read-only any file it could not save unchanged |
+| `tvdemo.cpp` | File browser and editor windows, calculator, calendar, ASCII table, sliding puzzle and a dialog using every control |
 | `term.h`, `term_dl.cpp` | The native terminal library. It restores the terminal on exit, on a crash and on most signals |
 
 `xfce4-terminal` and others may catch F1, F10 or Alt keys for their own menus. The

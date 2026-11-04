@@ -20,6 +20,8 @@ void TvAppCommand(int cmd);                          // menu, status line and ho
 void TvAppButton(int win, int ctl, int cmd);         // a non-modal window's button
 void TvAppClosed(int win);
 void TvAppListItem(int win, int ctl, int i, char* out, int max); // items of a virtual list
+int  TvAppCanClose(int win);                         // return 0 to keep the window open
+int  TvAppPaste(int win, char* s, int n);            // return 1 if the pasted text was used
 
 // ---------------------------------------------------------------- keys and events
 
@@ -58,6 +60,11 @@ void TvAppListItem(int win, int ctl, int i, char* out, int max); // items of a v
 #define EV_MUP 3
 #define EV_MDRAG 4
 #define EV_WHEEL 5
+#define EV_PASTE 6
+
+#define MOD_SHIFT 1
+#define MOD_ALT 2
+#define MOD_CTRL 4
 
 int evType=0;
 int evKey=0;
@@ -65,6 +72,14 @@ int evX=0;
 int evY=0;
 int evBtn=0;
 int evWheel=0;
+int evMod=0;        // MOD_* held with a cursor or function key
+char evUtf[5];      // the bytes of a non-ASCII character, whose evKey is '?'
+int evUtfN=0;
+
+#define TV_PASTEMAX 1000000
+char* tvPaste;      // the text of an EV_PASTE, with LF line ends
+int tvPasteN=0;
+int tvPasteLost=0;  // set if it did not all fit
 
 // ---------------------------------------------------------------- screen
 
@@ -332,6 +347,31 @@ int TvCols(char* s)
 		n++;
 	}
 	return n;
+}
+
+// The columns taken by the bytes from a up to b, which are character boundaries.
+int TvColsBetween(char* s, int a, int b)
+{
+	int n=0;
+	while(a<b)
+	{
+		TvUtf8(s,a);
+		n++;
+	}
+	return n;
+}
+
+// The byte offset of the character before byte offset i.
+int TvPrevChar(char* s, int i)
+{
+	int p=0;
+	int q=0;
+	while(q<i)
+	{
+		p=q;
+		TvUtf8(s,q);
+	}
+	return p;
 }
 
 // Draws at most maxCols columns. Returns the column after the text.
@@ -805,17 +845,18 @@ void TvDrawCtl(int id, TWin& t)
 	}
 	else if(c.type==C_INPUT)
 	{
+		// val and top are byte offsets, on character boundaries
 		int len=StrLen(&c.text[0]);
 		if(c.val>len)c.val=len;
 		if(c.val<c.top)c.top=c.val;
-		if(c.val>c.top+c.w-1)c.top=c.val-c.w+1;
+		while(TvColsBetween(&c.text[0],c.top,c.val)>c.w-1)
+			TvUtf8(&c.text[0],c.top);
 		TvFill(x,y,c.w,1,' ',0x1F);
-		for(int i=c.top;i<len;i++)
-			if(i-c.top<c.w)TvPut(x+i-c.top,y,c.text[i],0x1F);
+		TvTextN(x,y,&c.text[c.top],0x1F,c.w);
 		if(c.top>0)TvPut(x,y,G_LEFT,0x1A);
 		if(focused)
 		{
-			tvCurX=x+c.val-c.top;
+			tvCurX=x+TvColsBetween(&c.text[0],c.top,c.val);
 			tvCurY=y;
 		}
 	}
@@ -1147,6 +1188,62 @@ void DecodeMouse()
 		evType=EV_MDOWN;
 }
 
+// Reads bracketed paste up to its closing ESC[201~, or until the input goes quiet.
+void ReadPaste()
+{
+	char* close="\x1b[201~";
+	int match=0;
+	int cr=0;
+	tvPasteN=0;
+	tvPasteLost=0;
+	while(true)
+	{
+		int c=term_read(500);
+		if(c<0)break;
+		int want=close[match];
+		if(c==want)
+		{
+			match++;
+			if(match==6)break;
+		}
+		else
+		{
+			// nothing but ESC starts the closing sequence, so a failed match is plain text
+			for(int k=0;k<match;k++)
+			{
+				if(tvPasteN<TV_PASTEMAX)
+				{
+					tvPaste[tvPasteN]=close[k];
+					tvPasteN++;
+				}
+				else tvPasteLost=1;
+			}
+			match=0;
+			if(c==27)
+				match=1;
+			else
+			{
+				// a line end is CR, LF or CR LF, and a NUL cannot be held in a line
+				int skip=(c==0);
+				int isCr=(c==13);
+				if(isCr)c=10;
+				else if((c==10)&&cr)skip=1;
+				cr=isCr;
+				if(!skip)
+				{
+					if(tvPasteN<TV_PASTEMAX)
+					{
+						tvPaste[tvPasteN]=c;
+						tvPasteN++;
+					}
+					else tvPasteLost=1;
+				}
+			}
+		}
+	}
+	evType=EV_PASTE;
+}
+
 void DecodeCSI()
 {
 	int c=term_read(50);
@@ -1156,10 +1253,22 @@ void DecodeCSI()
 		return;
 	}
 	int p=ReadParam(c);
-	while(c==';')
+	evMod=0;
+	if(c==';')
 	{
 		c=term_read(50);
-		ReadParam(c); // modifiers are ignored
+		int m=ReadParam(c);
+		if(m>0)evMod=m-1;
+		while(c==';')
+		{
+			c=term_read(50);
+			ReadParam(c);
+		}
+	}
+	if((c=='~')&&(p==200))
+	{
+		ReadPaste();
+		return;
 	}
 	evType=EV_KEY;
 	evKey=0;
@@ -1188,6 +1297,8 @@ void DecodeCSI()
 void TvReadEvent(int timeoutMs)
 {
 	evType=EV_NONE;
+	evMod=0;
+	evUtfN=0;
 	int c=term_read(timeoutMs);
 	if(c<0)return;
 	if(c==27)
@@ -1223,12 +1334,23 @@ void TvReadEvent(int timeoutMs)
 	}
 	if(c>=0xC0)
 	{
-		// a multi-byte UTF-8 character: the fields only hold ASCII
+		// a multi-byte UTF-8 character: evUtf holds it, evKey is a stand-in
 		int more=1;
 		if(c>=0xE0)more=2;
 		if(c>=0xF0)more=3;
+		evUtf[0]=c;
+		evUtfN=1;
 		for(int i=0;i<more;i++)
-			term_read(10);
+		{
+			int n=term_read(10);
+			if(n>=0)
+			{
+				evUtf[evUtfN]=n;
+				evUtfN++;
+			}
+		}
+		evUtf[evUtfN]=0;
+		if(evUtfN!=more+1)evUtfN=0;
 		c='?';
 	}
 	if(c==8)c=K_BACKSPACE;
@@ -1337,7 +1459,11 @@ void TvCommand(int cmd)
 		}
 	}
 	else if(cmd==CM_ZOOM)TvZoom(top);
-	else if(cmd==CM_CLOSE)TvClose(top);
+	else if(cmd==CM_CLOSE)
+	{
+		if(top>=0)
+			if(TvAppCanClose(top))TvClose(top);
+	}
 	else if(cmd==CM_CASCADE)TvCascade();
 	else if(cmd==CM_TILE)TvTile();
 	else if(cmd==CM_MENU)TvOpenMenu(0);
@@ -1390,6 +1516,17 @@ void TvFocusStep(int win, int dir)
 	}
 }
 
+void TvInputInsert(TCtl& c, char* s, int n)
+{
+	int len=StrLen(&c.text[0]);
+	if(len+n>198)return;
+	for(int i=len;i>=c.val;i--)
+		c.text[i+n]=c.text[i];
+	for(int i=0;i<n;i++)
+		c.text[c.val+i]=s[i];
+	c.val=c.val+n;
+}
+
 // Keys for the focused control. Returns 1 if the key was used.
 int TvCtlKey(int win, int key)
 {
@@ -1399,36 +1536,45 @@ int TvCtlKey(int win, int key)
 	if(c.type==C_INPUT)
 	{
 		int len=StrLen(&c.text[0]);
-		if(key==K_LEFT){if(c.val>0)c.val--;return 1;}
-		if(key==K_RIGHT){if(c.val<len)c.val++;return 1;}
+		if(key==K_LEFT){c.val=TvPrevChar(&c.text[0],c.val);return 1;}
+		if(key==K_RIGHT){if(c.val<len)TvUtf8(&c.text[0],c.val);return 1;}
 		if(key==K_HOME){c.val=0;return 1;}
 		if(key==K_END){c.val=len;return 1;}
 		if(key==K_BACKSPACE)
 		{
 			if(c.val>0)
 			{
-				for(int i=c.val-1;i<len;i++)
-					c.text[i]=c.text[i+1];
-				c.val--;
+				int p=TvPrevChar(&c.text[0],c.val);
+				int gone=c.val-p;
+				for(int i=p;i<=len-gone;i++)
+					c.text[i]=c.text[i+gone];
+				c.val=p;
 			}
 			return 1;
 		}
 		if(key==K_DEL)
 		{
 			if(c.val<len)
-				for(int i=c.val;i<len;i++)
-					c.text[i]=c.text[i+1];
+			{
+				int q=c.val;
+				TvUtf8(&c.text[0],q);
+				int gone=q-c.val;
+				for(int i=c.val;i<=len-gone;i++)
+					c.text[i]=c.text[i+gone];
+			}
+			return 1;
+		}
+		if(evUtfN>0)
+		{
+			TvInputInsert(c,&evUtf[0],evUtfN);
 			return 1;
 		}
 		if((key>=32)&&(key<127))
 		{
-			if(len<198)
-			{
-				for(int i=len+1;i>c.val;i--)
-					c.text[i]=c.text[i-1];
-				c.text[c.val]=key;
-				c.val++;
-			}
+			char one[2];
+			one[0]=key;
+			one[1]=0;
+			TvInputInsert(c,&one[0],1);
 			return 1;
 		}
 		return 0;
@@ -1584,9 +1730,13 @@ void TvCtlMouseDown(int win, int id, int mx, int my)
 		TvSelect(win,id);
 	else if(c.type==C_INPUT)
 	{
-		int p=mx-(t.x+c.x)+c.top;
-		int len=StrLen(&c.text[0]);
-		if(p>len)p=len;
+		int cols=mx-(t.x+c.x);
+		int p=c.top;
+		while((cols>0)&&(c.text[p]!=0))
+		{
+			TvUtf8(&c.text[0],p);
+			cols--;
+		}
 		c.val=p;
 	}
 	else if(c.type==C_LIST)
@@ -1864,7 +2014,7 @@ void TvMouse()
 		if((rx>=2)&&(rx<=4))
 		{
 			if(modal)t.result=CM_CANCEL;
-			else TvClose(win);
+			else if(TvAppCanClose(win))TvClose(win);
 			return;
 		}
 		if(t.flags&WF_RESIZE)
@@ -1987,15 +2137,46 @@ void TvCheckSize()
 	tvDirty=1;
 }
 
+// Pasted text goes to the application or else, up to the first line end, to a field.
+void TvPasteEvent()
+{
+	tvDirty=1;
+	if(menuOpen>=0)return;
+	int top=TvTop();
+	if(top<0)return;
+	if(TvAppPaste(top,tvPaste,tvPasteN))return;
+	int f=tvWin[top].focus;
+	if(f<0)return;
+	if(tvCtl[f].type!=C_INPUT)return;
+	int n=0;
+	while(n<tvPasteN)
+	{
+		int ch=tvPaste[n];
+		if((ch==10)||(ch==13))break;
+		n++;
+	}
+	TvInputInsert(tvCtl[f],tvPaste,n);
+}
+
 // Runs until the program quits or, with stopWin>=0, until that modal window has a result.
 int TvRun(int stopWin)
 {
+	int behind=0;
 	while(tvRunning)
 	{
 		if(stopWin>=0)
 			if(tvWin[stopWin].result!=0)
 				return tvWin[stopWin].result;
-		if(tvDirty)TvRedraw();
+		// while keys are queued up, catch up on them first and redraw now and then
+		if(tvDirty)
+		{
+			behind++;
+			if((behind>=16)||!term_pending())
+			{
+				TvRedraw();
+				behind=0;
+			}
+		}
 		TvReadEvent(200);
 		if(evType==EV_NONE)
 		{
@@ -2009,6 +2190,8 @@ int TvRun(int stopWin)
 		}
 		else if(evType==EV_KEY)
 			TvKey();
+		else if(evType==EV_PASTE)
+			TvPasteEvent();
 		else
 			TvMouse();
 	}
@@ -2037,8 +2220,9 @@ int TvLineCount(char* s)
 	return n;
 }
 
-// Shows a message with one or two buttons. Returns CM_OK, CM_YES, CM_NO or CM_CANCEL.
-int TvMessage(char* title, char* text, int askYesNo)
+// Shows a message with a row of buttons, given as "~Y~es|~N~o", at row y or centred if
+// y<0. Returns the number of the button pressed, or -1 for Esc or the close box.
+int TvChooseAt(char* title, char* text, char* labels, int y)
 {
 	int lines=TvLineCount(text);
 	int longest=0;
@@ -2051,14 +2235,33 @@ int TvMessage(char* title, char* text, int askYesNo)
 			if(cur>longest)longest=cur;
 			cur=0;
 		}
-		else cur++;
+		else
+		{
+			// count characters, not bytes
+			int c=text[i];
+			if((c&0xC0)!=0x80)cur++;
+		}
 		i++;
 	}
 	if(cur>longest)longest=cur;
+	int count=TvItemCount(labels);
+	char lbl[32];
+	int bw=4;
+	for(int k=0;k<count;k++)
+	{
+		TvItemAt(labels,k,&lbl[0],32);
+		int l=HotLen(&lbl[0])+4;
+		if(l>bw)bw=l;
+	}
+	int rowW=count*(bw+2)-1;
 	int w=longest+6;
+	if(w<rowW+4)w=rowW+4;
 	if(w<30)w=30;
+	if(w>tvW)w=tvW;
 	int h=lines+6;
 	int win=TvNewCentered(0,title,w,h,WF_DIALOG);
+	if(win<0)return -1;
+	if(y>=0)tvWin[win].y=y;
 	// one label per line
 	char buf[200];
 	int line=0;
@@ -2070,7 +2273,7 @@ int TvMessage(char* title, char* text, int askYesNo)
 		if((c==0)||(c==10))
 		{
 			buf[o]=0;
-			int l=StrLen(&buf[0]);
+			int l=TvCols(&buf[0]);
 			TvAdd(win,C_LABEL,(w-l)/2,2+line,l,1,&buf[0],0);
 			line++;
 			o=0;
@@ -2083,21 +2286,36 @@ int TvMessage(char* title, char* text, int askYesNo)
 		}
 		i++;
 	}
-	int by=h-3;
-	if(askYesNo)
+	int bx=(w-rowW)/2;
+	for(int k=0;k<count;k++)
 	{
-		int b=TvAdd(win,C_BUTTON,w/2-12,by,10,2,"~Y~es",CM_YES);
-		tvCtl[b].isDefault=1;
-		TvAdd(win,C_BUTTON,w/2+2,by,10,2,"~N~o",CM_NO);
-	}
-	else
-	{
-		int b=TvAdd(win,C_BUTTON,w/2-5,by,10,2,"O~K~",CM_OK);
-		tvCtl[b].isDefault=1;
+		TvItemAt(labels,k,&lbl[0],32);
+		int b=TvAdd(win,C_BUTTON,bx+k*(bw+2),h-3,bw,2,&lbl[0],CM_USER+k);
+		if(k==0)tvCtl[b].isDefault=1;
 	}
 	int r=TvExec(win);
 	TvClose(win);
-	return r;
+	if(r>=CM_USER)return r-CM_USER;
+	return -1;
+}
+
+int TvChoose(char* title, char* text, char* labels)
+{
+	return TvChooseAt(title,text,labels,-1);
+}
+
+// Shows a message with one or two buttons. Returns CM_OK, CM_YES, CM_NO or CM_CANCEL.
+int TvMessage(char* title, char* text, int askYesNo)
+{
+	if(askYesNo)
+	{
+		int r=TvChoose(title,text,"~Y~es|~N~o");
+		if(r==0)return CM_YES;
+		if(r==1)return CM_NO;
+		return CM_CANCEL;
+	}
+	if(TvChoose(title,text,"O~K~")==0)return CM_OK;
+	return CM_CANCEL;
 }
 
 void TvInit()
@@ -2121,18 +2339,19 @@ void TvInit()
 		tvPrevCh[i]=-1;
 		tvPrevAt[i]=-1;
 	}
+	tvPaste=malloc(TV_PASTEMAX+1);
 	tvW=term_cols();
 	tvH=term_rows();
 	if(tvW>TV_MAXW)tvW=TV_MAXW;
 	if(tvH>TV_MAXH)tvH=TV_MAXH;
-	// alternate screen, no autowrap, hidden cursor, mouse buttons and drags in SGR form
-	OutStr("\x1b[?1049h\x1b[?7l\x1b[?25l\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[0m\x1b[2J");
+	// alternate screen, no autowrap, hidden cursor, mouse buttons and drags in SGR form, bracketed paste
+	OutStr("\x1b[?1049h\x1b[?7l\x1b[?25l\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?2004h\x1b[0m\x1b[2J");
 	OutFlush();
 }
 
 void TvDone()
 {
-	OutStr("\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?7h\x1b[?25h\x1b[0m\x1b[?1049l");
+	OutStr("\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?7h\x1b[?25h\x1b[0m\x1b[?1049l");
 	OutFlush();
 	term_close();
 }

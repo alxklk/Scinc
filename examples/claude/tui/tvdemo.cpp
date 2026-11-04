@@ -1,17 +1,17 @@
 // A Turbo Vision style desktop in the terminal, written in Scinc and drawn with
-// ANSI escape sequences: a file browser and viewers, a calculator, a calendar, an
+// ANSI escape sequences: a file browser and text editor, a calculator, a calendar, an
 // ASCII table, a sliding puzzle and a dialog with the standard controls.
 //
 //   ./build_so.sh                  once, builds the terminal input library
 //   Scinc tvdemo.cpp [file]        from this folder
 #include <stdio.h>
 #include "tv.h"
+#include "tvedit.h"
 
 #pragma STACK_SIZE 655360
 
 typedef char* pchar;
 
-#define W_VIEW 1
 #define W_CALC 2
 #define W_CAL 3
 #define W_ASCII 4
@@ -31,483 +31,6 @@ typedef char* pchar;
 #define CM_DIRUP 109
 #define CM_DIRHOME 110
 #define CM_CALCKEY 200
-
-// ---------------------------------------------------------------- text viewer
-
-#define VW_POOL 2000000
-#define VW_MAXLINES 60000
-
-char* vwText;
-int* vwLine;
-int vwTextN=0;
-int vwLineN=0;
-
-// ---------------------------------------------------------------- C/C++ highlighting
-
-#define HL_TEXT 0x1E
-#define HL_KEYWORD 0x1F
-#define HL_COMMENT 0x17
-#define HL_STRING 0x1B
-#define HL_NUMBER 0x1D
-#define HL_PREPROC 0x1A
-#define HL_SYMBOL 0x1C
-
-// The state a line starts in, carried over from the line before it.
-#define HS_NORMAL 0
-#define HS_COMMENT 1  // inside /* */
-#define HS_STRING 2   // a string continued with a backslash
-#define HS_PREPROC 3  // a directive continued with a backslash
-
-int* vwState;       // the starting state of every line in vwLine
-int hlRun=0;        // the state while a file is loading
-int hlAt[1100];     // the colour of each byte of the line last scanned
-
-char* hlWords;
-int hlFirst[128];   // where the words with this first letter start in hlWords, or -1
-
-void HlInit()
-{
-	// grouped by first letter, which is all the lookup needs
-	hlWords="asm|auto|bool|break|case|catch|char|class|const|constexpr|const_cast|continue|"
-		"decltype|default|delete|do|double|dynamic_cast|else|enum|explicit|extern|false|float|"
-		"for|friend|goto|if|inline|int|long|mutable|namespace|new|noexcept|nullptr|operator|"
-		"private|protected|public|register|reinterpret_cast|return|short|signed|sizeof|static|"
-		"static_cast|struct|switch|template|this|throw|true|try|typedef|typename|union|unsigned|"
-		"using|virtual|void|volatile|wchar_t|while|";
-	for(int i=0;i<128;i++)
-		hlFirst[i]=-1;
-	int i=0;
-	int atStart=1;
-	while(hlWords[i]!=0)
-	{
-		int c=hlWords[i];
-		if(atStart)
-			if(hlFirst[c]<0)hlFirst[c]=i;
-		atStart=(c=='|');
-		i++;
-	}
-}
-
-// Is the n bytes of text at vwText[p] a keyword?
-int HlIsKeyword(int p, int n)
-{
-	int first=vwText[p];
-	if(first>=128)return 0;
-	int w=hlFirst[first];
-	if(w<0)return 0;
-	while(hlWords[w]==first)
-	{
-		int k=0;
-		while((k<n)&&(hlWords[w+k]==vwText[p+k]))
-			k++;
-		if((k==n)&&(hlWords[w+k]=='|'))
-			return 1;
-		while(hlWords[w]!='|')
-			w++;
-		w++;
-	}
-	return 0;
-}
-
-int HlIdentStart(int c)
-{
-	if((c>='a')&&(c<='z'))return 1;
-	if((c>='A')&&(c<='Z'))return 1;
-	return c=='_';
-}
-
-int HlDigit(int c)
-{
-	return (c>='0')&&(c<='9');
-}
-
-// Colours the line starting at vwText[start] into hlAt and returns the state the
-// next line starts in.
-int HlLine(int start, int state)
-{
-	int i=start;
-	int pre=(state==HS_PREPROC);
-	int blank=1;      // only spaces so far, so a # begins a directive
-	int inString=(state==HS_STRING);
-	int quote='"';
-	int stringAt=HL_STRING;
-	while(vwText[i]!=0)
-	{
-		int c=vwText[i];
-		int n=vwText[i+1];
-		if(state==HS_COMMENT)
-		{
-			hlAt[i-start]=HL_COMMENT;
-			i++;
-			if((c=='*')&&(n=='/'))
-			{
-				hlAt[i-start]=HL_COMMENT;
-				i++;
-				state=HS_NORMAL;
-				if(pre)state=HS_PREPROC;
-			}
-		}
-		else if(inString)
-		{
-			hlAt[i-start]=stringAt;
-			i++;
-			if((c==92)&&(n!=0))
-			{
-				hlAt[i-start]=stringAt;
-				i++;
-			}
-			else if(c==quote)
-			{
-				inString=0;
-				state=HS_NORMAL;
-				if(pre)state=HS_PREPROC;
-			}
-		}
-		else if((c=='/')&&(n=='/'))
-		{
-			while(vwText[i]!=0)
-			{
-				hlAt[i-start]=HL_COMMENT;
-				i++;
-			}
-		}
-		else if((c=='/')&&(n=='*'))
-		{
-			hlAt[i-start]=HL_COMMENT;
-			hlAt[i+1-start]=HL_COMMENT;
-			i=i+2;
-			state=HS_COMMENT;
-		}
-		else if((c=='"')||(c==39))
-		{
-			quote=c;
-			stringAt=HL_STRING;
-			if(pre)stringAt=HL_PREPROC;
-			inString=1;
-			hlAt[i-start]=stringAt;
-			i++;
-		}
-		else if(pre)
-		{
-			hlAt[i-start]=HL_PREPROC;
-			i++;
-		}
-		else if((c=='#')&&blank)
-		{
-			pre=1;
-			state=HS_PREPROC;
-			hlAt[i-start]=HL_PREPROC;
-			i++;
-		}
-		else if(HlDigit(c)||((c=='.')&&HlDigit(n)))
-		{
-			// also takes in 0x1F, 1.5e-3 and suffixes
-			while(HlDigit(vwText[i])||HlIdentStart(vwText[i])||(vwText[i]=='.'))
-			{
-				int e=vwText[i];
-				hlAt[i-start]=HL_NUMBER;
-				i++;
-				if((e=='e')||(e=='E'))
-					if((vwText[i]=='-')||(vwText[i]=='+'))
-					{
-						hlAt[i-start]=HL_NUMBER;
-						i++;
-					}
-			}
-		}
-		else if(HlIdentStart(c))
-		{
-			int p=i;
-			while(HlIdentStart(vwText[i])||HlDigit(vwText[i]))
-				i++;
-			int at=HL_TEXT;
-			if(HlIsKeyword(p,i-p))at=HL_KEYWORD;
-			for(int k=p;k<i;k++)
-				hlAt[k-start]=at;
-		}
-		else
-		{
-			// spaces and UTF-8 bytes stay plain, the rest is punctuation
-			hlAt[i-start]=HL_TEXT;
-			if((c>' ')&&(c<127))hlAt[i-start]=HL_SYMBOL;
-			i++;
-		}
-		if((c!=' ')&&(c!=9))blank=0;
-	}
-	if(state==HS_COMMENT)return HS_COMMENT;
-	int continued=0;
-	if(i>start)
-		if(vwText[i-1]==92)continued=1;
-	if(continued)
-	{
-		if(inString&&(quote=='"')&&!pre)return HS_STRING;
-		if(pre)return HS_PREPROC;
-	}
-	return HS_NORMAL;
-}
-
-// Does this file name end in a C or C++ extension?
-int HlIsCFile(char* name)
-{
-	int dot=-1;
-	int k=0;
-	while(name[k]!=0)
-	{
-		if(name[k]=='.')dot=k;
-		k++;
-	}
-	if(dot<0)return 0;
-	char ext[8];
-	int n=0;
-	k=dot+1;
-	while((name[k]!=0)&&(n<7))
-	{
-		ext[n]=LowerKey(name[k]);
-		n++;
-		k++;
-	}
-	ext[n]=0;
-	char* known="c|cc|cpp|cxx|h|hh|hpp|hxx|inl";
-	char item[8];
-	for(int i=0;i<9;i++)
-	{
-		TvItemAt(known,i,&item[0],8);
-		int same=1;
-		int j=0;
-		while((ext[j]!=0)||(item[j]!=0))
-		{
-			if(ext[j]!=item[j])same=0;
-			if((ext[j]==0)||(item[j]==0))break;
-			j++;
-		}
-		if(same)return 1;
-	}
-	return 0;
-}
-
-// Window fields: a top line, b left column, c first line in vwLine, d line count,
-// e set if the text did not fit in the pool, f set to highlight C/C++ syntax.
-
-void VwAddLine(TWin& t, char* s)
-{
-	int n=StrLen(s);
-	if((vwLineN>=VW_MAXLINES)||(vwTextN+n+1>=VW_POOL))
-	{
-		t.e=1;
-		return;
-	}
-	int lineStart=vwTextN;
-	vwLine[vwLineN]=vwTextN;
-	vwLineN++;
-	int k=0;
-	while(k<n)
-	{
-		int c=s[k];
-		if((c==10)||(c==13))break;
-		vwText[vwTextN]=c;
-		vwTextN++;
-		k++;
-	}
-	vwText[vwTextN]=0;
-	vwTextN++;
-	t.d++;
-	if(t.f)
-	{
-		vwState[vwLineN-1]=hlRun;
-		hlRun=HlLine(lineStart,hlRun);
-	}
-}
-
-// Gives a closed viewer's text and lines back to the pools.
-void VwRelease(TWin& t)
-{
-	if(t.d==0)return;
-	int next=t.c+t.d;
-	int a=vwLine[t.c];
-	int b=vwTextN;
-	if(next<vwLineN)b=vwLine[next];
-	int size=b-a;
-	memmove(&vwText[a],&vwText[b],vwTextN-b);
-	vwTextN=vwTextN-size;
-	for(int i=next;i<vwLineN;i++)
-	{
-		vwLine[i-t.d]=vwLine[i]-size;
-		vwState[i-t.d]=vwState[i];
-	}
-	vwLineN=vwLineN-t.d;
-	for(int i=0;i<TV_MAXWIN;i++)
-		if(tvWin[i].used)
-			if((tvWin[i].type==W_VIEW)&&(tvWin[i].c>t.c))
-				tvWin[i].c=tvWin[i].c-t.d;
-}
-
-int NewViewer(char* title)
-{
-	int win=TvNew(W_VIEW,title,0,1,10,10,WF_RESIZE);
-	if(win<0)return -1;
-	TWin& t=tvWin[win];
-	int n=tvNZ-1;
-	t.x=n*2;
-	t.y=1+n;
-	t.w=tvW*3/4;
-	t.h=tvH-4;
-	if(t.w<30)t.w=30;
-	t.c=vwLineN;
-	t.d=0;
-	return win;
-}
-
-int OpenFile(char* name)
-{
-	FILE* f=fopen(name,"rb");
-	if(f==0)
-	{
-		TvMessage("Error","Cannot open this file.",0);
-		return -1;
-	}
-	// the title is the part after the last slash
-	int base=0;
-	int k=0;
-	while(name[k]!=0)
-	{
-		if(name[k]=='/')base=k+1;
-		k++;
-	}
-	int win=NewViewer(&name[base]);
-	if(win<0)
-	{
-		fclose(f);
-		TvMessage("Error","Too many windows are open.",0);
-		return -1;
-	}
-	TWin& t=tvWin[win];
-	t.f=HlIsCFile(name);
-	hlRun=HS_NORMAL;
-	char line[1024];
-	while(fgets(&line[0],1024,f)!=0)
-		VwAddLine(t,&line[0]);
-	fclose(f);
-	if(t.e)
-		TvMessage("Warning","The file is too large,\nshowing only its beginning.",0);
-	return win;
-}
-
-void DrawViewer(int win)
-{
-	TWin& t=tvWin[win];
-	int rows=t.h-2;
-	int cols=t.w-2;
-	for(int j=0;j<rows;j++)
-	{
-		int k=t.a+j;
-		if(k<t.d)
-		{
-			int p=vwLine[t.c+k];
-			int lineStart=p;
-			int col=0;
-			if(t.f)HlLine(p,vwState[t.c+k]);
-			while(vwText[p]!=0)
-			{
-				int at=0x1E;
-				if(t.f)at=hlAt[p-lineStart];
-				int c=TvUtf8(vwText,p);
-				if(c==9)
-				{
-					col=(col/4+1)*4;
-				}
-				else
-				{
-					int px=col-t.b;
-					if((px>=0)&&(px<cols))
-						TvPut(t.x+1+px,t.y+1+j,c,at);
-					col++;
-				}
-			}
-		}
-	}
-	// scroll bars live on the frame
-	int mxTop=t.d-rows;
-	if(mxTop<0)mxTop=0;
-	int save=clipX1;
-	int savey=clipY1;
-	clipX1=tvW;
-	if(clipX1>t.x+t.w)clipX1=t.x+t.w;
-	clipY1=tvH-1;
-	if(TvTop()==win)
-	{
-		TvVBar(t.x+t.w-1,t.y+1,rows,t.a,mxTop,0x13);
-		char pos[24];
-		snprintf(&pos[0],24," %i/%i ",t.a+1,t.d);
-		TvText(t.x+2,t.y+t.h-1,&pos[0],0x1F);
-	}
-	clipX1=save;
-	clipY1=savey;
-}
-
-void ViewerClamp(TWin& t)
-{
-	int mxTop=t.d-(t.h-2);
-	if(mxTop<0)mxTop=0;
-	if(t.a>mxTop)t.a=mxTop;
-	if(t.a<0)t.a=0;
-	if(t.b<0)t.b=0;
-}
-
-int ViewerKey(int win, int key)
-{
-	TWin& t=tvWin[win];
-	int rows=t.h-2;
-	if(key==K_UP)t.a--;
-	else if(key==K_DOWN)t.a++;
-	else if(key==K_PGUP)t.a=t.a-rows;
-	else if(key==K_PGDN)t.a=t.a+rows;
-	else if(key==K_HOME)t.b=0;
-	else if(key==K_LEFT)t.b=t.b-4;
-	else if(key==K_RIGHT)t.b=t.b+4;
-	else if(key==K_END)t.a=t.d;
-	else return 0;
-	ViewerClamp(t);
-	return 1;
-}
-
-int ViewerMouse(int win, int ev, int x, int y)
-{
-	TWin& t=tvWin[win];
-	int rows=t.h-2;
-	if(ev==EV_WHEEL)
-	{
-		if(evWheel>0)t.a=t.a-3;
-		else t.a=t.a+3;
-		ViewerClamp(t);
-		return 1;
-	}
-	if(ev==EV_MDOWN)
-	{
-		// the frame cell is outside the interior, so the bar is at column w-1
-		if(x==t.w-1)
-		{
-			int mxTop=t.d-rows;
-			if(mxTop<0)mxTop=0;
-			int h=TvVBarHit(1,rows,t.a,mxTop,y);
-			if(h==2)TvCaptureMouse(win);
-			if(h==0)t.a--;
-			if(h==1)t.a=t.a-rows;
-			if(h==3)t.a=t.a+rows;
-			if(h==4)t.a++;
-			ViewerClamp(t);
-		}
-		return 1;
-	}
-	if(ev==EV_MDRAG)
-	{
-		// only arrives after TvCaptureMouse, so this is the thumb being dragged
-		int mxTop=t.d-rows;
-		if(mxTop<0)mxTop=0;
-		t.a=TvVBarPos(1,rows,mxTop,y);
-		return 1;
-	}
-	return 0;
-}
 
 // ---------------------------------------------------------------- calculator
 
@@ -1004,12 +527,14 @@ void RunControls()
 
 // ---------------------------------------------------------------- file browser
 
-#define FD_PATH 512
+#define FD_PATH ED_PATH
 
 char fdDir[FD_PATH];
 int fdList=-1;
 int fdHiddenBox=-1;
 int fdHidden=0;
+int fdNameBox=-1;   // the file name field when saving, otherwise -1
+int fdLastSel=-1;
 
 // Lists a directory and selects selectName if it is there. Returns 0 on failure,
 // leaving the current directory and listing as they were.
@@ -1051,6 +576,24 @@ void FdGoUp()
 		TvMessage("Error","Cannot read the parent directory.",0);
 }
 
+// Enters the list's selected directory. Returns 0 if a file is selected.
+int FdEnterSelected()
+{
+	char name[256];
+	int isDir=fs_name(tvCtl[fdList].val,&name[0],256);
+	if(!isDir)return 0;
+	if((name[0]=='.')&&(name[1]=='.')&&(name[2]==0))
+	{
+		FdGoUp();
+		return 1;
+	}
+	char path[FD_PATH];
+	FdJoin(&path[0],&name[0]);
+	if(!FdLoad(&path[0],""))
+		TvMessage("Error","Cannot read this directory.",0);
+	return 1;
+}
+
 void TvAppListItem(int win, int ctl, int i, char* out, int max)
 {
 	int isDir=fs_name(i,out,max-1);
@@ -1065,6 +608,22 @@ void TvAppListItem(int win, int ctl, int i, char* out, int max)
 void DrawFiles(int win)
 {
 	TWin& t=tvWin[win];
+	// picking a file in the list fills in the name to save under
+	if(fdNameBox>=0)
+	{
+		TCtl& lst=tvCtl[fdList];
+		if((lst.val!=fdLastSel)&&(t.focus==fdList))
+		{
+			char picked[200];
+			if(!fs_name(lst.val,&picked[0],200))
+			{
+				StrCpy(&tvCtl[fdNameBox].text[0],&picked[0],200);
+				tvCtl[fdNameBox].val=StrLen(&picked[0]);
+				tvCtl[fdNameBox].top=0;
+			}
+		}
+		fdLastSel=lst.val;
+	}
 	// the check box has no callback, so notice a change here
 	if(tvCtl[fdHiddenBox].val!=fdHidden)
 	{
@@ -1126,43 +685,67 @@ int FilesKey(int win, int key)
 	return 0;
 }
 
-void RunOpen()
+// Builds the file dialog. Returns the window, or -1 with a message shown.
+int FdOpenDialog(char* title, char* okLabel, int saving)
 {
 	if((tvW<50)||(tvH<18))
 	{
-		TvMessage("Open a file","The terminal is too small.",0);
-		return;
+		TvMessage(title,"The terminal is too small.",0);
+		return -1;
 	}
 	int w=72;
 	if(w>tvW-2)w=tvW-2;
 	int h=24;
 	if(h>tvH-2)h=tvH-2;
-	int win=TvNewCentered(W_FILES,"Open a file",w,h,WF_DIALOG);
-	if(win<0)return;
+	int win=TvNewCentered(W_FILES,title,w,h,WF_DIALOG);
+	if(win<0)return -1;
+	int rows=h-8;
+	if(saving)rows=h-10;
 	TvAdd(win,C_LABEL,3,3,10,1,"~F~iles",0);
-	fdList=TvAdd(win,C_LIST,3,4,w-23,h-8,"",0);
+	fdList=TvAdd(win,C_LIST,3,4,w-23,rows,"",0);
 	tvCtl[fdList].virt=1;
 	int bx=w-18;
-	int b=TvAdd(win,C_BUTTON,bx,4,14,2,"~O~pen",CM_OK);
+	int b=TvAdd(win,C_BUTTON,bx,4,14,2,okLabel,CM_OK);
 	tvCtl[b].isDefault=1;
 	TvAdd(win,C_BUTTON,bx,6,14,2,"~U~p",CM_DIRUP);
 	TvAdd(win,C_BUTTON,bx,8,14,2,"Ho~m~e",CM_DIRHOME);
 	TvAdd(win,C_BUTTON,bx,10,14,2,"Cancel",CM_CANCEL);
 	fdHiddenBox=TvAdd(win,C_CHECK,bx-1,12,16,1,"~H~idden",0);
 	tvCtl[fdHiddenBox].val=fdHidden;
+	fdNameBox=-1;
+	if(saving)
+	{
+		TvAdd(win,C_LABEL,3,h-5,6,1,"~N~ame:",0);
+		fdNameBox=TvAdd(win,C_INPUT,9,h-5,w-13,1,"",0);
+	}
 	tvWin[win].focus=fdList;
+	return win;
+}
+
+// Starts the dialog in this directory, or the last one. Returns 0 if none can be read.
+int FdStart(int win, char* dir)
+{
 	char path[FD_PATH];
-	if(fdDir[0]==0)
+	if(dir[0]!=0)
+		StrCpy(&path[0],dir,FD_PATH);
+	else if(fdDir[0]==0)
 		StrCpy(&path[0],".",FD_PATH);
 	else
 		StrCpy(&path[0],&fdDir[0],FD_PATH);
-	if(!FdLoad(&path[0],""))
-		if(!FdLoad("/",""))
-		{
-			TvClose(win);
-			TvMessage("Error","Cannot read this directory.",0);
-			return;
-		}
+	if(FdLoad(&path[0],""))return 1;
+	if(FdLoad(".",""))return 1;
+	if(FdLoad("/",""))return 1;
+	TvClose(win);
+	TvMessage("Error","Cannot read this directory.",0);
+	return 0;
+}
+
+void RunOpen()
+{
+	int win=FdOpenDialog("Open a file","~O~pen",0);
+	if(win<0)return;
+	if(!FdStart(win,""))return;
+	char path[FD_PATH];
 	while(tvRunning)
 	{
 		// after a button changes the directory, the keys belong to the list again
@@ -1179,39 +762,110 @@ void RunOpen()
 		else if(res==CM_OK)
 		{
 			char name[256];
-			int isDir=fs_name(tvCtl[fdList].val,&name[0],256);
+			fs_name(tvCtl[fdList].val,&name[0],256);
 			if(name[0]!=0)
-			{
-				if(isDir)
-				{
-					if(name[0]=='.')
-					{
-						if((name[1]=='.')&&(name[2]==0))
-						{
-							FdGoUp();
-							isDir=2;
-						}
-					}
-					if(isDir==1)
-					{
-						FdJoin(&path[0],&name[0]);
-						if(!FdLoad(&path[0],""))
-							TvMessage("Error","Cannot read this directory.",0);
-					}
-				}
-				else
+				if(!FdEnterSelected())
 				{
 					FdJoin(&path[0],&name[0]);
 					TvClose(win);
 					OpenFile(&path[0]);
 					return;
 				}
-			}
 		}
 		else
 			break;
 	}
 	TvClose(win);
+}
+
+// Asks for a name and saves the editor window there. Returns 1 if it was saved.
+int RunSaveAs(int ew)
+{
+	TEdit& e=ed[ew];
+	int win=FdOpenDialog("Save as","~S~ave",1);
+	if(win<0)return 0;
+	char dir[FD_PATH];
+	dir[0]=0;
+	char first[256];
+	first[0]=0;
+	if(e.path[0]!=0)
+	{
+		int base=EdBase(&e.path[0]);
+		StrCpy(&first[0],&e.path[base],256);
+		StrCpy(&dir[0],&e.path[0],FD_PATH);
+		if(base>1)dir[base-1]=0;
+		else dir[base]=0;
+	}
+	if(!FdStart(win,&dir[0]))return 0;
+	StrCpy(&tvCtl[fdNameBox].text[0],&first[0],200);
+	tvCtl[fdNameBox].val=StrLen(&first[0]);
+	char path[FD_PATH];
+	char full[FD_PATH];
+	int saved=0;
+	int done=0;
+	fdLastSel=tvCtl[fdList].val;
+	while(tvRunning&&!done)
+	{
+		tvWin[win].focus=fdNameBox;
+		int res=TvExec(win);
+		if(res==CM_DIRUP)
+			FdGoUp();
+		else if(res==CM_DIRHOME)
+		{
+			fs_home(&path[0],FD_PATH);
+			if(!FdLoad(&path[0],""))
+				TvMessage("Error","Cannot read the home directory.",0);
+		}
+		else if(res==CM_OK)
+		{
+			int used=0;
+			if(tvWin[win].focus==fdList)
+				used=FdEnterSelected();
+			char* typed=&tvCtl[fdNameBox].text[0];
+			if((!used)&&(typed[0]!=0))
+			{
+				if(typed[0]=='/')StrCpy(&path[0],typed,FD_PATH);
+				else FdJoin(&path[0],typed);
+				if(fs_isdir(&path[0]))
+				{
+					if(!FdLoad(&path[0],""))
+						TvMessage("Error","Cannot read this directory.",0);
+					typed[0]=0;
+					tvCtl[fdNameBox].val=0;
+				}
+				else
+				{
+					int where=-2;
+					if(StrLen(&path[0])<FD_PATH-1)where=EdAbsPath(&path[0],&full[0]);
+					int other=-1;
+					if(where>=0)other=EdFindPath(&full[0]);
+					if(where==-2)
+						TvMessage("Save as","That path is too long.",0);
+					else if(where<0)
+						TvMessage("Save as","There is no such directory.",0);
+					else if((other>=0)&&(other!=ew))
+						TvMessage("Save as","That file is open in another window.",0);
+					else
+					{
+						int go=1;
+						if((where==1)&&(other!=ew))
+							go=(TvMessage("Save as","This file already exists.\nReplace it?",1)==CM_YES);
+						if(go)
+						{
+							tvWin[win].result=0;
+							saved=EdSaveAs(ew,&full[0]);
+							done=saved;
+						}
+					}
+				}
+			}
+		}
+		else
+			done=1;
+	}
+	TvClose(win);
+	fdNameBox=-1;
+	return saved;
 }
 
 // ---------------------------------------------------------------- help
@@ -1221,6 +875,7 @@ void OpenHelp()
 	int win=NewViewer("Help");
 	if(win<0)return;
 	TWin& t=tvWin[win];
+	ed[win].ro=1;
 	t.w=62;
 	t.h=20;
 	if(t.h>tvH-2)t.h=tvH-2;
@@ -1231,7 +886,7 @@ void OpenHelp()
 		"\n"
 		"Keyboard\n"
 		"  F10, Alt+letter   open a menu\n"
-		"  F3                browse for a file to open\n"
+		"  F2, F3            save, browse for a file to open\n"
 		"  F5, Ctrl+W        zoom, close the window\n"
 		"  F6, F7            next, previous window\n"
 		"  Alt+1..9          go to a window by number\n"
@@ -1241,13 +896,30 @@ void OpenHelp()
 		"  In the file list: letters jump to a name, Backspace goes up\n"
 		"  Alt+X, Ctrl+Q     quit\n"
 		"\n"
+		"Editor\n"
+		"  Ctrl+N, Ctrl+O, Ctrl+S   new, open, save\n"
+		"  Ctrl+Z, Ctrl+Y           undo, redo\n"
+		"  Ctrl+X, Ctrl+C, Ctrl+V   cut, copy, paste\n"
+		"  Ctrl+A                   select all\n"
+		"  Ctrl+F, Ctrl+L           find, find next\n"
+		"  Ctrl+R, Ctrl+G           replace, go to line\n"
+		"  Shift+arrows, Home, End  select\n"
+		"  Ctrl+arrows              move by word\n"
+		"  Ctrl+Home, Ctrl+End      start, end of the file\n"
+		"  Tab, Shift+Tab           indent, unindent the selected lines\n"
+		"  A * on the frame means there are unsaved changes.\n"
+		"  The clipboard is the editor's own. To copy to other programs,\n"
+		"  hold Shift and drag, which most terminals leave to themselves.\n"
+		"  Their paste comes in as one undoable edit.\n"
+		"\n"
 		"Mouse\n"
 		"  Drag a title bar to move a window, and its bottom right\n"
 		"  corner to resize it.\n"
 		"  Click the box on the left of the title to close the\n"
 		"  window, and the arrow on the right to zoom it.\n"
 		"  Drag a scroll bar thumb, or use the wheel, to scroll.\n"
-		"  Double click a list entry to open it.\n"
+		"  Double click a list entry to open it, or a word to select it.\n"
+		"  Drag over text to select it.\n"
 		"\n"
 		"Your terminal may catch F10 or Alt keys for itself. If it\n"
 		"does, use the mouse or Ctrl+Q.\n";
@@ -1360,15 +1032,29 @@ void TvAppButton(int win, int ctl, int cmd)
 void TvAppClosed(int win)
 {
 	if(tvWin[win].type==W_VIEW)
-		VwRelease(tvWin[win]);
+		EdClosed(win);
+}
+
+int TvAppCanClose(int win)
+{
+	return EdCanClose(win);
+}
+
+int TvAppPaste(int win, char* s, int n)
+{
+	return EdPaste(win,s,n);
 }
 
 void TvAppCommand(int cmd)
 {
+	if(EdCommand(cmd))return;
 	if(cmd==CM_QUIT)
 	{
-		if(TvMessage("Quit","Leave the desktop?",1)==CM_YES)
-			tvRunning=0;
+		int r=EdCanQuit();
+		if(r==1)tvRunning=0;
+		else if(r==2)
+			if(TvMessage("Quit","Leave the desktop?",1)==CM_YES)
+				tvRunning=0;
 	}
 	else if(cmd==CM_OPEN)RunOpen();
 	else if(cmd==CM_DOCALC)
@@ -1422,10 +1108,7 @@ int main(int argc, pchar* argv)
 		printf("tvdemo needs an interactive terminal.\n");
 		return 1;
 	}
-	vwText=malloc(VW_POOL);
-	vwLine=malloc(VW_MAXLINES*4);
-	vwState=malloc(VW_MAXLINES*4);
-	HlInit();
+	EdInit();
 	StrCpy(&ctlName[0],"Scinc",64);
 	fdDir[0]=0;
 	TvInit();
@@ -1438,11 +1121,29 @@ int main(int argc, pchar* argv)
 	TvMenuItem("A~S~CII table","",CM_ASCII,0);
 	TvMenuItem("~P~uzzle","",CM_PUZZLE,0);
 	TvMenuAdd("~F~ile");
+	TvMenuItem("~N~ew","Ctrl+N",CM_NEW,14);
 	TvMenuItem("~O~pen...","F3",CM_OPEN,K_F3);
+	TvMenuItem("~S~ave","Ctrl+S",CM_SAVE,19);
+	TvMenuItem("Save ~a~s...","",CM_SAVEAS,0);
 	TvMenuLine();
 	TvMenuItem("E~x~it","Alt+X",CM_QUIT,K_ALT+'x');
+	TvMenuAdd("~E~dit");
+	TvMenuItem("~U~ndo","Ctrl+Z",CM_UNDO,26);
+	TvMenuItem("~R~edo","Ctrl+Y",CM_REDO,25);
+	TvMenuLine();
+	TvMenuItem("Cu~t~","Ctrl+X",CM_CUT,24);
+	TvMenuItem("~C~opy","Ctrl+C",CM_COPY,3);
+	TvMenuItem("~P~aste","Ctrl+V",CM_PASTE,22);
+	TvMenuLine();
+	TvMenuItem("Select ~a~ll","Ctrl+A",CM_SELALL,1);
+	TvMenuAdd("~S~earch");
+	TvMenuItem("~F~ind...","Ctrl+F",CM_FIND,6);
+	TvMenuItem("Find ~n~ext","Ctrl+L",CM_FINDNEXT,12);
+	TvMenuItem("~R~eplace...","Ctrl+R",CM_REPLACE,18);
+	TvMenuLine();
+	TvMenuItem("~G~o to line...","Ctrl+G",CM_GOTO,7);
 	TvMenuAdd("~D~ialogs");
-	TvMenuItem("~C~ontrols...","F2",CM_CONTROLS,K_F2);
+	TvMenuItem("~C~ontrols...","",CM_CONTROLS,0);
 	TvMenuItem("~M~essage...","",CM_ABOUT,0);
 	TvMenuAdd("~W~indow");
 	TvMenuItem("~N~ext","F6",CM_NEXT,K_F6);
@@ -1456,8 +1157,8 @@ int main(int argc, pchar* argv)
 	TvMenuItem("~K~eys and mouse","F1",CM_HELP,K_F1);
 
 	TvStatusAdd("~F1~ Help",CM_HELP,0);
-	TvStatusAdd("~F2~ Controls",CM_CONTROLS,0);
-	TvStatusAdd("~F3~ Open",CM_OPEN,0);
+	TvStatusAdd("~F2~ Save",CM_SAVE,K_F2);
+	TvStatusAdd("~F3~ Open",CM_OPEN,15); // Ctrl+O opens too
 	TvStatusAdd("~F6~ Next",CM_NEXT,0);
 	TvStatusAdd("~F10~ Menu",CM_MENU,0);
 	TvStatusAdd("~Alt+X~ Exit",CM_QUIT,17); // Ctrl+Q quits too
