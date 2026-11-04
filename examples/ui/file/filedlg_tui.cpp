@@ -1,6 +1,8 @@
 #include "filedlg.h"
 #include <unistd.h>
 
+typedef char* pchar;
+
 int main(int argc, pchar* argv)
 {
 	SItemList l;

@@ -1,3 +1,6 @@
+#ifndef WS_H
+#define WS_H
+
 CWinSys wsys;
 int mainWin=-1;
 int quitReq=0;
@@ -111,3 +114,5 @@ void Present()
 	}
 	wsys.Present(mainWin);
 }
+
+#endif // WS_H
