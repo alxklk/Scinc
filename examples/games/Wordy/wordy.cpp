@@ -19,9 +19,28 @@
 // STATISTICS opens the statistics, Esc or BACK returns to the board. After a
 // game every guessed row can still be clicked to read its meaning.
 //
-// Run with -x2 (Scinc wordy.cpp -x2) for HiDPI screens: the window keeps
-// its size on screen but renders at twice the resolution, so everything,
-// strokes included, is drawn twice as big and comes out smoother.
+// Normally the window is unscaled, one pixel per unit. Run with -x2
+// (Scinc wordy.cpp -x2) for a window twice as big, e.g. on HiDPI screens: it is
+// rendered at twice the resolution, so everything, strokes included, comes
+// out sharp rather than magnified. The x2 button switches between the two any time.
+//
+// ENG / УКР in the header switches to Ukrainian: five-letter words from
+// words_ua.txt (20716 forms), hidden words from answers_ua.txt (1211 common
+// base forms). Each language keeps its own statistics, and the last one
+// played is remembered in wordy.cfg. Ukrainian letters are typed on the
+// screen keyboard (ЙЦУКЕН), or with the keys where a Ukrainian keyboard has
+// them (q = Й, [ = Х, ' = Є, ` = Ґ ...) while the system layout is Latin:
+// Scinc gets no key code for Cyrillic keys. The meanings of Ukrainian words
+// come from the Ukrainian section of the English Wiktionary.
+//
+// The Ukrainian lists come from dict_uk by the brown-uk project
+// (https://github.com/brown-uk/dict_uk, CC BY-NC-SA 4.0): every 5-letter
+// form, without proper names, abbreviations, slang, rude, archaic and rare
+// words; the hidden words are its 5-letter nouns, adjectives, verbs and
+// adverbs in base form that occur at least 5 times in the Ukrainian
+// subtitles frequency list of hermitdave/FrequencyWords (OpenSubtitles
+// 2018), minus a few Russianisms, names and rude words. Both files are in
+// Windows-1251, one byte a letter.
 //
 // The meanings need ../../claude/net/http_dl.so (build it with
 // ../../claude/net/build_so.sh); without a network the panel says so and
@@ -34,12 +53,16 @@
 
 #define G_SCREEN_WIDTH 820
 #define G_SCREEN_HEIGHT 720
+#define G_SCREEN_SCALE 1  // unscaled; -x2 makes a window twice as big
 #define G_SCREEN_MODE 1   // XShm: faster presents than mode 0 (plain XPutImage)
 
 #include "all5letterw.h"
 #include "answers.h"
 
 #include "graphics.h"
+// Wordy reads the window events itself (DrainEvents), for the CHAR events
+// of the keys that GetKeyEvent reports as -1
+#define NO_GREEDY_EVENT
 #include "../../ws.h"
 #include "../../graphic/font.h"
 #include "../../graphic/letters.h"
@@ -83,6 +106,7 @@ typedef char* pchar;
 // units; the path transform scales the geometry, Stroke scales the widths
 // and mouse positions are divided back.
 float SC=1;
+int scaleReq=0;    // the x2 button was pressed
 
 int irand(int& seed)
 {
@@ -92,12 +116,237 @@ int irand(int& seed)
 
 int seed=6917832;
 
+// ---------------------------------------------------------------- languages
+//
+// English or Ukrainian, each with its own word lists and statistics. Inside
+// the game a letter is one byte: 'a'..'z', or Windows-1251 for Ukrainian
+// (the encoding of words_ua.txt), so words stay plain byte strings; they turn
+// into Unicode only on screen and for the meaning lookup. (The same scheme
+// as Alphatoad.)
+
+#define LANG_EN 0
+#define LANG_UA 1
+int lang=LANG_EN;
+char* CFG_FILE="wordy.cfg";
+
+int CpToUni(int b)
+{
+	b=b&255;
+	if(b<128)return b;
+	if(b>=0xC0)return 0x410+b-0xC0;
+	if(b==0xB3)return 0x456;
+	if(b==0xB2)return 0x406;
+	if(b==0xBF)return 0x457;
+	if(b==0xAF)return 0x407;
+	if(b==0xBA)return 0x454;
+	if(b==0xAA)return 0x404;
+	if(b==0xB4)return 0x491;
+	if(b==0xA5)return 0x490;
+	return '?';
+}
+
+int UniToCp(int u)
+{
+	if(u<128)return u;
+	if(u>=0x410&&u<=0x44F)return u-0x410+0xC0;
+	if(u==0x456)return 0xB3;
+	if(u==0x406)return 0xB2;
+	if(u==0x457)return 0xBF;
+	if(u==0x407)return 0xAF;
+	if(u==0x454)return 0xBA;
+	if(u==0x404)return 0xAA;
+	if(u==0x491)return 0xB4;
+	if(u==0x490)return 0xA5;
+	return '?';
+}
+
+// capital of a letter (a byte, Latin or Windows-1251)
+int UpChar(int c)
+{
+	c=c&255;
+	if(c>='a'&&c<='z')return c-'a'+'A';
+	if(c>=0xE0)return c-0x20;
+	if(c==0xB3)return 0xB2;
+	if(c==0xBF)return 0xAF;
+	if(c==0xBA)return 0xAA;
+	if(c==0xB4)return 0xA5;
+	return c;
+}
+
+// Windows-1251 text to UTF-8, for DrawText and URLs
+void CpToUtf8(char* s, char* d, int max)
+{
+	int n=0;
+	int i=0;
+	while(s[i]!=0&&n<max-3)
+	{
+		int u=CpToUni(s[i]);
+		if(u<128)
+		{
+			d[n]=u;
+			n++;
+		}
+		else
+		{
+			d[n]=0xC0|(u>>6);
+			d[n+1]=0x80|(u&63);
+			n+=2;
+		}
+		i++;
+	}
+	d[n]=0;
+}
+
+// stand-ins for the accented Latin letters U+00C0..U+017F (zh in "zhaba")
+char* latinBase="AAAAAAACEEEEIIIIDNOOOOOxOUUUUYTsaaaaaaaceeeeiiiidnooooo/ouuuuytyAaAaAaCcCcCcCcDdDdEeEeEeEeEeGgGgGgGgHhHhIiIiIiIiIiIiJjKkkLlLlLlLlLlNnNnNnnNnOoOoOoOoRrRrRrSsSsSsSsTtTtTtUuUuUuUuUuUuWwYyYZzZzZzs";
+
+// UTF-8 from the web to Windows-1251 in place: Ukrainian letters stay,
+// accented Latin letters, typographic quotes and dashes become ASCII,
+// anything else '?'
+void Utf8ToCp(char* s)
+{
+	int i=0;
+	int o=0;
+	while(true)
+	{
+		int c=Utf8Next(s,i);
+		if(c==0)break;
+		if(c==0x301)continue;   // stress mark
+		int b='?';
+		if(c>0&&c<128)b=c;
+		else if(c==0xA0||c==0x2002||c==0x2003||c==0x2009)b=' ';
+		else if(c==0x2018||c==0x2019||c==0x201B||c==0x2032||c==0xB4||c==0x2BC)b='\'';
+		else if(c==0x201C||c==0x201D||c==0x201E||c==0xAB||c==0xBB)b='"';
+		else if((c>=0x2010&&c<=0x2015)||c==0x2212)b='-';
+		else if(c>=0xC0&&c<0x180)b=latinBase[c-0xC0];
+		else if(c>=0x400)b=UniToCp(c);
+		s[o]=b;
+		o++;
+	}
+	s[o]=0;
+}
+
+// UTF-8 text to Windows-1251 bytes as ints, for the keyboard rows below
+int Utf8ToCodes(char* s, int* out)
+{
+	int i=0;
+	int n=0;
+	while(true)
+	{
+		int c=Utf8Next(s,i);
+		if(c==0)break;
+		out[n]=UniToCp(c);
+		n++;
+	}
+	return n;
+}
+
+// Latin keys where a Ukrainian keyboard has its letters, for typing
+// Ukrainian with a Latin system layout
+char* uaKeysLatin="qwertyuiop[]asdfghjkl;'zxcvbnm,.`\\";
+int uaKeysCode[40];
+int uaAlpha[40];      // the 33 Ukrainian letters
+int nUaAlpha=0;
+
+void InitUaKeys()
+{
+	Utf8ToCodes("йцукенгшщзхїфівапролджєячсмитьбюґґ",uaKeysCode);
+	nUaAlpha=Utf8ToCodes("абвгґдеєжзиіїйклмнопрстуфхцчшщьюя",uaAlpha);
+}
+
+// the Ukrainian letter on Latin key k, or 0
+int UaKey(int k)
+{
+	for(int i=0;uaKeysLatin[i]!=0;i++)
+		if(uaKeysLatin[i]==k)return uaKeysCode[i];
+	return 0;
+}
+
+int IsLetter(int k)
+{
+	if(lang==LANG_EN)return k>='a'&&k<='z';
+	for(int i=0;i<nUaAlpha;i++)if(uaAlpha[i]==k)return 1;
+	return 0;
+}
+
+// The Ukrainian word lists, read from their files the first time they are
+// needed: 5 bytes a word, no separators. words_ua.txt is sorted by bytes.
+#define UA_WORDS 21000
+#define UA_ANSWERS 1300
+char* uaWords=0;
+char* uaAns=0;
+int nUaWords=0;
+int nUaAns=0;
+
+int ReadWords(char* file, char* dst, int max)
+{
+	FILE* f=fopen(file,"rb");
+	if(f==0)
+	{
+		printf("%s not found - run Wordy from its own folder\n",file);
+		return 0;
+	}
+	char line[64];
+	int n=0;
+	while(n<max)
+	{
+		line[0]=0;
+		fgets(line,63,f);
+		if(line[0]==0)break;
+		int len=0;
+		while(line[len]!=0&&line[len]!=10&&line[len]!=13)len++;
+		if(len!=5)continue;
+		for(int i=0;i<5;i++)dst[n*5+i]=line[i];
+		n++;
+	}
+	fclose(f);
+	return n;
+}
+
+void LoadUkrainian()
+{
+	if(uaWords!=0)return;
+	uaWords=(char*)malloc(UA_WORDS*5);
+	uaAns=(char*)malloc(UA_ANSWERS*5);
+	nUaWords=ReadWords("words_ua.txt",uaWords,UA_WORDS);
+	nUaAns=ReadWords("answers_ua.txt",uaAns,UA_ANSWERS);
+}
+
+int NumAllowed()
+{
+	if(lang==LANG_UA)return nUaWords;
+	return N_ALL5LETTER;
+}
+
+int NumAnswers()
+{
+	if(lang==LANG_UA)return nUaAns;
+	return N_ANSWERS;
+}
+
+// letter i of allowed word k, and of answer k
+int AllowedLetter(int k, int i)
+{
+	int c=0;
+	if(lang==LANG_UA)c=uaWords[k*5+i];
+	else c=all5letter[k][i];
+	return c&255;
+}
+
+int AnswerLetter(int k, int i)
+{
+	int c=0;
+	if(lang==LANG_UA)c=uaAns[k*5+i];
+	else c=all5letter[answers[k]][i];
+	return c&255;
+}
+
 // ---------------------------------------------------------------- game state
 
 int secret[5];
 int guess[6*5];    // letters 'a'..'z', 0 = empty
 int mark[6*5];     // 0 not scored, 1 absent, 2 present, 3 correct
-int keyMark[26];   // best mark seen for each letter
+int keyMark[256];  // best mark seen for each letter (by its byte)
 int row=0;         // row being typed
 int col=0;         // next free tile in that row
 int state=0;       // 0 playing, 1 won, 2 lost
@@ -120,6 +369,32 @@ int streak=0;
 int maxStreak=0;
 int dist[6];
 int lastWinRow=-1;
+
+// the statistics of both languages; the variables above hold the current one
+int lsPlayed[2];
+int lsWins[2];
+int lsStreak[2];
+int lsMax[2];
+int lsDist[12];
+
+void StoreStats(int l)
+{
+	lsPlayed[l]=played;
+	lsWins[l]=wins;
+	lsStreak[l]=streak;
+	lsMax[l]=maxStreak;
+	for(int i=0;i<6;i++)lsDist[l*6+i]=dist[i];
+}
+
+void FetchStats(int l)
+{
+	played=lsPlayed[l];
+	wins=lsWins[l];
+	streak=lsStreak[l];
+	maxStreak=lsMax[l];
+	for(int i=0;i<6;i++)dist[i]=lsDist[l*6+i];
+	lastWinRow=-1;
+}
 
 int remaining=0;   // answers still consistent with every revealed row
 
@@ -172,7 +447,8 @@ int itemKind[NSLOTS*MAX_ITEMS];     // 0 part of speech, 1 definition
 char itemText[NSLOTS*MAX_ITEMS*ITEM_LEN];
 int shownSlot=-1;                   // slot shown in the panel, -1 none
 
-char lkUrl[160];
+char lkUrl[400];
+char wikiKey[4];   // the language's section in Wiktionary's answer: en, uk
 char lkPath[64];
 char lkBuf[4096];
 
@@ -207,21 +483,27 @@ void StartLookup(int s, int source)
 {
 	char w[8];
 	for(int i=0;i<6;i++)w[i]=lkWord[s*6+i];
-	if(source==LK_DICT)snprintf(lkUrl,159,"https://api.dictionaryapi.dev/api/v2/entries/en/%s",w);
-	else snprintf(lkUrl,159,"https://en.wiktionary.org/api/rest_v1/page/definition/%s",w);
+	char u8[16];
+	char enc[128];
+	CpToUtf8(w,u8,16);
+	UrlEncode(u8,enc,128);
+	if(source==LK_DICT)snprintf(lkUrl,399,"https://api.dictionaryapi.dev/api/v2/entries/en/%s",enc);
+	else snprintf(lkUrl,399,"https://en.wiktionary.org/api/rest_v1/page/definition/%s",enc);
 	lkReq[s]=HttpGet(lkUrl);
 	lkState[s]=source;
 	if(lkReq[s]==0)lkState[s]=LK_OFFLINE;   // http_dl found no libcurl
 }
 
-// look up the five letters in word[] (ints 'a'..'z') into slot s
+// look up the five letters in word[] (letter bytes as ints) into slot s;
+// Ukrainian words go straight to Wiktionary
 void Lookup(int s, int* word, int off)
 {
 	if(lkReq[s]>0)HttpFree(lkReq[s]);
 	for(int i=0;i<5;i++)lkWord[s*6+i]=word[off+i];
 	lkWord[s*6+5]=0;
 	nItems[s]=0;
-	StartLookup(s,LK_DICT);
+	if(lang==LANG_UA)StartLookup(s,LK_WIKI);
+	else StartLookup(s,LK_DICT);
 }
 
 // dictionaryapi.dev: [{"meanings":[{"partOfSpeech":..,"definitions":[{"definition":..}]}]}]
@@ -250,18 +532,19 @@ void ParseDict(int s, int id)
 // listed only when it has a real definition
 void WikiDef(int id, int m, int d)
 {
-	snprintf(lkPath,63,"en.%i.definitions.%i.definition",m,d);
+	snprintf(lkPath,63,"%s.%i.definitions.%i.definition",wikiKey,m,d);
 	HttpJson(id,lkPath,lkBuf,4096);
 	HtmlToText(lkBuf);
-	Utf8ToAscii(lkBuf);
+	if(lang==LANG_UA)Utf8ToCp(lkBuf);
+	else Utf8ToAscii(lkBuf);
 }
 
 void ParseWiki(int s, int id)
 {
-	int nm=HttpJsonCount(id,"en");
+	int nm=HttpJsonCount(id,wikiKey);
 	for(int m=0;m<nm&&m<3;m++)
 	{
-		snprintf(lkPath,63,"en.%i.definitions",m);
+		snprintf(lkPath,63,"%s.%i.definitions",wikiKey,m);
 		int nd=HttpJsonCount(id,lkPath);
 		int shown=0;
 		for(int d=0;d<nd&&shown<2;d++)
@@ -270,7 +553,7 @@ void ParseWiki(int s, int id)
 			if(lkBuf[0]==0)continue;
 			if(shown==0)
 			{
-				snprintf(lkPath,63,"en.%i.partOfSpeech",m);
+				snprintf(lkPath,63,"%s.%i.partOfSpeech",wikiKey,m);
 				HttpJson(id,lkPath,lkBuf,4096);
 				AddItem(s,0);
 				WikiDef(id,m,d);
@@ -323,23 +606,22 @@ void ResetLookups()
 void NewGame()
 {
 	ResetLookups();
-	int n=(irand(seed)>>4)%N_ANSWERS;
-	char* w=all5letter[answers[n]];
-	for(int i=0;i<5;i++)secret[i]=w[i];
+	int n=(irand(seed)>>4)%NumAnswers();
+	for(int i=0;i<5;i++)secret[i]=AnswerLetter(n,i);
 	for(int i=0;i<30;i++)
 	{
 		guess[i]=0;
 		mark[i]=0;
 		popT[i]=-10;
 	}
-	for(int i=0;i<26;i++)keyMark[i]=0;
+	for(int i=0;i<256;i++)keyMark[i]=0;
 	row=0;
 	col=0;
 	state=0;
 	revealRow=-1;
 	msgDur=0;
 	lastWinRow=-1;
-	remaining=N_ANSWERS;
+	remaining=NumAnswers();
 	statsOpen=0;
 	giveUpT=-10;
 }
@@ -348,15 +630,14 @@ void NewGame()
 int InWordList(int r)
 {
 	int lo=0;
-	int hi=N_ALL5LETTER-1;
+	int hi=NumAllowed()-1;
 	while(lo<=hi)
 	{
 		int mid=(lo+hi)/2;
-		char* w=all5letter[mid];
 		int d=0;
 		for(int i=0;i<5;i++)
 		{
-			d=guess[r*5+i]-w[i];
+			d=guess[r*5+i]-AllowedLetter(mid,i);
 			if(d!=0)break;
 		}
 		if(d==0)return 1;
@@ -370,21 +651,21 @@ int InWordList(int r)
 // the letter remain in the secret word.
 void Score(int r)
 {
-	int left[26];
-	for(int i=0;i<26;i++)left[i]=0;
+	int left[256];
+	for(int i=0;i<256;i++)left[i]=0;
 	for(int i=0;i<5;i++)
 	{
 		if(guess[r*5+i]==secret[i])mark[r*5+i]=3;
 		else
 		{
 			mark[r*5+i]=1;
-			left[secret[i]-'a']++;
+			left[secret[i]]++;
 		}
 	}
 	for(int i=0;i<5;i++)
 	{
 		if(mark[r*5+i]==3)continue;
-		int c=guess[r*5+i]-'a';
+		int c=guess[r*5+i];
 		if(left[c]>0)
 		{
 			mark[r*5+i]=2;
@@ -394,10 +675,10 @@ void Score(int r)
 }
 
 // 1 if secret word w would have given row r exactly the marks it got
-int Consistent(int r, char* w)
+int Consistent(int r, int* w)
 {
-	int left[26];
-	for(int i=0;i<26;i++)left[i]=0;
+	int left[256];
+	for(int i=0;i<256;i++)left[i]=0;
 	for(int i=0;i<5;i++)
 	{
 		int g=guess[r*5+i];
@@ -409,14 +690,14 @@ int Consistent(int r, char* w)
 		else
 		{
 			if(m==3)return 0;
-			left[w[i]-'a']++;
+			left[w[i]]++;
 		}
 	}
 	for(int i=0;i<5;i++)
 	{
 		int m=mark[r*5+i];
 		if(m==3)continue;
-		int c=guess[r*5+i]-'a';
+		int c=guess[r*5+i];
 		int p=1;
 		if(left[c]>0)
 		{
@@ -432,9 +713,11 @@ int Consistent(int r, char* w)
 void CountRemaining(int last)
 {
 	int n=0;
-	for(int k=0;k<N_ANSWERS;k++)
+	int w[5];
+	int na=NumAnswers();
+	for(int k=0;k<na;k++)
 	{
-		char* w=all5letter[answers[k]];
+		for(int i=0;i<5;i++)w[i]=AnswerLetter(k,i);
 		int ok=1;
 		for(int r=0;r<=last&&ok;r++)ok=Consistent(r,w);
 		if(ok)n++;
@@ -450,9 +733,11 @@ void Lose()
 	played++;
 	streak=0;
 	char s[8];
-	for(int i=0;i<5;i++)s[i]=secret[i]-'a'+'A';
+	for(int i=0;i<5;i++)s[i]=UpChar(secret[i]);
 	s[5]=0;
-	Message(s,-1);
+	char u8[16];
+	CpToUtf8(s,u8,16);
+	Message(u8,-1);
 	Lookup(6,secret,0);
 	shownSlot=6;
 }
@@ -466,7 +751,7 @@ void RowRevealed()
 	int greens=0;
 	for(int i=0;i<5;i++)
 	{
-		int c=guess[r*5+i]-'a';
+		int c=guess[r*5+i];
 		if(mark[r*5+i]>keyMark[c])keyMark[c]=mark[r*5+i];
 		if(mark[r*5+i]==3)greens++;
 	}
@@ -530,7 +815,12 @@ void OnKey(int k)
 	}
 	if(revealRow>=0)return;
 	if(k>='A'&&k<='Z')k=k-'A'+'a';
-	if(k>='a'&&k<='z')
+	if(lang==LANG_UA&&k>32&&k<128)
+	{
+		int u=UaKey(k);
+		if(u!=0)k=u;
+	}
+	if(IsLetter(k))
 	{
 		if(col<5)
 		{
@@ -571,47 +861,75 @@ void OnKey(int k)
 
 // ---------------------------------------------------------------- on-screen keyboard
 
-#define NKEYS 28
+// English QWERTY, or Ukrainian ЙЦУКЕН with Ґ beside Є; the keys get
+// narrower to fit the 12 keys of a Ukrainian row
+#define NKEYS 36
 float keyX[NKEYS];
 float keyY[NKEYS];
 float keyW[NKEYS];
 int keyCode[NKEYS];
+int nKeys=0;
 #define KEY_H 56
 
-void LayoutRow(char* s, int n, int& k, float y, int wide)
+void LayoutRow(int* codes, int n, int& k, float y, int wide, float w, float gap, float ww)
 {
-	float w=43;
-	float gap=6;
 	float total=n*w+(n-1)*gap;
-	if(wide)total+=2*(66+gap);
+	if(wide)total+=2*(ww+gap);
 	float x=(PLAY_W-total)/2;
 	if(wide)
 	{
-		keyX[k]=x;keyY[k]=y;keyW[k]=66;keyCode[k]=KEY_ENTER;k++;
-		x+=66+gap;
+		keyX[k]=x;keyY[k]=y;keyW[k]=ww;keyCode[k]=KEY_ENTER;k++;
+		x+=ww+gap;
 	}
 	for(int i=0;i<n;i++)
 	{
-		keyX[k]=x;keyY[k]=y;keyW[k]=w;keyCode[k]=s[i];k++;
+		keyX[k]=x;keyY[k]=y;keyW[k]=w;keyCode[k]=codes[i];k++;
 		x+=w+gap;
 	}
 	if(wide)
 	{
-		keyX[k]=x;keyY[k]=y;keyW[k]=66;keyCode[k]=KEY_BACK;k++;
+		keyX[k]=x;keyY[k]=y;keyW[k]=ww;keyCode[k]=KEY_BACK;k++;
 	}
 }
 
 void LayoutKeys()
 {
 	int k=0;
-	LayoutRow("qwertyuiop",10,k,518,0);
-	LayoutRow("asdfghjkl",9,k,518+KEY_H+8,0);
-	LayoutRow("zxcvbnm",7,k,518+2*(KEY_H+8),1);
+	int c[16];
+	char* rows[3];
+	if(lang==LANG_UA)
+	{
+		rows[0]="йцукенгшщзхї";
+		rows[1]="фівапролджєґ";
+		rows[2]="ячсмитьбю";
+		for(int r=0;r<3;r++)
+		{
+			int n=Utf8ToCodes(rows[r],c);
+			LayoutRow(c,n,k,518+r*(KEY_H+8),r==2,36,4,56);
+		}
+	}
+	else
+	{
+		rows[0]="qwertyuiop";
+		rows[1]="asdfghjkl";
+		rows[2]="zxcvbnm";
+		for(int r=0;r<3;r++)
+		{
+			int n=0;
+			while(rows[r][n]!=0)
+			{
+				c[n]=rows[r][n];
+				n++;
+			}
+			LayoutRow(c,n,k,518+r*(KEY_H+8),r==2,43,6,66);
+		}
+	}
+	nKeys=k;
 }
 
 int KeyAt(int mx, int my)
 {
-	for(int i=0;i<NKEYS;i++)
+	for(int i=0;i<nKeys;i++)
 	{
 		if(mx>=keyX[i]&&mx<keyX[i]+keyW[i]&&my>=keyY[i]&&my<keyY[i]+KEY_H)return keyCode[i];
 	}
@@ -663,11 +981,10 @@ void Stroke(float r, float k)
 	g.stroke();
 }
 
+// characters in UTF-8 text
 int TextLen(char* s)
 {
-	int n=0;
-	while(s[n]!=0)n++;
-	return n;
+	return Utf8Len(s);
 }
 
 // stroke-font text; the glyphs are 4 units wide and 9 tall over a 6 unit advance
@@ -763,7 +1080,7 @@ void DrawBoard(float T)
 			}
 			if(guess[i]!=0)
 			{
-				Letter(guess[i]-'a'+'A',cx,cy,3.6*sc,3.4*sc*sy,COL_TEXT,2.,2.);
+				Letter(CpToUni(UpChar(guess[i])),cx,cy,3.6*sc,3.4*sc*sy,COL_TEXT,2.,2.);
 			}
 		}
 	}
@@ -787,11 +1104,11 @@ void DrawBackArrow(float cx, float cy, int c)
 
 void DrawKeyboard(int mx, int my, int mb)
 {
-	for(int i=0;i<NKEYS;i++)
+	for(int i=0;i<nKeys;i++)
 	{
 		int k=keyCode[i];
 		int c=COL_KEY;
-		if(k>='a'&&k<='z')c=MarkColor(keyMark[k-'a']);
+		if(k!=KEY_ENTER&&k!=KEY_BACK)c=MarkColor(keyMark[k&255]);
 		float y=keyY[i];
 		int hover=(mx>=keyX[i]&&mx<keyX[i]+keyW[i]&&my>=y&&my<y+KEY_H);
 		if(hover&&(mb&1))y+=2.0;
@@ -802,9 +1119,11 @@ void DrawKeyboard(int mx, int my, int mb)
 		}
 		float cx=keyX[i]+keyW[i]/2;
 		float cy=y+KEY_H/2;
-		if(k==KEY_ENTER)TextC("ENTER",cx,cy,1.5,COL_TEXT,1.2,2.);
+		if(k==KEY_ENTER&&lang==LANG_UA)TextC("ENTER",cx,cy,1.3,COL_TEXT,1.1,2.);
+		else if(k==KEY_ENTER)TextC("ENTER",cx,cy,1.5,COL_TEXT,1.2,2.);
 		else if(k==KEY_BACK)DrawBackArrow(cx,cy,COL_TEXT);
-		else Letter(k-'a'+'A',cx,cy,2.2,2.0,COL_TEXT,1.6,2.);
+		else if(lang==LANG_UA)Letter(CpToUni(UpChar(k)),cx,cy,2.0,1.9,COL_TEXT,1.5,2.);
+		else Letter(UpChar(k),cx,cy,2.2,2.0,COL_TEXT,1.6,2.);
 	}
 }
 
@@ -857,6 +1176,7 @@ float panelBottom=PANEL_Y+PANEL_H-34;   // text below this is not drawn
 float DrawWrapped(int base, float x, float y, int maxc, int c)
 {
 	char ln[64];
+	char u8[128];
 	int i=base;
 	while(itemText[i]!=0)
 	{
@@ -873,7 +1193,8 @@ float DrawWrapped(int base, float x, float y, int maxc, int c)
 		if(itemText[i+n]!=0&&itemText[i+n]!=' '&&brk>0)n=brk;
 		for(int k=0;k<n;k++)ln[k]=itemText[i+k];
 		ln[n]=0;
-		Text(ln,x,y,DEF_SC,DEF_SC,c,1.2,2.);
+		CpToUtf8(ln,u8,128);
+		Text(u8,x,y,DEF_SC,DEF_SC,c,1.2,2.);
 		y+=DEF_LINE;
 		i+=n;
 		while(itemText[i]==' ')i++;
@@ -901,9 +1222,11 @@ void DrawPanel(float T)
 		return;
 	}
 	int s=shownSlot;
-	char w[8];
-	for(int i=0;i<5;i++)w[i]=lkWord[s*6+i]-'a'+'A';
-	w[5]=0;
+	char cw[8];
+	for(int i=0;i<5;i++)cw[i]=UpChar(lkWord[s*6+i]);
+	cw[5]=0;
+	char w[16];
+	CpToUtf8(cw,w,16);
 	float y=PANEL_Y+20;
 	if(s==6)
 	{
@@ -998,6 +1321,12 @@ int RowAt(int mx, int my)
 #define BTN_W 100
 #define NEWBTN_X 12
 #define STATBTN_X (PLAY_W-12-BTN_W)
+#define LANGBTN_W 56
+#define LANGBTN_X (STATBTN_X-8-LANGBTN_W)
+#define X2BTN_W 40
+#define X2BTN_X (NEWBTN_X+BTN_W+8)   // x2: the window twice as big
+
+float langT=-10;   // first click on the language button mid-game
 
 // statistics window and its buttons
 #define ST_X 40
@@ -1027,6 +1356,78 @@ void DrawHeaderButtons(int mx, int my)
 	else if(Time()-giveUpT<3)Button("SURE?",NEWBTN_X,BTN_Y,BTN_W,BTN_H,0xffa83a32,mx,my);
 	else Button("GIVE UP",NEWBTN_X,BTN_Y,BTN_W,BTN_H,COL_EMPTY,mx,my);
 	Button("STATISTICS",STATBTN_X,BTN_Y,BTN_W,BTN_H,COL_EMPTY,mx,my);
+	if(SC==2)Button("x2",X2BTN_X,BTN_Y,X2BTN_W,BTN_H,COL_CORRECT,mx,my);
+	else Button("x2",X2BTN_X,BTN_Y,X2BTN_W,BTN_H,COL_EMPTY,mx,my);
+	if(Time()-langT<3)Button("SURE?",LANGBTN_X,BTN_Y,LANGBTN_W,BTN_H,0xffa83a32,mx,my);
+	else if(lang==LANG_UA)Button("УКР",LANGBTN_X,BTN_Y,LANGBTN_W,BTN_H,COL_EMPTY,mx,my);
+	else Button("ENG",LANGBTN_X,BTN_Y,LANGBTN_W,BTN_H,COL_EMPTY,mx,my);
+}
+
+int LoadLang()
+{
+	FILE* f=fopen(CFG_FILE,"rb");
+	if(f==0)return LANG_EN;
+	char s[16];
+	int l=LANG_EN;
+	s[0]=0;
+	fgets(s,16,f);
+	if(s[0]=='u'&&s[1]=='a')l=LANG_UA;
+	fclose(f);
+	return l;
+}
+
+void SaveLang()
+{
+	FILE* f=fopen(CFG_FILE,"wb");
+	if(f==0)return;
+	if(lang==LANG_UA)fputs("ua language\n",f);
+	else fputs("en language\n",f);
+	fclose(f);
+}
+
+// word lists, keyboard, statistics and dictionary of language l
+void SetLanguage(int l)
+{
+	if(l==LANG_UA)
+	{
+		LoadUkrainian();
+		if(nUaAns==0||nUaWords==0)
+		{
+			Message("words_ua.txt not found",2);
+			l=LANG_EN;
+		}
+	}
+	StoreStats(lang);
+	lang=l;
+	FetchStats(lang);
+	wikiKey[0]='e';
+	wikiKey[1]='n';
+	wikiKey[2]=0;
+	if(lang==LANG_UA)
+	{
+		wikiKey[0]='u';
+		wikiKey[1]='k';
+	}
+	LayoutKeys();
+	SaveLang();
+}
+
+// switches at once between games or before the first letter; mid-game it
+// asks for a second click, and the game is dropped (it does not count)
+void LangButton()
+{
+	if(revealRow>=0)return;
+	int playing=state==0&&(row>0||col>0);
+	if(playing&&Time()-langT>=3)
+	{
+		langT=Time();
+		if(lang==LANG_EN)Message("Click again to play in Ukrainian",3);
+		else Message("Click again to play in English",3);
+		return;
+	}
+	langT=-10;
+	SetLanguage(1-lang);
+	NewGame();
 }
 
 // BACK sits in the middle while a game is on, beside NEW GAME after it
@@ -1068,6 +1469,8 @@ void DrawStats(float T, int mx, int my)
 	if(a<1)return;
 	FrameBox(x,y,w,h,1,0xff3a3a3c);
 	TextC("STATISTICS",PLAY_W/2,y+30,2.2,COL_TEXT,1.6,2.);
+	if(lang==LANG_UA)Text("УКР",x+14,y+22,1.4,1.4,0xffb0b0b0,1.2,2.);
+	else Text("ENG",x+14,y+22,1.4,1.4,0xffb0b0b0,1.2,2.);
 
 	// close cross
 	float bx=x+w-ST_CLOSE-8;
@@ -1131,6 +1534,11 @@ int OverAnswer(int mx, int my)
 // a click on the board area, the header or the keyboard
 void OnClick(int mx, int my)
 {
+	if(Over(X2BTN_X,BTN_Y,X2BTN_W,BTN_H,mx,my))
+	{
+		scaleReq=1;    // done by the main loop, which owns the window
+		return;
+	}
 	if(statsOpen)
 	{
 		StatsClick(mx,my);
@@ -1144,6 +1552,11 @@ void OnClick(int mx, int my)
 	if(Over(STATBTN_X,BTN_Y,BTN_W,BTN_H,mx,my))
 	{
 		OpenStats();
+		return;
+	}
+	if(Over(LANGBTN_X,BTN_Y,BTN_W,BTN_H,mx,my)&&mx<LANGBTN_X+LANGBTN_W)
+	{
+		LangButton();
 		return;
 	}
 	if(OverAnswer(mx,my))
@@ -1202,11 +1615,53 @@ int Look(float T)
 {
 	int v=0;
 	if(T-giveUpT<3)v=1;
+	if(T-langT<3)v+=64;
 	for(int s=0;s<NSLOTS;s++)
 	{
 		if(lkState[s]==LK_DICT||lkState[s]==LK_WIKI)v+=2+(int(T*3)%4)*2;
 	}
 	return v;
+}
+
+// Present() leaves the window events to us (NO_GREEDY_EVENT). GetKeyEvent
+// gives -1 for ; ' , . [ ] - keys that carry Ukrainian letters - but their
+// CHAR events have the character, so in Ukrainian those go to OnKey here.
+// Returns 1 when one did.
+int DrainEvents()
+{
+	int got=0;
+	SScincEvent ev;
+	while(GetScincEvent(ev))
+	{
+		if(ev.type!='CHAR'||lang!=LANG_UA)continue;
+		int c=ev.x;
+		if(c==';'||c==39||c==','||c=='.'||c=='['||c==']')
+		{
+			OnKey(c);
+			got=1;
+		}
+	}
+	return got;
+}
+
+// The x2 button switches between the unscaled window and one twice as big, rendered at
+// twice the resolution (-x2 starts with the big one). The layout stays in
+// logical units: only the window, the transform and SC change.
+float winSC=1;     // the scale of the window we have now
+
+void SetScale(float s)
+{
+	SC=s;
+	if(winSC!=SC)
+	{
+		wsys.DeleteWindow(mainWin);
+		mainWin=wsys.CreateWindow(G_SCREEN_WIDTH*SC,G_SCREEN_HEIGHT*SC,1,1,G_SCREEN_MODE);
+		g.SetActiveRT(wsys.GetWindowRT(mainWin));
+		winSC=SC;
+	}
+	g.t_0(0,0);
+	g.t_x(SC,0);
+	g.t_y(0,SC);
 }
 
 int main(int argc, pchar* argv)
@@ -1216,17 +1671,7 @@ int main(int argc, pchar* argv)
 		char* a=argv[i];
 		if(a[0]=='-'&&a[1]=='x'&&a[2]=='2'&&a[3]==0)SC=2;
 	}
-	if(SC!=1)
-	{
-		// ws.h made an 820x720 window magnified 2x; replace it with one
-		// of the same screen size that has real pixels
-		wsys.DeleteWindow(mainWin);
-		mainWin=wsys.CreateWindow(G_SCREEN_WIDTH*SC,G_SCREEN_HEIGHT*SC,1,1,G_SCREEN_MODE);
-		g.SetActiveRT(wsys.GetWindowRT(mainWin));
-	}
-	g.t_0(0,0);
-	g.t_x(SC,0);
-	g.t_y(0,SC);
+	SetScale(SC);
 
 	pfont=(CFont*)malloc(sizeof(CFont));
 	CFontMaker fm;
@@ -1234,7 +1679,16 @@ int main(int argc, pchar* argv)
 	MakeLetters(fm);
 
 	for(int i=0;i<6;i++)dist[i]=0;
-	LayoutKeys();
+	for(int l=0;l<2;l++)
+	{
+		lsPlayed[l]=0;
+		lsWins[l]=0;
+		lsStreak[l]=0;
+		lsMax[l]=0;
+	}
+	for(int i=0;i<12;i++)lsDist[i]=0;
+	InitUaKeys();
+	SetLanguage(LoadLang());
 
 	int timeSeed=Time()*1e9;
 	seed+=timeSeed;
@@ -1265,6 +1719,7 @@ int main(int argc, pchar* argv)
 			if(press>0)OnKey(key);
 			dirty=1;
 		}
+		if(DrainEvents())dirty=1;
 
 		int mx;
 		int my;
@@ -1273,6 +1728,12 @@ int main(int argc, pchar* argv)
 		mx=mx/SC;
 		my=my/SC;
 		if((mb&1)&&!(prevMB&1))OnClick(mx,my);
+		if(scaleReq)
+		{
+			scaleReq=0;
+			SetScale(3-SC);
+			dirty=1;
+		}
 		if(mx!=prevMX||my!=prevMY||mb!=prevMB)dirty=1;
 		prevMB=mb;
 		prevMX=mx;
@@ -1297,13 +1758,13 @@ int main(int argc, pchar* argv)
 		}
 		else
 		{
-			// nothing changed: just keep the events flowing (Present would
-			// drain the queue we don't read) and show the frame again now
-			// and then in case the window was covered
+			// nothing changed: keep the events flowing and, every few
+			// seconds, show the frame again in case the window was covered
+			// (the runtime reports no expose event). Showing a still frame
+			// is the main idle cost, more so in the x2 window, so not often.
 			Poll();
-			SScincEvent ev;
-			while(GetScincEvent(ev)){}
-			if(T-lastPresent>0.5)
+			DrainEvents();
+			if(T-lastPresent>3)
 			{
 				wsys.Present(mainWin);
 				lastPresent=T;
