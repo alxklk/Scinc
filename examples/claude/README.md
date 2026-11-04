@@ -31,6 +31,19 @@ three sections.
 | `lissajous.cpp` | Animated 3:2 Lissajous curve; runs until the window is closed |
 | `raytrace.cpp` | Ray-traced metal still life: silver sphere, bronze cube (balanced on one vertex, space diagonal vertical) and gold torus on a checkerboard plane (reflectance 0.3), off-axis camera; resolution from the command line (`Scinc raytrace.cpp [w h]`, default 640×480); renders one frame with 2×2 AA, shows it, and saves `raytrace.png` |
 
+## sectorly/ — a small vector editor (intrinsic `graphics.h` + `../../ws.h`)
+
+Pictures are built on a 64×64 grid from two primitives, each a directed stroke
+whose filled body lies to the right of its direction: an axis-aligned line
+with an attached square, and a quarter arc whose body is the pie, the corner
+outside it, or the lens between the arc and its mirror. There is a 16-colour
+palette (entry 0 is transparent) for fills and outlines.
+
+| File | What it does |
+|------|--------------|
+| `primitives.cpp` | Static gallery of every primitive kind, with red arrows marking stroke direction; saves `primitives.png` |
+| `sectorly.cpp` | The editor (`Scinc sectorly.cpp [file.svg]`). Drag to draw: near horizontal/vertical gives a line, near diagonal gives a sector. Select by click or rectangle; move, Ctrl+drag copy, copy/paste, duplicate, rotate 90° (R/Shift+R), delete, undo/redo; PgUp/PgDn move the selection in draw order (a scattered selection is gathered into a block first); an Edit tool (E) drags primitive ends, re-snapping to a line or sector; mouse-wheel zoom and middle-drag pan (Home fits); double-click a swatch to edit that palette colour with linked RGB/HSL sliders and a 2D square over the two channels the radio-selected one leaves free (saved in the SVG, undoable); resizable window at scale 2 (Scinc cannot resize a render target, so the window re-lays out while it fits its render target and is recreated only when it grows past it); a tool panel for palette and sector mode. Ctrl+S exports SVG with the model kept in an XML comment, and Ctrl+O loads it back. `-selftest` runs a non-interactive check |
+
 ## opengl/ — hardware 3D via a native shared-library wrapper
 
 `scgl.h` wraps OpenGL 1.x (fixed function, display lists, lighting, textures,
@@ -106,6 +119,11 @@ Found empirically while writing and running these:
 - `sound.h` and `graphics.h` are intrinsics (not real files); windowing
   helpers like `Present()` come from the real `ws.h` at the examples root,
   so a program two levels deep includes it as `../../ws.h`.
+- `float += int` fails (`y += 36` gives "Unknown or unsupported operator +=";
+  write `y += 36.0`); int `+=`, including on struct members, is fine. No pointer arithmetic (`int* + int`;
+  index a base pointer with an offset instead), and a `?:` that picks between
+  two `char*` values crashes at runtime; use an `if`. A `?:` with a function
+  call in either branch silently ends the program. Found in `sectorly.cpp`.
 
 ## tui/ — a Turbo Vision style text UI (ANSI terminal)
 
