@@ -5,7 +5,7 @@
 #else
 #define G_SCREEN_SCALE 4
 #endif
-#define G_SCREEN_MODE 1
+#define G_SCREEN_MODE 2
 
 #include "sound.h"
 #include "graphics.h"

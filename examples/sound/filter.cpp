@@ -1,7 +1,7 @@
 #define SW 1024
 #define G_SCREEN_WIDTH SW
-#define G_SCREEN_SCALE 3
-#define G_SCREEN_MODE 1
+#define G_SCREEN_SCALE 2
+#define G_SCREEN_MODE 2
 
 #define NO_GREEDY_EVENT // events are read in the main loop, Present() must not discard them
 

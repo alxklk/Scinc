@@ -5,10 +5,10 @@ exit
 
 
 #include "graphics.h"
-#define G_SCREEN_MODE 1
+#define G_SCREEN_MODE 2
 #define G_SCREEN_HEIGHT 900
 #define G_SCREEN_WIDTH 1500
-#define G_SCREEN_SCALE 2
+#define G_SCREEN_SCALE 1
 #define NO_GREEDY_EVENT
 #include "../ws.h"
 #include "flt2.h"
