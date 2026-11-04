@@ -17,8 +17,10 @@
 // The telescope (right column) keeps one piece aside: click it, or press
 // Space, to swap. The game ends when the sky is full.
 //
-// Run with -x2 (Scinc triplity.cpp -x2) for HiDPI screens: the window keeps
-// its size on screen but renders at twice the resolution.
+// Normally the window is unscaled, one pixel per unit. Run with -x2
+// (Scinc triplity.cpp -x2) for a window twice as big, e.g. on HiDPI screens: it is
+// rendered at twice the resolution, so everything, strokes included, comes
+// out sharp rather than magnified. The x2 button switches between the two any time.
 //
 // The sprites are SVG files in sprites/, drawn with svg.h. Each one has a
 // .cen (pivots of its parts) and an .ami (one animation cycle whose first
@@ -32,6 +34,7 @@
 
 #define G_SCREEN_WIDTH 780
 #define G_SCREEN_HEIGHT 640
+#define G_SCREEN_SCALE 1  // unscaled; -x2 makes a window twice as big
 #define G_SCREEN_MODE 1   // XShm: faster presents than mode 0 (plain XPutImage)
 
 #include "graphics.h"
@@ -53,6 +56,7 @@ typedef char* pchar;
 // widths, fillrect, Circle, SVG) multiply by SC themselves; mouse positions
 // are divided back.
 float SC=1;
+int scaleReq=0;    // the x2 button was pressed
 
 void Circle(float x, float y, float r, float w, float a, int c)
 {
@@ -1137,6 +1141,8 @@ void DrawMessage(float T)
 #define BTN_Y 12
 #define BTN_H 30
 #define BTN_W 120
+#define X2BTN_W 40
+#define X2BTN_X (RX+RW-BTN_W-8-X2BTN_W)   // x2: the window twice as big
 
 
 #define OV_X 130
@@ -1151,6 +1157,8 @@ void DrawHeader(int mx, int my)
 	else if(Time()-newConfirmT<3)Button("SURE?",BX,BTN_Y,BTN_W,BTN_H,0xffa83a50,mx,my);
 	else Button("NEW GAME",BX,BTN_Y,BTN_W,BTN_H,COL_BTN,mx,my);
 	Button("STATISTICS",RX+RW-BTN_W,BTN_Y,BTN_W,BTN_H,COL_BTN,mx,my);
+	if(SC==2)Button("x2",X2BTN_X,BTN_Y,X2BTN_W,BTN_H,COL_GO,mx,my);
+	else Button("x2",X2BTN_X,BTN_Y,X2BTN_W,BTN_H,COL_BTN,mx,my);
 }
 
 void Dim()
@@ -1242,6 +1250,11 @@ int CellAt(int mx, int my)
 
 void OnClick(int mx, int my)
 {
+	if(Over(X2BTN_X,BTN_Y,X2BTN_W,BTN_H,mx,my))
+	{
+		scaleReq=1;    // done by the main loop, which owns the window
+		return;
+	}
 	if(statsOpen!=0)
 	{
 		statsOpen=0;   // BACK or anywhere
@@ -1323,6 +1336,26 @@ int Look(float T)
 	return 0;
 }
 
+// The x2 button switches between the unscaled window and one twice as big, rendered at
+// twice the resolution (-x2 starts with the big one). The layout stays in
+// logical units: only the window, the transform and SC change.
+float winSC=1;     // the scale of the window we have now
+
+void SetScale(float s)
+{
+	SC=s;
+	if(winSC!=SC)
+	{
+		wsys.DeleteWindow(mainWin);
+		mainWin=wsys.CreateWindow(G_SCREEN_WIDTH*SC,G_SCREEN_HEIGHT*SC,1,1,G_SCREEN_MODE);
+		g.SetActiveRT(wsys.GetWindowRT(mainWin));
+		winSC=SC;
+	}
+	g.t_0(0,0);
+	g.t_x(SC,0);
+	g.t_y(0,SC);
+}
+
 int main(int argc, pchar* argv)
 {
 	for(int i=1;i<argc;i++)
@@ -1330,17 +1363,7 @@ int main(int argc, pchar* argv)
 		char* a=argv[i];
 		if(a[0]=='-'&&a[1]=='x'&&a[2]=='2'&&a[3]==0)SC=2;
 	}
-	if(SC!=1)
-	{
-		// ws.h made a window magnified 2x; replace it with one of the same
-		// screen size that has real pixels
-		wsys.DeleteWindow(mainWin);
-		mainWin=wsys.CreateWindow(G_SCREEN_WIDTH*SC,G_SCREEN_HEIGHT*SC,1,1,G_SCREEN_MODE);
-		g.SetActiveRT(wsys.GetWindowRT(mainWin));
-	}
-	g.t_0(0,0);
-	g.t_x(SC,0);
-	g.t_y(0,SC);
+	SetScale(SC);
 
 	pfont=(CFont*)malloc(sizeof(CFont));
 	CFontMaker fm;
@@ -1400,6 +1423,12 @@ int main(int argc, pchar* argv)
 		hoverCell=hc;
 		UpdatePreview();
 		if((mb&1)&&!(prevMB&1))OnClick(mx,my);
+		if(scaleReq)
+		{
+			scaleReq=0;
+			SetScale(3-SC);
+			dirty=1;
+		}
 		if(mx!=prevMX||my!=prevMY||mb!=prevMB)dirty=1;
 		prevMB=mb;
 		prevMX=mx;
@@ -1433,13 +1462,14 @@ int main(int argc, pchar* argv)
 		}
 		else
 		{
-			// nothing changed: keep the events flowing (Present would drain
-			// the queue we don't read) and show the frame again now and
-			// then in case the window was covered
+			// nothing changed: keep the events flowing and, every few
+			// seconds, show the frame again in case the window was covered
+			// (the runtime reports no expose event). Showing a still frame
+			// is the main idle cost, more so in the x2 window, so not often.
 			Poll();
 			SScincEvent ev;
 			while(GetScincEvent(ev)){}
-			if(T-lastPresent>0.5)
+			if(T-lastPresent>3)
 			{
 				wsys.Present(mainWin);
 				lastPresent=T;
