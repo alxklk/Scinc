@@ -36,7 +36,6 @@
 
 Graph tvG;
 CFont* gfxFont;
-int gfxPal[16];
 int gfxList[TV_CELLS];
 int gfxN=0;
 int gfxCurX=-1;
@@ -54,22 +53,6 @@ int tvCloseCmd=0;    // the command the close button sends; 0 quits at once
 
 void GfxInit()
 {
-	gfxPal[0]=0xFF000000;
-	gfxPal[1]=0xFF0000AA;
-	gfxPal[2]=0xFF00AA00;
-	gfxPal[3]=0xFF00AAAA;
-	gfxPal[4]=0xFFAA0000;
-	gfxPal[5]=0xFFAA00AA;
-	gfxPal[6]=0xFFAA5500;
-	gfxPal[7]=0xFFAAAAAA;
-	gfxPal[8]=0xFF555555;
-	gfxPal[9]=0xFF5555FF;
-	gfxPal[10]=0xFF55FF55;
-	gfxPal[11]=0xFF55FFFF;
-	gfxPal[12]=0xFFFF5555;
-	gfxPal[13]=0xFFFF55FF;
-	gfxPal[14]=0xFFFFFF55;
-	gfxPal[15]=0xFFFFFFFF;
 	gfxFont=(CFont*)malloc(sizeof(CFont));
 	CFontMaker fm;
 	fm.Init(*gfxFont,6);
@@ -335,8 +318,8 @@ void GfxFlush()
 				tvPrevAt[i]=at;
 				int px=x*GFX_CW;
 				int py=y*GFX_CH;
-				int fg=gfxPal[at&15];
-				int bg=gfxPal[(at>>4)&15];
+				int fg=TvAtFg(at);
+				int bg=TvAtBg(at);
 				tvG.fillrect(px,py,GFX_CW,GFX_CH,bg);
 				if(!GfxShape(ch,px,py,fg,bg))
 				{
@@ -355,13 +338,13 @@ void GfxFlush()
 		int px=(i%TV_MAXW)*GFX_CW;
 		int py=(i/TV_MAXW)*GFX_CH;
 		tvG.Clip(px,py,GFX_CW,GFX_CH);
-		GfxGlyph(tvCh[i],px,py,gfxPal[tvAt[i]&15]);
+		GfxGlyph(tvCh[i],px,py,TvAtFg(tvAt[i]));
 	}
 	tvG.UnClip();
 	if(gfxCurX>=0)
 	{
 		int i=gfxCurY*TV_MAXW+gfxCurX;
-		tvG.fillrect(gfxCurX*GFX_CW,gfxCurY*GFX_CH+GFX_CH-3,GFX_CW,2,gfxPal[tvAt[i]&15]);
+		tvG.fillrect(gfxCurX*GFX_CW,gfxCurY*GFX_CH+GFX_CH-3,GFX_CW,2,TvAtFg(tvAt[i]));
 	}
 	GfxPresent();
 }
@@ -405,6 +388,8 @@ void GfxMouseAt(int x, int y)
 	gfxMY=y;
 	evX=x/GFX_CW;
 	evY=y/GFX_CH;
+	evHalf=0;
+	if(y%GFX_CH>=GFX_CH/2)evHalf=1;
 }
 
 // Turns one window event into a tv.h event, or leaves evType at EV_NONE.

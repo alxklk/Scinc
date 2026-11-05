@@ -1,6 +1,8 @@
 // A Turbo Vision style desktop in the terminal, written in Scinc and drawn with
 // ANSI escape sequences: a file browser and text editor, a calculator, a calendar, an
-// ASCII table, a sliding puzzle, the Circuitfall game and a dialog with the standard controls.
+// ASCII table, a sliding puzzle, the Circuitfall and Sonar games, a Mandelbrot explorer,
+// the Game of Life, a hex viewer, an ANSI paint program, a screen saver, colour themes
+// and dialogs with the standard controls.
 //
 //   ./build_so.sh                  once, builds the terminal input library
 //   Scinc tvdemo.cpp [file]        from this folder
@@ -10,6 +12,8 @@
 #include "tv.h"
 #include "tvedit.h"
 #include "circuitfall.h"
+#include "tvtoys.h"
+#include "tvapps.h"
 
 #pragma STACK_SIZE 655360
 
@@ -35,7 +39,24 @@ typedef char* pchar;
 #define CM_DIRHOME 110
 #define CM_CIRCUIT 111
 #define CM_CIRCUIT2 112
+#define CM_PREFS 113
+#define CM_PROGRESS 114
+#define CM_MANDEL 115
+#define CM_LIFE 116
+#define CM_SAVERNOW 117
+#define CM_SONAR 118
+#define CM_HEX 119
+#define CM_PAINT 120
+#define CM_LINENUMS 121
+#define CM_WRAP 122
+#define CM_WINLIST 123
 #define CM_CALCKEY 200
+#define CM_THEMEPICK 300
+#define CM_VOLUME 301
+
+#define W_PREFS 8
+#define W_PROGRESS 9
+#define W_WINLIST 10
 
 // ---------------------------------------------------------------- calculator
 
@@ -512,10 +533,14 @@ int ctlOptB=0;
 int ctlOptC=1;
 int ctlMode=1;
 int ctlColor=2;
+int ctlVolume=12;
+int ctlSize=1;
+int ctlVolCtl=-1;   // the volume slider of the open Controls dialog
+int ctlVolBar=-1;   // and the bar that follows it
 
 void RunControls()
 {
-	int win=TvNewCentered(W_CONTROLS,"Controls",58,19,WF_DIALOG);
+	int win=TvNewCentered(W_CONTROLS,"Controls",58,23,WF_DIALOG);
 	if(win<0)return;
 	TvAdd(win,C_LABEL,3,2,10,1,"~N~ame:",0);
 	int inp=TvAdd(win,C_INPUT,10,2,44,1,&ctlName[0],0);
@@ -541,9 +566,20 @@ void RunControls()
 	int lst=TvAdd(win,C_LIST,27,5,27,8,"Black|Blue|Green|Cyan|Red|Magenta|Brown|Light gray|Dark gray|Light blue|Light green|Light cyan|Light red|Yellow|White",0);
 	tvCtl[lst].val=ctlColor;
 
-	int ok=TvAdd(win,C_BUTTON,16,15,12,2,"O~K~",CM_OK);
+	TvAdd(win,C_LABEL,3,14,10,1,"~V~olume",0);
+	ctlVolCtl=TvAdd(win,C_SLIDER,12,14,21,1,"",CM_VOLUME);
+	tvCtl[ctlVolCtl].count=20;
+	tvCtl[ctlVolCtl].val=ctlVolume;
+	ctlVolBar=TvAdd(win,C_PROGRESS,12,15,21,1,"",0);
+	tvCtl[ctlVolBar].count=20;
+	tvCtl[ctlVolBar].val=ctlVolume;
+	TvAdd(win,C_LABEL,38,14,10,1,"Si~z~e",0);
+	int sz=TvAdd(win,C_COMBO,44,14,10,1,"Small|Medium|Large|Huge",0);
+	tvCtl[sz].val=ctlSize;
+
+	int ok=TvAdd(win,C_BUTTON,16,19,12,2,"O~K~",CM_OK);
 	tvCtl[ok].isDefault=1;
-	TvAdd(win,C_BUTTON,31,15,12,2,"Cancel",CM_CANCEL);
+	TvAdd(win,C_BUTTON,31,19,12,2,"Cancel",CM_CANCEL);
 	tvWin[win].focus=inp;
 
 	int res=TvExec(win);
@@ -556,15 +592,277 @@ void RunControls()
 		for(int i=0;i<3;i++)
 			if(tvCtl[r[i]].val)ctlMode=i;
 		ctlColor=tvCtl[lst].val;
+		ctlVolume=tvCtl[ctlVolCtl].val;
+		ctlSize=tvCtl[sz].val;
 		char colour[24];
 		TvItemAt(&tvCtl[lst].text[0],ctlColor,&colour[0],24);
+		char size[16];
+		TvItemAt(&tvCtl[sz].text[0],ctlSize,&size[0],16);
 		char msg[200];
-		snprintf(&msg[0],200,"Name: %s\nColour: %s\nOptions: %i %i %i, mode %i",&ctlName[0],&colour[0],ctlOptA,ctlOptB,ctlOptC,ctlMode);
+		snprintf(&msg[0],200,"Name: %s\nColour: %s\nOptions: %i %i %i, mode %i\nVolume %i, size %s",&ctlName[0],&colour[0],ctlOptA,ctlOptB,ctlOptC,ctlMode,ctlVolume,&size[0]);
 		TvClose(win);
 		TvMessage("You chose",&msg[0],0);
 	}
 	else
 		TvClose(win);
+	ctlVolCtl=-1;
+}
+
+void DrawControls(int win)
+{
+	TWin& t=tvWin[win];
+	char s[8];
+	snprintf(&s[0],8,"%2i",tvCtl[ctlVolCtl].val);
+	TvText(t.x+34,t.y+14,&s[0],0x70);
+}
+
+// ---------------------------------------------------------------- preferences
+
+#define CFG_FILE "tvdemo.cfg"
+int prefTheme=0;
+
+// The settings file holds: theme, saver on, saver minutes, saver kind, line numbers, wrap.
+void PrefsLoad()
+{
+	char buf[64];
+	int n=fs_load(CFG_FILE,&buf[0],63);
+	if(n<=0)return;
+	buf[n]=0;
+	int v[6];
+	int k=0;
+	int i=0;
+	while((k<6)&&(buf[i]!=0))
+	{
+		if((buf[i]>='0')&&(buf[i]<='9'))
+		{
+			int x=0;
+			while((buf[i]>='0')&&(buf[i]<='9'))
+			{
+				x=x*10+buf[i]-'0';
+				i++;
+			}
+			v[k]=x;
+			k++;
+		}
+		else i++;
+	}
+	if(k>=1)
+		if(v[0]<=2)prefTheme=v[0];
+	if(k>=4)
+	{
+		svOn=(v[1]!=0);
+		if((v[2]>=1)&&(v[2]<=30))svMinutes=v[2];
+		if(v[3]<=1)svKind=v[3];
+	}
+	if(k>=6)
+	{
+		edLineNums=(v[4]!=0);
+		edWrap=(v[5]!=0);
+	}
+}
+
+void PrefsSave()
+{
+	char buf[64];
+	snprintf(&buf[0],64,"%i %i %i %i %i %i\n",prefTheme,svOn,svMinutes,svKind,edLineNums,edWrap);
+	if(fs_save_begin(CFG_FILE))
+	{
+		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
+		fs_save_end(ok);
+	}
+}
+
+int prefMinCtl=-1;   // the saver delay slider of the open dialog
+
+void RunPrefs()
+{
+	int win=TvNewCentered(W_PREFS,"Preferences",48,14,WF_DIALOG);
+	if(win<0)return;
+	TvAdd(win,C_LABEL,3,2,10,1,"~T~heme",0);
+	int th=TvAdd(win,C_COMBO,14,2,30,1,"Classic blue|Dark|Mono",CM_THEMEPICK);
+	tvCtl[th].val=prefTheme;
+	int on=TvAdd(win,C_CHECK,2,4,30,1,"~S~creen saver",0);
+	tvCtl[on].val=svOn;
+	TvAdd(win,C_LABEL,3,5,10,1,"~K~ind",0);
+	int kind=TvAdd(win,C_COMBO,14,5,30,1,"Stars|Plasma",0);
+	tvCtl[kind].val=svKind;
+	TvAdd(win,C_LABEL,3,7,10,1,"~A~fter",0);
+	prefMinCtl=TvAdd(win,C_SLIDER,14,7,20,1,"",0);
+	tvCtl[prefMinCtl].count=29;
+	tvCtl[prefMinCtl].val=svMinutes-1;
+	int ok=TvAdd(win,C_BUTTON,10,10,12,2,"O~K~",CM_OK);
+	tvCtl[ok].isDefault=1;
+	TvAdd(win,C_BUTTON,25,10,12,2,"Cancel",CM_CANCEL);
+	tvWin[win].focus=th;
+	int res=TvExec(win);
+	if(res==CM_OK)
+	{
+		prefTheme=tvCtl[th].val;
+		svOn=tvCtl[on].val;
+		svKind=tvCtl[kind].val;
+		svMinutes=tvCtl[prefMinCtl].val+1;
+		PrefsSave();
+	}
+	prefMinCtl=-1;
+	TvClose(win);
+	// the combo box showed each theme as it was picked
+	TvSetTheme(prefTheme);
+}
+
+void DrawPrefs(int win)
+{
+	TWin& t=tvWin[win];
+	char s[16];
+	snprintf(&s[0],16,"%i min",tvCtl[prefMinCtl].val+1);
+	TvText(t.x+36,t.y+7,&s[0],0x70);
+}
+
+// ---------------------------------------------------------------- progress bar demo
+
+int progWin=-1;
+int progBar=-1;
+
+// The timer runs fast while something moves, slowly while the saver waits for idle time.
+void TickUpdate()
+{
+	int ms=0;
+	if(svOn)ms=500;
+	if((cfWin>=0)||(progWin>=0)||(mbWin>=0)||(lfWin>=0)||(snWin>=0)||tvScreenTaken)ms=30;
+	if(ms!=tvTickMs)
+	{
+		tvTickMs=ms;
+		tvNextTick=term_ms()+ms;
+	}
+}
+
+void RunProgress()
+{
+	int win=TvNewCentered(W_PROGRESS,"Copying",46,9,WF_DIALOG);
+	if(win<0)return;
+	TvAdd(win,C_LABEL,3,2,30,1,"Copying 120 imaginary files...",0);
+	progBar=TvAdd(win,C_PROGRESS,3,3,40,1,"",0);
+	tvCtl[progBar].count=120;
+	TvAdd(win,C_BUTTON,17,5,12,2,"Cancel",CM_CANCEL);
+	progWin=win;
+	TickUpdate();
+	int res=TvExec(win);
+	progWin=-1;
+	TvClose(win);
+	if(res==CM_OK)TvMessage("Copying","All 120 files were copied.",0);
+}
+
+void ProgressTick()
+{
+	if(progWin<0)return;
+	TCtl& c=tvCtl[progBar];
+	c.val++;
+	tvDirty=1;
+	if(c.val>=c.count)tvWin[progWin].result=CM_OK;
+}
+
+// ---------------------------------------------------------------- editor options and the window list
+
+int itemLineNums=-1;  // the menu items whose hints show on or off
+int itemWrap=-1;
+
+void ShowToggles()
+{
+	char* on="on";
+	char* off="off";
+	if(edLineNums)StrCpy(&tvItem[itemLineNums].hint[0],on,12);
+	else StrCpy(&tvItem[itemLineNums].hint[0],off,12);
+	if(edWrap)StrCpy(&tvItem[itemWrap].hint[0],on,12);
+	else StrCpy(&tvItem[itemWrap].hint[0],off,12);
+	// the cursor stays in view in every editor window
+	for(int i=0;i<TV_MAXWIN;i++)
+		if(tvWin[i].used)
+			if(tvWin[i].type==W_VIEW)
+			{
+				tvWin[i].e=0;
+				EdReveal(i);
+			}
+	tvDirty=1;
+}
+
+int wlWin[TV_MAXWIN];  // the windows the list shows, front first
+int wlN=0;
+
+void WinListFill(int self)
+{
+	wlN=0;
+	for(int z=tvNZ-1;z>=0;z--)
+		if(tvZ[z]!=self)
+		{
+			wlWin[wlN]=tvZ[z];
+			wlN++;
+		}
+}
+
+void WinListItem(int i, char* out, int max)
+{
+	int w=wlWin[i];
+	char* mark="";
+	if(tvWin[w].type==W_VIEW)
+		if(EdModified(w))mark=" *";
+	if(w==ptWin)
+		if(ptMod)mark=" *";
+	char num[4];
+	num[0]=' ';
+	num[1]=0;
+	if(tvWin[w].num>0)num[0]='0'+tvWin[w].num;
+	snprintf(out,max,"%s  %s%s",&num[0],&tvWin[w].title[0],mark);
+}
+
+void RunWinList()
+{
+	int win=TvNewCentered(W_WINLIST,"Windows",56,18,WF_DIALOG);
+	if(win<0)return;
+	TvAdd(win,C_LABEL,3,2,10,1,"~W~indows",0);
+	int lst=TvAdd(win,C_LIST,3,3,34,13,"",0);
+	tvCtl[lst].virt=1;
+	int b=TvAdd(win,C_BUTTON,40,3,13,2,"~S~witch",CM_OK);
+	tvCtl[b].isDefault=1;
+	TvAdd(win,C_BUTTON,40,6,13,2,"~C~lose",CM_CLOSE);
+	TvAdd(win,C_BUTTON,40,9,13,2,"Cancel",CM_CANCEL);
+	tvWin[win].focus=lst;
+	while(tvRunning)
+	{
+		WinListFill(win);
+		tvCtl[lst].count=wlN;
+		if(tvCtl[lst].val>=wlN)tvCtl[lst].val=wlN-1;
+		if(tvCtl[lst].val<0)tvCtl[lst].val=0;
+		int res=TvExec(win);
+		int pick=-1;
+		if(wlN>0)pick=wlWin[tvCtl[lst].val];
+		if((res==CM_CLOSE)&&(pick>=0))
+		{
+			tvWin[win].focus=lst;
+			if(TvAppCanClose(pick))TvClose(pick);
+			TvToFront(win);
+		}
+		else
+		{
+			TvClose(win);
+			if((res==CM_OK)&&(pick>=0))TvToFront(pick);
+			return;
+		}
+	}
+	TvClose(win);
+}
+
+// ---------------------------------------------------------------- context menus
+
+int popEdit=-1;
+int popWin=-1;
+
+int ContextMenu(int win, int x, int y)
+{
+	TWin& t=tvWin[win];
+	int menu=popWin;
+	if(t.type==W_VIEW)menu=popEdit;
+	if(x<0)TvOpenPopup(menu,-1,-1);
+	else TvOpenPopup(menu,t.x+x,t.y+y);
+	return 1;
 }
 
 // ---------------------------------------------------------------- file browser
@@ -636,8 +934,15 @@ int FdEnterSelected()
 	return 1;
 }
 
+void WinListItem(int i, char* out, int max);
+
 void TvAppListItem(int win, int ctl, int i, char* out, int max)
 {
+	if(tvWin[win].type==W_WINLIST)
+	{
+		WinListItem(i,out,max);
+		return;
+	}
 	int isDir=fs_name(i,out,max-1);
 	if(isDir)
 	{
@@ -782,9 +1087,51 @@ int FdStart(int win, char* dir)
 	return 0;
 }
 
-void RunOpen()
+// The file's name ends with ext.
+int EndsWith(char* s, char* ext)
 {
-	int win=FdOpenDialog("Open a file","~O~pen",0);
+	int n=StrLen(s);
+	int m=StrLen(ext);
+	if(n<m)return 0;
+	for(int i=0;i<m;i++)
+		if(LowerKey(s[n-m+i])!=ext[i])return 0;
+	return 1;
+}
+
+// Opens a picked file: .ans files in ANSI paint, binary ones in the hex viewer if
+// wanted, the rest in the editor. hex sends every file to the hex viewer.
+void OpenPicked(char* path, int hex)
+{
+	if(hex)
+	{
+		HxOpen(path);
+		return;
+	}
+	if(EndsWith(path,".ans"))
+	{
+		if(PtCanClose(ptWin))PtLoad(path);
+		return;
+	}
+	char head[4096];
+	int n=fs_load(path,&head[0],4096);
+	int binary=0;
+	for(int i=0;i<n;i++)
+		if(head[i]==0)binary=1;
+	if(binary)
+	{
+		int r=TvChoose("Open","This looks like a binary file.","~H~ex view|~T~ext|~C~ancel");
+		if(r==0)HxOpen(path);
+		if(r==1)OpenFile(path);
+		return;
+	}
+	OpenFile(path);
+}
+
+void RunOpen(int hex)
+{
+	char* title="Open a file";
+	if(hex)title="Hex view";
+	int win=FdOpenDialog(title,"~O~pen",0);
 	if(win<0)return;
 	if(!FdStart(win,""))return;
 	char path[FD_PATH];
@@ -810,7 +1157,7 @@ void RunOpen()
 				{
 					FdJoin(&path[0],&name[0]);
 					TvClose(win);
-					OpenFile(&path[0]);
+					OpenPicked(&path[0],hex);
 					return;
 				}
 		}
@@ -820,24 +1167,27 @@ void RunOpen()
 	TvClose(win);
 }
 
-// Asks for a name and saves the editor window there. Returns 1 if it was saved.
+// Asks for a name and saves the editor window there, or the ANSI paint picture
+// when ew<0. Returns 1 if it was saved.
 int RunSaveAs(int ew)
 {
-	TEdit& e=ed[ew];
+	char* old=&ptPath[0];
+	if(ew>=0)old=&ed[ew].path[0];
 	int win=FdOpenDialog("Save as","~S~ave",1);
 	if(win<0)return 0;
 	char dir[FD_PATH];
 	dir[0]=0;
 	char first[256];
 	first[0]=0;
-	if(e.path[0]!=0)
+	if(old[0]!=0)
 	{
-		int base=EdBase(&e.path[0]);
-		StrCpy(&first[0],&e.path[base],256);
-		StrCpy(&dir[0],&e.path[0],FD_PATH);
+		int base=EdBase(old);
+		StrCpy(&first[0],&old[base],256);
+		StrCpy(&dir[0],old,FD_PATH);
 		if(base>1)dir[base-1]=0;
 		else dir[base]=0;
 	}
+	else if(ew<0)StrCpy(&first[0],"picture.ans",256);
 	if(!FdStart(win,&dir[0]))return 0;
 	StrCpy(&tvCtl[fdNameBox].text[0],&first[0],200);
 	tvCtl[fdNameBox].val=StrLen(&first[0]);
@@ -880,7 +1230,8 @@ int RunSaveAs(int ew)
 					int where=-2;
 					if(StrLen(&path[0])<FD_PATH-1)where=EdAbsPath(&path[0],&full[0]);
 					int other=-1;
-					if(where>=0)other=EdFindPath(&full[0]);
+					if(where>=0)
+						if(ew>=0)other=EdFindPath(&full[0]);
 					if(where==-2)
 						TvMessage("Save as","That path is too long.",0);
 					else if(where<0)
@@ -895,7 +1246,8 @@ int RunSaveAs(int ew)
 						if(go)
 						{
 							tvWin[win].result=0;
-							saved=EdSaveAs(ew,&full[0]);
+							if(ew>=0)saved=EdSaveAs(ew,&full[0]);
+							else saved=PtSave(&full[0]);
 							done=saved;
 						}
 					}
@@ -935,6 +1287,7 @@ void OpenHelp()
 		"  Tab, Shift+Tab    move between dialog controls\n"
 		"  Space, Enter      toggle, press\n"
 		"  Esc               cancel a dialog or close a menu\n"
+		"  Shift+F10         context menu (or click the right button)\n"
 		"  In the file list: letters jump to a name, Backspace goes up\n"
 		"  Alt+X, Ctrl+Q     quit\n"
 		"\n"
@@ -949,6 +1302,12 @@ void OpenHelp()
 		"  Ctrl+arrows              move by word\n"
 		"  Ctrl+Home, Ctrl+End      start, end of the file\n"
 		"  Tab, Shift+Tab           indent, unindent the selected lines\n"
+		"  Ctrl+B                   go to the matching bracket\n"
+		"  Brackets next to the cursor show their partner, or red if\n"
+		"  it has none. In C, Enter after { indents one more level and\n"
+		"  } on an empty line takes a level away.\n"
+		"  Options has line numbers and word wrap, Window, List (Alt+0)\n"
+		"  switches between or closes the open windows.\n"
 		"  A * on the frame means there are unsaved changes.\n"
 		"  The clipboard is the editor's own. To copy to other programs,\n"
 		"  hold Shift and drag, which most terminals leave to themselves.\n"
@@ -962,6 +1321,35 @@ void OpenHelp()
 		"  Drag a scroll bar thumb, or use the wheel, to scroll.\n"
 		"  Double click a list entry to open it, or a word to select it.\n"
 		"  Drag over text to select it.\n"
+		"\n"
+		"Mandelbrot\n"
+		"  The wheel zooms at the pointer, a drag moves the picture and\n"
+		"  a double click zooms in. + - zoom, arrows move, [ ] change\n"
+		"  the iterations, P the palette, Home starts again.\n"
+		"\n"
+		"Game of Life\n"
+		"  Draw cells with the mouse (on a live cell it erases). Space\n"
+		"  runs and pauses, N steps, C clears, R fills at random, + -\n"
+		"  change the speed, 1-4 put a gun, an R-pentomino, an acorn\n"
+		"  and a spaceship in the middle.\n"
+		"\n"
+		"Sonar\n"
+		"  Open the sea without hitting a mine. A number counts the\n"
+		"  mines around its cell. Right click (or B) drops a buoy on a\n"
+		"  mine, a click on a number with all its buoys opens the rest.\n"
+		"  Three pings (P or the middle button) open a 3x3 patch safely.\n"
+		"  1-3 choose the size, N starts again.\n"
+		"\n"
+		"Hex view (File menu, or open a binary file)\n"
+		"  Arrows, PgUp, PgDn, Ctrl+Home, Ctrl+End move, G or Ctrl+G\n"
+		"  goes to an offset.\n"
+		"\n"
+		"ANSI paint\n"
+		"  Pick the ink, the paper and a character below the picture, or\n"
+		"  type a character. Tab changes the tool: Brush, Text, Fill, Pick.\n"
+		"  Ctrl+Z undoes, F2 saves an .ans file, F3 opens one.\n"
+		"\n"
+		"Options, Preferences sets the colour theme and the screen saver.\n"
 		"\n"
 		"Your terminal may catch F10 or Alt keys for itself. If it\n"
 		"does, use the mouse or Ctrl+Q.\n";
@@ -1005,6 +1393,13 @@ void TvAppDraw(int win)
 	else if(type==W_PUZZLE)DrawPuzzle(win);
 	else if(type==W_FILES)DrawFiles(win);
 	else if(type==W_CIRCUIT)CfDraw(win);
+	else if(type==W_CONTROLS)DrawControls(win);
+	else if(type==W_PREFS)DrawPrefs(win);
+	else if(type==W_MANDEL)MbDraw(win);
+	else if(type==W_LIFE)LfDraw(win);
+	else if(type==W_SONAR)SnDraw(win);
+	else if(type==W_HEX)HxDraw(win);
+	else if(type==W_PAINT)PtDraw(win);
 }
 
 int TvAppKey(int win, int key)
@@ -1017,6 +1412,11 @@ int TvAppKey(int win, int key)
 	if(type==W_PUZZLE)return PuzzleKey(key);
 	if(type==W_FILES)return FilesKey(win,key);
 	if(type==W_CIRCUIT)return CfKey(win,key);
+	if(type==W_MANDEL)return MbKey(win,key);
+	if(type==W_LIFE)return LfKey(win,key);
+	if(type==W_SONAR)return SnKey(win,key);
+	if(type==W_HEX)return HxKey(win,key);
+	if(type==W_PAINT)return PtKey(win,key);
 	if(type==W_CAL)
 	{
 		if((key==K_LEFT)||(key==K_PGUP))
@@ -1037,8 +1437,18 @@ int TvAppMouse(int win, int ev, int x, int y)
 {
 	TWin& t=tvWin[win];
 	int type=t.type;
+	if(type==W_SONAR)return SnMouse(win,ev,x,y);
+	if(ev==EV_RDOWN)
+	{
+		if(t.flags&WF_DIALOG)return 0;
+		return ContextMenu(win,x,y);
+	}
 	if(type==W_VIEW)return ViewerMouse(win,ev,x,y);
 	if(type==W_CIRCUIT)return CfMouse(win,ev,x,y);
+	if(type==W_MANDEL)return MbMouse(win,ev,x,y);
+	if(type==W_LIFE)return LfMouse(win,ev,x,y);
+	if(type==W_HEX)return HxMouse(win,ev,x,y);
+	if(type==W_PAINT)return PtMouse(win,ev,x,y);
 	if(ev!=EV_MDOWN)return 0;
 	if(type==W_CAL)
 	{
@@ -1070,6 +1480,16 @@ int TvAppMouse(int win, int ev, int x, int y)
 
 void TvAppButton(int win, int ctl, int cmd)
 {
+	if(cmd==CM_THEMEPICK)
+	{
+		TvSetTheme(tvCtl[ctl].val);
+		return;
+	}
+	if(cmd==CM_VOLUME)
+	{
+		tvCtl[ctlVolBar].val=tvCtl[ctl].val;
+		return;
+	}
 	if(cmd>=CM_CALCKEY)
 		CalcKey(CalcKeyOf(cmd-CM_CALCKEY));
 }
@@ -1080,15 +1500,31 @@ void TvAppClosed(int win)
 		EdClosed(win);
 	if(tvWin[win].type==W_CIRCUIT)
 		CfClosed(win);
+	if(win==mbWin)mbWin=-1;
+	if(win==lfWin)lfWin=-1;
+	if(win==snWin)snWin=-1;
+	if(win==ptWin)ptWin=-1;
+	if(win==hxWin)
+	{
+		free(hxBuf);
+		hxWin=-1;
+	}
+	TickUpdate();
 }
 
 void TvAppTick()
 {
 	CfTick();
+	ProgressTick();
+	MbTick();
+	LfTick();
+	SvTick();
+	TickUpdate();
 }
 
 int TvAppCanClose(int win)
 {
+	if(win==ptWin)return PtCanClose(win);
 	return EdCanClose(win);
 }
 
@@ -1099,16 +1535,62 @@ int TvAppPaste(int win, char* s, int n)
 
 void TvAppCommand(int cmd)
 {
+	// the editor's commands that mean something to the hex viewer and ANSI paint
+	int top=TvTop();
+	if(top>=0)
+	{
+		if((top==hxWin)&&(cmd==CM_GOTO))
+		{
+			HxGoto(top);
+			return;
+		}
+		if(top==ptWin)
+		{
+			if(cmd==CM_UNDO)
+			{
+				PtUndo();
+				return;
+			}
+			if((cmd==CM_SAVE)&&(ptPath[0]!=0))
+			{
+				PtSave(&ptPath[0]);
+				return;
+			}
+			if((cmd==CM_SAVE)||(cmd==CM_SAVEAS))
+			{
+				RunSaveAs(-1);
+				return;
+			}
+		}
+	}
 	if(EdCommand(cmd))return;
 	if(cmd==CM_QUIT)
 	{
+		if(ptWin>=0)
+			if(!PtCanClose(ptWin))return;
 		int r=EdCanQuit();
 		if(r==1)tvRunning=0;
 		else if(r==2)
 			if(TvMessage("Quit","Leave the desktop?",1)==CM_YES)
 				tvRunning=0;
 	}
-	else if(cmd==CM_OPEN)RunOpen();
+	else if(cmd==CM_OPEN)RunOpen(0);
+	else if(cmd==CM_HEX)RunOpen(1);
+	else if(cmd==CM_SONAR)SnOpen();
+	else if(cmd==CM_LINENUMS)
+	{
+		edLineNums=!edLineNums;
+		ShowToggles();
+		PrefsSave();
+	}
+	else if(cmd==CM_WRAP)
+	{
+		edWrap=!edWrap;
+		ShowToggles();
+		PrefsSave();
+	}
+	else if(cmd==CM_WINLIST)RunWinList();
+	else if(cmd==CM_PAINT)PtOpen();
 	else if(cmd==CM_DOCALC)
 	{
 		int w=FindWin(W_CALC);
@@ -1148,9 +1630,15 @@ void TvAppCommand(int cmd)
 	else if(cmd==CM_CIRCUIT)CfOpen(CF_LOOPS);
 	else if(cmd==CM_CIRCUIT2)CfOpen(CF_WIRES);
 	else if(cmd==CM_CONTROLS)RunControls();
+	else if(cmd==CM_PREFS)RunPrefs();
+	else if(cmd==CM_PROGRESS)RunProgress();
+	else if(cmd==CM_MANDEL)MbOpen();
+	else if(cmd==CM_LIFE)LfOpen();
+	else if(cmd==CM_SAVERNOW)SvStart();
 	else if(cmd==CM_HELP)OpenHelp();
 	else if(cmd==CM_ABOUT)
 		TvMessage("About","Turbo Vision style desktop\nWritten in Scinc, drawn with ANSI escapes",0);
+	TickUpdate();
 }
 
 // ---------------------------------------------------------------- main
@@ -1170,6 +1658,9 @@ int main(int argc, pchar* argv)
 	StrCpy(&ctlName[0],"Scinc",64);
 	fdDir[0]=0;
 	TvInit();
+	PrefsLoad();
+	TvSetTheme(prefTheme);
+	TickUpdate();
 
 	TvMenuAdd("~=~");
 	TvMenuItem("~A~bout...","",CM_ABOUT,0);
@@ -1180,11 +1671,16 @@ int main(int argc, pchar* argv)
 	TvMenuItem("~P~uzzle","",CM_PUZZLE,0);
 	TvMenuItem("Circuitfall: ~l~oops","",CM_CIRCUIT,0);
 	TvMenuItem("Circuitfall: ~w~ires","",CM_CIRCUIT2,0);
+	TvMenuItem("~M~andelbrot","",CM_MANDEL,0);
+	TvMenuItem("~G~ame of Life","",CM_LIFE,0);
+	TvMenuItem("S~o~nar","",CM_SONAR,0);
+	TvMenuItem("ANSI pa~i~nt","",CM_PAINT,0);
 	TvMenuAdd("~F~ile");
 	TvMenuItem("~N~ew","Ctrl+N",CM_NEW,14);
 	TvMenuItem("~O~pen...","F3",CM_OPEN,K_F3);
 	TvMenuItem("~S~ave","Ctrl+S",CM_SAVE,19);
 	TvMenuItem("Save ~a~s...","",CM_SAVEAS,0);
+	TvMenuItem("~H~ex view...","",CM_HEX,0);
 	TvMenuLine();
 	TvMenuItem("E~x~it","Alt+X",CM_QUIT,K_ALT+'x');
 	TvMenuAdd("~E~dit");
@@ -1202,9 +1698,19 @@ int main(int argc, pchar* argv)
 	TvMenuItem("~R~eplace...","Ctrl+R",CM_REPLACE,18);
 	TvMenuLine();
 	TvMenuItem("~G~o to line...","Ctrl+G",CM_GOTO,7);
+	TvMenuItem("~M~atching bracket","Ctrl+B",CM_MATCH,2);
 	TvMenuAdd("~D~ialogs");
 	TvMenuItem("~C~ontrols...","",CM_CONTROLS,0);
 	TvMenuItem("~M~essage...","",CM_ABOUT,0);
+	TvMenuItem("~P~rogress...","",CM_PROGRESS,0);
+	TvMenuAdd("~O~ptions");
+	TvMenuItem("~P~references...","",CM_PREFS,0);
+	TvMenuItem("Start screen ~s~aver","",CM_SAVERNOW,0);
+	TvMenuLine();
+	TvMenuItem("~L~ine numbers","off",CM_LINENUMS,0);
+	itemLineNums=tvNItem-1;
+	TvMenuItem("~W~ord wrap","off",CM_WRAP,0);
+	itemWrap=tvNItem-1;
 	TvMenuAdd("~W~indow");
 	TvMenuItem("~N~ext","F6",CM_NEXT,K_F6);
 	TvMenuItem("~P~revious","F7",CM_PREV,K_F7);
@@ -1213,8 +1719,38 @@ int main(int argc, pchar* argv)
 	TvMenuLine();
 	TvMenuItem("C~a~scade","",CM_CASCADE,0);
 	TvMenuItem("~T~ile","",CM_TILE,0);
+	TvMenuItem("~L~ist...","Alt+0",CM_WINLIST,K_ALT+'0');
 	TvMenuAdd("~H~elp");
 	TvMenuItem("~K~eys and mouse","F1",CM_HELP,K_F1);
+
+	popEdit=TvPopupAdd();
+	TvMenuItem("~U~ndo","Ctrl+Z",CM_UNDO,0);
+	TvMenuItem("~R~edo","Ctrl+Y",CM_REDO,0);
+	TvMenuLine();
+	TvMenuItem("Cu~t~","Ctrl+X",CM_CUT,0);
+	TvMenuItem("~C~opy","Ctrl+C",CM_COPY,0);
+	TvMenuItem("~P~aste","Ctrl+V",CM_PASTE,0);
+	TvMenuItem("Select ~a~ll","Ctrl+A",CM_SELALL,0);
+	TvMenuLine();
+	TvMenuItem("~F~ind...","Ctrl+F",CM_FIND,0);
+	TvMenuItem("~G~o to line...","Ctrl+G",CM_GOTO,0);
+	TvMenuLine();
+	TvMenuItem("C~l~ose","Ctrl+W",CM_CLOSE,0);
+	popWin=TvPopupAdd();
+	TvMenuItem("~Z~oom","F5",CM_ZOOM,0);
+	TvMenuItem("~N~ext","F6",CM_NEXT,0);
+	TvMenuItem("~C~lose","Ctrl+W",CM_CLOSE,0);
+	tvDeskPopup=TvPopupAdd();
+	TvMenuItem("~N~ew file","Ctrl+N",CM_NEW,0);
+	TvMenuItem("~O~pen...","F3",CM_OPEN,0);
+	TvMenuLine();
+	TvMenuItem("~C~alculator","",CM_DOCALC,0);
+	TvMenuItem("Cal~e~ndar","",CM_CALENDAR,0);
+	TvMenuLine();
+	TvMenuItem("C~a~scade","",CM_CASCADE,0);
+	TvMenuItem("~T~ile","",CM_TILE,0);
+	TvMenuLine();
+	TvMenuItem("~P~references...","",CM_PREFS,0);
 
 	TvStatusAdd("~F1~ Help",CM_HELP,0);
 	TvStatusAdd("~F2~ Save",CM_SAVE,K_F2);
@@ -1223,8 +1759,9 @@ int main(int argc, pchar* argv)
 	TvStatusAdd("~F10~ Menu",CM_MENU,0);
 	TvStatusAdd("~Alt+X~ Exit",CM_QUIT,17); // Ctrl+Q quits too
 
+	ShowToggles();
 	if(argc>1)
-		OpenFile(argv[1]);
+		OpenPicked(argv[1],0);
 	else
 		OpenHelp();
 

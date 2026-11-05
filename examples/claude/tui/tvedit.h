@@ -24,6 +24,7 @@
 #define CM_REPLACE 160
 #define CM_FINDNEXT 161
 #define CM_GOTO 162
+#define CM_MATCH 163
 
 #define VW_POOL 4000000
 #define VW_MAXLINES 100000
@@ -295,7 +296,7 @@ int HlIsCFile(char* name)
 // ---------------------------------------------------------------- the line pool
 
 // Window fields: a top line, b left column, c first line in the tables, d line count,
-// f set to highlight C/C++ syntax.
+// e the first wrapped row of line a shown, f set to highlight C/C++ syntax.
 
 struct TEdit
 {
@@ -933,18 +934,249 @@ int EdByteAt(int i, int want)
 	return p-start;
 }
 
+// ---------------------------------------------------------------- line numbers and wrapping
+
+int edLineNums=0;    // line numbers on the left of all editor windows
+int edWrap=0;        // long lines wrap at the window edge, breaking after a space
+int edRowAt[4100];   // where each row of the line last wrapped starts, as byte offsets
+int edRowN=1;
+
+// The columns that the line numbers take.
+int EdGutter(TWin& t)
+{
+	if(!edLineNums)return 0;
+	int g=2;
+	int n=t.d;
+	while(n>=10)
+	{
+		n=n/10;
+		g++;
+	}
+	if(g<4)g=4;
+	return g;
+}
+
+int EdCols(TWin& t)
+{
+	int c=t.w-2-EdGutter(t);
+	if(c<2)c=2;
+	return c;
+}
+
+// Splits table line i into rows of cols columns (one row when not wrapping), in edRowAt.
+void EdWrapLine(int i, int cols)
+{
+	edRowN=1;
+	edRowAt[0]=0;
+	if(!edWrap)return;
+	int start=vwLine[i];
+	int p=start;
+	int col=0;
+	int rowCol=0;
+	int brk=-1;
+	int brkCol=0;
+	while(vwText[p]!=0)
+	{
+		int q=p;
+		int c=TvUtf8(vwText,q);
+		int next=col+1;
+		if(c==9)next=(col/ED_TAB+1)*ED_TAB;
+		if((next-rowCol>cols)&&(edRowN<4096))
+			if(p-start>edRowAt[edRowN-1])
+			{
+				int at=p-start;
+				int atCol=col;
+				if(brk>edRowAt[edRowN-1])
+				{
+					at=brk;
+					atCol=brkCol;
+				}
+				edRowAt[edRowN]=at;
+				edRowN++;
+				rowCol=atCol;
+				brk=-1;
+			}
+		if((c==' ')||(c==9))
+		{
+			brk=q-start;
+			brkCol=next;
+		}
+		col=next;
+		p=q;
+	}
+}
+
+// The row of the last wrapped line that byte x is on.
+int EdRowOf(int x)
+{
+	int r=0;
+	while(r+1<edRowN)
+	{
+		if(edRowAt[r+1]>x)break;
+		r++;
+	}
+	return r;
+}
+
+// The byte in row r of the last wrapped line, table line i, nearest to column want of the row.
+int EdByteInRow(int i, int r, int want)
+{
+	int x=EdByteAt(i,EdCol(i,edRowAt[r])+want);
+	if(r+1<edRowN)
+		if(x>=edRowAt[r+1])x=TvPrevChar(&vwText[vwLine[i]],edRowAt[r+1]);
+	return x;
+}
+
 // Scrolls so that the cursor is in view.
 void EdReveal(int win)
 {
 	TWin& t=tvWin[win];
 	TEdit& e=ed[win];
 	int rows=t.h-2;
-	int cols=t.w-2;
+	int cols=EdCols(t);
+	if(edWrap)
+	{
+		t.b=0;
+		EdWrapLine(t.c+e.cy,cols);
+		int cr=EdRowOf(e.cx);
+		if(e.cy<t.a)
+		{
+			t.a=e.cy;
+			t.e=cr;
+			return;
+		}
+		if((e.cy==t.a)&&(cr<t.e))
+		{
+			t.e=cr;
+			return;
+		}
+		// the screen row of the cursor
+		int n=0;
+		int y=t.a;
+		int sub=t.e;
+		while((y<e.cy)&&(n<rows))
+		{
+			EdWrapLine(t.c+y,cols);
+			n=n+edRowN-sub;
+			sub=0;
+			y++;
+		}
+		if(y==e.cy)n=n+cr-sub;
+		if(n<rows)return;
+		// it goes on the last row: count rows back up from it
+		int need=rows-1;
+		y=e.cy;
+		sub=cr;
+		while(need>0)
+		{
+			if(sub>0)
+			{
+				sub--;
+				need--;
+			}
+			else if(y>0)
+			{
+				y--;
+				EdWrapLine(t.c+y,cols);
+				sub=edRowN;
+			}
+			else break;
+		}
+		t.a=y;
+		t.e=sub;
+		return;
+	}
+	t.e=0;
 	if(e.cy<t.a)t.a=e.cy;
 	if(e.cy>=t.a+rows)t.a=e.cy-rows+1;
 	int col=EdCol(t.c+e.cy,e.cx);
 	if(col<t.b)t.b=col;
 	if(col>=t.b+cols)t.b=col-cols+1;
+}
+
+// ---------------------------------------------------------------- matching brackets
+
+int edBmY=-1;        // the bracket at the cursor, or -1
+int edBmX=0;
+int edBmY2=-1;       // and its partner, or -1 if it has none
+int edBmX2=0;
+
+int EdBracket(int c)
+{
+	if((c=='(')||(c=='[')||(c=='{'))return 1;
+	if((c==')')||(c==']')||(c=='}'))return -1;
+	return 0;
+}
+
+// Finds the bracket at or just before the cursor and its partner, skipping
+// brackets in comments and strings when the syntax is known.
+void EdFindBrackets(int win)
+{
+	TWin& t=tvWin[win];
+	TEdit& e=ed[win];
+	edBmY=-1;
+	edBmY2=-1;
+	int i=t.c+e.cy;
+	int start=vwLine[i];
+	int x=-1;
+	if(e.cx<vwLen[i])
+		if(EdBracket(vwText[start+e.cx]))x=e.cx;
+	if(x<0)
+		if(e.cx>0)
+			if(EdBracket(vwText[start+e.cx-1]))x=e.cx-1;
+	if(x<0)return;
+	if(t.f)
+	{
+		HlLine(start,vwState[i]);
+		if((hlAt[x]==HL_COMMENT)||(hlAt[x]==HL_STRING))return;
+	}
+	int c=vwText[start+x];
+	int dir=EdBracket(c);
+	int other=')';
+	if(c=='[')other=']';
+	if(c=='{')other='}';
+	if(c==')')other='(';
+	if(c==']')other='[';
+	if(c=='}')other='{';
+	edBmY=e.cy;
+	edBmX=x;
+	int depth=0;
+	int y=e.cy;
+	int p=x+dir;
+	for(int n=0;n<3000;n++)
+	{
+		int li=t.c+y;
+		int ls=vwLine[li];
+		if(n>0)
+		{
+			if(t.f)HlLine(ls,vwState[li]);
+			if(dir>0)p=0;
+			else p=vwLen[li]-1;
+		}
+		while((p>=0)&&(p<vwLen[li]))
+		{
+			int b=vwText[ls+p];
+			int skip=0;
+			if(t.f)skip=(hlAt[p]==HL_COMMENT)||(hlAt[p]==HL_STRING);
+			if(!skip)
+			{
+				if(b==c)depth++;
+				else if(b==other)
+				{
+					if(depth==0)
+					{
+						edBmY2=y;
+						edBmX2=p;
+						return;
+					}
+					depth--;
+				}
+			}
+			p=p+dir;
+		}
+		y=y+dir;
+		if((y<0)||(y>=t.d))return;
+	}
 }
 
 // The selection in text order, in these.
@@ -1232,6 +1464,32 @@ void EdEnter(int win)
 		if((c!=' ')&&(c!=9))break;
 		edIndent[n+1]=c;
 		n++;
+	}
+	// in C, one more level after an opening brace, with spaces if the line uses them
+	if(t.f)
+	{
+		int b=e.cx-1;
+		while(b>=0)
+		{
+			int c=vwText[p+b];
+			if((c!=' ')&&(c!=9))break;
+			b--;
+		}
+		if(b>=0)
+			if(vwText[p+b]=='{')
+			{
+				if((n>0)&&(edIndent[1]==' '))
+				{
+					for(int k=0;k<ED_TAB;k++)
+						edIndent[n+1+k]=' ';
+					n=n+ED_TAB;
+				}
+				else
+				{
+					edIndent[n+1]=9;
+					n++;
+				}
+			}
 	}
 	if(EdInsert(win,e.cy,e.cx,&edIndent[0],n+1))EdSetCursor(win,edEndY,edEndX);
 	else EdShowErr();
@@ -2007,34 +2265,85 @@ void DrawViewer(int win)
 	TWin& t=tvWin[win];
 	TEdit& e=ed[win];
 	int rows=t.h-2;
-	int cols=t.w-2;
+	int cols=EdCols(t);
+	int g=EdGutter(t);
+	int x0=t.x+1+g;
+	int front=(TvTop()==win);
 	if(e.sel)EdSelRange(e);
-	for(int j=0;j<rows;j++)
+	edBmY=-1;
+	edBmY2=-1;
+	if(front)EdFindBrackets(win);
+	int curRow=-1;
+	int curCol=0;
+	int j=0;
+	int k=t.a;
+	int sub=0;
+	if(edWrap)sub=t.e;
+	while((j<rows)&&(k<t.d))
 	{
-		int k=t.a+j;
-		if(k<t.d)
+		int i=t.c+k;
+		int start=vwLine[i];
+		int selA=-1;
+		int selB=-1;
+		if(e.sel)
+			if((k>=edY1)&&(k<=edY2))
+			{
+				selA=0;
+				selB=vwLen[i]+1;
+				if(k==edY1)selA=edX1;
+				if(k==edY2)selB=edX2;
+			}
+		if(t.f)HlLine(start,vwState[i]);
+		EdWrapLine(i,cols);
+		if(k==e.cy)
 		{
-			int i=t.c+k;
-			int start=vwLine[i];
-			int p=start;
-			int col=0;
-			int selA=-1;
-			int selB=-1;
-			if(e.sel)
-				if((k>=edY1)&&(k<=edY2))
-				{
-					selA=0;
-					selB=vwLen[i]+1;
-					if(k==edY1)selA=edX1;
-					if(k==edY2)selB=edX2;
-				}
-			if(t.f)HlLine(start,vwState[i]);
-			while(vwText[p]!=0)
+			int cr=EdRowOf(e.cx);
+			if(cr>=sub)
+			{
+				curRow=j+cr-sub;
+				curCol=EdCol(i,e.cx)-EdCol(i,edRowAt[cr])-t.b;
+			}
+		}
+		if(g>0)
+		{
+			char num[16];
+			snprintf(&num[0],16,"%i",k+1);
+			int nl=StrLen(&num[0]);
+			while(nl<g-1)
+			{
+				// right-aligned
+				for(int q=nl;q>=0;q--)
+					num[q+1]=num[q];
+				num[0]=' ';
+				nl++;
+			}
+			num[nl]=' ';
+			num[nl+1]=0;
+			int at=0x17;
+			if(k==e.cy)at=0x1E;
+			if(sub==0)TvText(t.x+1,t.y+1+j,&num[0],at);
+		}
+		for(int r=sub;(r<edRowN)&&(j<rows);r++)
+		{
+			int p=start+edRowAt[r];
+			int end=start+vwLen[i];
+			if(r+1<edRowN)end=start+edRowAt[r+1];
+			int col=EdCol(i,edRowAt[r]);
+			int base=col+t.b;
+			if(g>0)
+				if(r>0)TvFill(t.x+1,t.y+1+j,g,1,' ',0x17);
+			while(p<end)
 			{
 				int off=p-start;
 				int at=HL_TEXT;
 				if(t.f)at=hlAt[off];
 				if((off>=selA)&&(off<selB))at=AT_SELECT;
+				if((k==edBmY)&&(off==edBmX))
+				{
+					at=0x4F;
+					if(edBmY2>=0)at=0x2F;
+				}
+				if((k==edBmY2)&&(off==edBmX2))at=0x2F;
 				int c=TvUtf8(vwText,p);
 				if(c==9)
 				{
@@ -2042,32 +2351,34 @@ void DrawViewer(int win)
 					if(at==AT_SELECT)
 						while(col<next)
 						{
-							if(col>=t.b)TvPut(t.x+1+col-t.b,t.y+1+j,' ',at);
+							if(col>=base)TvPut(x0+col-base,t.y+1+j,' ',at);
 							col++;
 						}
 					col=next;
 				}
 				else
 				{
-					if(col>=t.b)EdPutCell(t.x+1+col-t.b,t.y+1+j,c,at);
+					if(col>=base)EdPutCell(x0+col-base,t.y+1+j,c,at);
 					col++;
 				}
 				// the rest of a very long line is out of sight
-				if(col-t.b>=cols)break;
+				if(col-base>=cols)break;
 			}
 			// a selected line end shows as one cell
-			if((selB>vwLen[i])&&(col>=t.b))
-				TvPut(t.x+1+col-t.b,t.y+1+j,' ',AT_SELECT);
+			if(r==edRowN-1)
+				if((selB>vwLen[i])&&(col>=base))
+					TvPut(x0+col-base,t.y+1+j,' ',AT_SELECT);
+			j++;
 		}
+		sub=0;
+		k++;
 	}
-	if(TvTop()==win)
+	if(front)
 	{
-		int row=e.cy-t.a;
-		int col=EdCol(t.c+e.cy,e.cx)-t.b;
-		if((row>=0)&&(row<rows)&&(col>=0)&&(col<cols))
+		if((curRow>=0)&&(curRow<rows)&&(curCol>=0)&&(curCol<cols))
 		{
-			int sx=t.x+1+col;
-			int sy=t.y+1+row;
+			int sx=x0+curCol;
+			int sy=t.y+1+curRow;
 			if((sx>=clipX0)&&(sx<clipX1)&&(sy>=clipY0)&&(sy<clipY1))
 			{
 				tvCurX=sx;
@@ -2083,7 +2394,7 @@ void DrawViewer(int win)
 	clipX1=tvW;
 	if(clipX1>t.x+t.w)clipX1=t.x+t.w;
 	clipY1=tvH-1;
-	if(TvTop()==win)
+	if(front)
 	{
 		TvVBar(t.x+t.w-1,t.y+1,rows,t.a,mxTop,0x13);
 		char pos[40];
@@ -2104,6 +2415,7 @@ void ViewerClamp(TWin& t)
 	if(t.a>mxTop)t.a=mxTop;
 	if(t.a<0)t.a=0;
 	if(t.b<0)t.b=0;
+	t.e=0;
 }
 
 // Up and down keep aiming at the column they started from.
@@ -2111,6 +2423,41 @@ void EdMoveLines(int win, int dy, int extend)
 {
 	TWin& t=tvWin[win];
 	TEdit& e=ed[win];
+	if(edWrap)
+	{
+		// by rows on the screen
+		int cols=EdCols(t);
+		int y=e.cy;
+		EdWrapLine(t.c+y,cols);
+		int r=EdRowOf(e.cx);
+		if(e.want<0)e.want=EdCol(t.c+y,e.cx)-EdCol(t.c+y,edRowAt[r]);
+		while(dy<0)
+		{
+			if(r>0)r--;
+			else if(y>0)
+			{
+				y--;
+				EdWrapLine(t.c+y,cols);
+				r=edRowN-1;
+			}
+			dy++;
+		}
+		while(dy>0)
+		{
+			if(r<edRowN-1)r++;
+			else if(y<t.d-1)
+			{
+				y++;
+				EdWrapLine(t.c+y,cols);
+				r=0;
+			}
+			dy--;
+		}
+		int want=e.want;
+		EdMoveTo(win,y,EdByteInRow(t.c+y,r,want),extend);
+		e.want=want;
+		return;
+	}
 	if(e.want<0)e.want=EdCol(t.c+e.cy,e.cx);
 	int y=e.cy+dy;
 	if(y<0)y=0;
@@ -2218,6 +2565,39 @@ int EdNavKey(int win, int key)
 	return 1;
 }
 
+// A closing brace typed on a line of only indentation takes one level away first.
+// Returns 1 if it did.
+int EdDedent(int win)
+{
+	TWin& t=tvWin[win];
+	TEdit& e=ed[win];
+	if((!t.f)||e.sel||(e.cx==0))return 0;
+	int p=vwLine[t.c+e.cy];
+	for(int k=0;k<e.cx;k++)
+	{
+		int c=vwText[p+k];
+		if((c!=' ')&&(c!=9))return 0;
+	}
+	int n=1;
+	if(vwText[p+e.cx-1]==' ')
+	{
+		n=0;
+		while((n<ED_TAB)&&(n<e.cx))
+		{
+			if(vwText[p+e.cx-1-n]!=' ')break;
+			n++;
+		}
+	}
+	EdNewGroup(e);
+	if(!EdDelete(win,e.cy,e.cx-n,e.cy,e.cx))
+	{
+		EdShowErr();
+		return 0;
+	}
+	EdSetCursor(win,e.cy,e.cx-n);
+	return 1;
+}
+
 int ViewerKey(int win, int key)
 {
 	TEdit& e=ed[win];
@@ -2242,6 +2622,14 @@ int ViewerKey(int win, int key)
 		}
 	}
 	else if(evUtfN>0)EdType(win,&evUtf[0],evUtfN,0);
+	else if(key=='}')
+	{
+		EdDedent(win);
+		char one[2];
+		one[0]=key;
+		one[1]=0;
+		EdType(win,&one[0],1,0);
+	}
 	else if((key>=32)&&(key<127))
 	{
 		char one[2];
@@ -2259,12 +2647,38 @@ void EdMouseTo(int win, int x, int y, int extend)
 {
 	TWin& t=tvWin[win];
 	TEdit& e=ed[win];
+	int col=x-1-EdGutter(t);
+	if(col<0)col=0;
+	e.want=-1;
+	if(edWrap)
+	{
+		// down the rows from the top of the window
+		int cols=EdCols(t);
+		int ly=t.a;
+		int r=t.e;
+		EdWrapLine(t.c+ly,cols);
+		if(r>=edRowN)r=edRowN-1;
+		int left=y-1;
+		while(left>0)
+		{
+			if(r<edRowN-1)r++;
+			else if(ly<t.d-1)
+			{
+				ly++;
+				EdWrapLine(t.c+ly,cols);
+				r=0;
+			}
+			else break;
+			left--;
+		}
+		if(y<1)r=0;
+		EdMoveTo(win,ly,EdByteInRow(t.c+ly,r,col),extend);
+		return;
+	}
 	int ly=t.a+y-1;
 	if(ly<0)ly=0;
 	if(ly>=t.d)ly=t.d-1;
-	int col=t.b+x-1;
-	if(col<0)col=0;
-	e.want=-1;
+	col=col+t.b;
 	EdMoveTo(win,ly,EdByteAt(t.c+ly,col),extend);
 }
 
@@ -2369,7 +2783,7 @@ int EdCommand(int cmd)
 		EdNewFile("");
 		return 1;
 	}
-	if((cmd<CM_SAVE)||(cmd>CM_GOTO))return 0;
+	if((cmd<CM_SAVE)||(cmd>CM_MATCH))return 0;
 	int win=TvTop();
 	if(win<0)return 1;
 	if(tvWin[win].type!=W_VIEW)return 1;
@@ -2400,6 +2814,11 @@ int EdCommand(int cmd)
 		else EdFindNext(win);
 	}
 	else if(cmd==CM_GOTO)RunGoto(win);
+	else if(cmd==CM_MATCH)
+	{
+		EdFindBrackets(win);
+		if(edBmY2>=0)EdMoveTo(win,edBmY2,edBmX2,0);
+	}
 	else if(e.ro)
 		TvMessage("Editor","This window is read-only.",0);
 	else if(cmd==CM_UNDO)

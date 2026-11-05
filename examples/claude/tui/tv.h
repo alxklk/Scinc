@@ -17,7 +17,8 @@ void TvAppDraw(int win);                             // paint the window interio
 int  TvAppKey(int win, int key);                     // return 1 if the key was used
 int  TvAppMouse(int win, int ev, int x, int y);      // x,y relative to the window
 void TvAppCommand(int cmd);                          // menu, status line and hot keys
-void TvAppButton(int win, int ctl, int cmd);         // a non-modal window's button
+void TvAppButton(int win, int ctl, int cmd);         // a non-modal window's button, or a
+                                                     // slider or combo box that changed
 void TvAppClosed(int win);
 void TvAppListItem(int win, int ctl, int i, char* out, int max); // items of a virtual list
 int  TvAppCanClose(int win);                         // return 0 to keep the window open
@@ -41,6 +42,7 @@ void TvAppTick();                                    // called every tvTickMs wh
 #define K_INS 1008
 #define K_DEL 1009
 #define K_BTAB 1010
+#define K_MENU 1011  // the context menu key
 #define K_F1 1101
 #define K_F2 1102
 #define K_F3 1103
@@ -62,6 +64,7 @@ void TvAppTick();                                    // called every tvTickMs wh
 #define EV_MDRAG 4
 #define EV_WHEEL 5
 #define EV_PASTE 6
+#define EV_RDOWN 7   // TvAppMouse: a right click, or Shift+F10 with x,y at -1
 
 #define MOD_SHIFT 1
 #define MOD_ALT 2
@@ -73,6 +76,7 @@ int evX=0;
 int evY=0;
 int evBtn=0;
 int evWheel=0;
+int evHalf=-1;      // which half of the cell the mouse is in, 0 top, 1 bottom, -1 not known
 int evMod=0;        // MOD_* held with a cursor or function key
 char evUtf[5];      // the bytes of a non-ASCII character, whose evKey is '?'
 int evUtfN=0;
@@ -128,7 +132,84 @@ int clipY1=25;
 int tvCurX=-1;
 int tvCurY=-1;
 int tvCurShown=0;
+int tvDirty=1;        // the screen needs drawing again
 int tvVga[8];
+
+// Colour themes. A cell keeps its VGA attribute and the theme decides the colours:
+// tvFg and tvBg hold 0xFFRRGGBB for the 16 foreground and background indices, kept
+// apart because the same index plays different parts, such as black text on grey
+// dialogs and the black of shadows. The classic theme sends the terminal's own 16
+// colours, the others 24-bit colours.
+#define TH_CLASSIC 0
+#define TH_DARK 1
+#define TH_MONO 2
+int tvTheme=0;
+int tvFg[16];
+int tvBg[16];
+
+// An attribute with TV_C256 set holds two colours of the xterm 256 colour palette,
+// (fg<<8)|bg, which themes leave alone. Pictures use it with half blocks, see TvPix.
+#define TV_C256 0x10000
+int tvRgb256[256];
+
+// The 0xFFRRGGBB colours of a cell attribute.
+int TvAtFg(int at)
+{
+	if(at&TV_C256)return tvRgb256[(at>>8)&255];
+	return tvFg[at&15];
+}
+
+int TvAtBg(int at)
+{
+	if(at&TV_C256)return tvRgb256[at&255];
+	return tvBg[(at>>4)&15];
+}
+
+// Reads 16 colours written as six hex digits each, separated by spaces.
+void TvParsePal(int* dst, char* s)
+{
+	int i=0;
+	for(int k=0;k<16;k++)
+	{
+		while(s[i]==' ')i++;
+		int v=0;
+		for(int d=0;d<6;d++)
+		{
+			int c=s[i];
+			int n=c-'0';
+			if(c>='a')n=c-'a'+10;
+			v=v*16+n;
+			i++;
+		}
+		dst[k]=0xFF000000|v;
+	}
+}
+
+void TvSetTheme(int n)
+{
+	char* vga="000000 0000aa 00aa00 00aaaa aa0000 aa00aa aa5500 aaaaaa 555555 5555ff 55ff55 55ffff ff5555 ff55ff ffff55 ffffff";
+	tvTheme=n;
+	if(n==TH_DARK)
+	{
+		TvParsePal(&tvFg[0],"d4d4d4 4a4a50 6a9955 4ec9b0 f47067 c586c0 d7ba7d 9a9a9a 18181a 569cd6 89d185 9cdcfe f48771 d7a0f0 e8dfa8 ffffff");
+		TvParsePal(&tvBg[0],"0c0c0c 1e1e1e 2e6b40 264f78 6b2020 5a2a5a 6b5a1e 333337 252526 3a5a9a 3c8a50 3a8a9a a04040 a050a0 a09030 d0d0d0");
+	}
+	else if(n==TH_MONO)
+	{
+		TvParsePal(&tvFg[0],"000000 8a8a8a b0b0b0 b0b0b0 ffffff b0b0b0 b0b0b0 a8a8a8 606060 d8d8d8 d8d8d8 d8d8d8 d8d8d8 d8d8d8 e0e0e0 ffffff");
+		TvParsePal(&tvBg[0],"000000 141414 505050 838383 303030 303030 303030 a4a4a4 000000 909090 909090 909090 909090 909090 a0a0a0 e0e0e0");
+	}
+	else
+	{
+		tvTheme=TH_CLASSIC;
+		TvParsePal(&tvFg[0],vga);
+		TvParsePal(&tvBg[0],vga);
+	}
+	// the cells keep their attributes, so all of them are sent again
+	for(int i=0;i<TV_CELLS;i++)
+		tvPrevCh[i]=-1;
+	tvDirty=1;
+}
 
 char tvOut[TV_OUTMAX];
 int tvOutN=0;
@@ -193,10 +274,61 @@ void OutMove(int x, int y)
 	OutByte('H');
 }
 
+// The first 16 are the VGA colours in ANSI order, as the graphic backend shows them.
+void TvInitRgb256()
+{
+	int vga[16];
+	TvParsePal(&vga[0],"000000 aa0000 00aa00 aa5500 0000aa aa00aa 00aaaa aaaaaa 555555 ff5555 55ff55 ffff55 5555ff ff55ff 55ffff ffffff");
+	for(int i=0;i<16;i++)
+		tvRgb256[i]=vga[i];
+	for(int i=0;i<216;i++)
+	{
+		int r=i/36;
+		int g=i/6%6;
+		int b=i%6;
+		if(r>0)r=55+r*40;
+		if(g>0)g=55+g*40;
+		if(b>0)b=55+b*40;
+		tvRgb256[16+i]=0xFF000000|(r<<16)|(g<<8)|b;
+	}
+	for(int i=0;i<24;i++)
+	{
+		int v=8+i*10;
+		tvRgb256[232+i]=0xFF000000|(v<<16)|(v<<8)|v;
+	}
+}
+
+void OutRgb(int c)
+{
+	OutInt((c>>16)&255);
+	OutByte(';');
+	OutInt((c>>8)&255);
+	OutByte(';');
+	OutInt(c&255);
+}
+
 void OutAttr(int at)
 {
+	if(at&TV_C256)
+	{
+		OutStr("\x1b[38;5;");
+		OutInt((at>>8)&255);
+		OutStr(";48;5;");
+		OutInt(at&255);
+		OutByte('m');
+		return;
+	}
 	int fg=at&15;
 	int bg=(at>>4)&15;
+	if(tvTheme!=TH_CLASSIC)
+	{
+		OutStr("\x1b[38;2;");
+		OutRgb(tvFg[fg]);
+		OutStr(";48;2;");
+		OutRgb(tvBg[bg]);
+		OutByte('m');
+		return;
+	}
 	int f=tvVga[fg&7]+30;
 	if(fg>7)f=f+60;
 	int b=tvVga[bg&7]+40;
@@ -288,6 +420,13 @@ void TvFill(int x, int y, int w, int h, int ch, int at)
 	for(int j=0;j<h;j++)
 		for(int i=0;i<w;i++)
 			TvPut(x+i,y+j,ch,at);
+}
+
+// Two square pixels in one cell, top and bottom, as xterm 256 colours.
+void TvPix(int x, int y, int top, int bottom)
+{
+	if(top==bottom)TvPut(x,y,' ',TV_C256|bottom);
+	else TvPut(x,y,G_UPHALF,TV_C256|(top<<8)|bottom);
 }
 
 int StrLen(char* s)
@@ -565,6 +704,9 @@ int TvVBarPos(int y, int h, int max, int my)
 #define C_RADIO 3
 #define C_INPUT 4
 #define C_LIST 5
+#define C_SLIDER 6    // val from 0 to count
+#define C_PROGRESS 7  // val from 0 to count, shown as a bar with the percentage
+#define C_COMBO 8     // val is the item picked from a drop-down list, items as for C_LIST
 
 #define CM_OK 1
 #define CM_CANCEL 2
@@ -633,12 +775,20 @@ TCtl tvCtl[TV_MAXCTL];
 int tvZ[TV_MAXWIN];  // back to front
 int tvNZ=0;
 int tvRunning=1;
-int tvDirty=1;
 int tvTickMs=0;      // set above 0 for a TvAppTick timer, for animation and games
 int tvNextTick=0;
+int tvLastInput=0;   // term_ms() of the last key, click or paste, for a screen saver
+int tvScreenTaken=0; // the program draws the whole screen itself and calls TvFlush, as a
+                     // screen saver does; the next key or click only clears this
+
+#define TV_COMBOROWS 8
+int comboCtl=-1;     // the combo box whose list is open, or -1
+int comboSel=0;
+int comboTop=0;
 
 int dragWin=-1;
-int dragMode=0;      // 1 move, 2 resize, 3 pressed button, 4 captured by the app, 5 list thumb
+int dragMode=0;      // 1 move, 2 resize, 3 pressed button, 4 captured by the app, 5 list thumb,
+                     // 6 slider
 int dragDX=0;
 int dragDY=0;
 int dragCtl=-1;
@@ -721,6 +871,8 @@ void TvClose(int id)
 	if(id<0)return;
 	if(!tvWin[id].used)return;
 	TvAppClosed(id);
+	if(comboCtl>=0)
+		if(tvCtl[comboCtl].win==id)comboCtl=-1;
 	for(int i=0;i<TV_MAXCTL;i++)
 		if(tvCtl[i].used)
 			if(tvCtl[i].win==id)tvCtl[i].used=0;
@@ -741,6 +893,11 @@ void TvClose(int id)
 		dragMode=0;
 	}
 	tvDirty=1;
+}
+
+int TvFocusable(int type)
+{
+	return (type!=C_LABEL)&&(type!=C_PROGRESS);
 }
 
 int TvAdd(int win, int type, int x, int y, int w, int h, char* text, int cmd)
@@ -765,7 +922,7 @@ int TvAdd(int win, int type, int x, int y, int w, int h, char* text, int cmd)
 	c.virt=0;
 	c.count=0;
 	StrCpy(&c.text[0],text,200);
-	if(type!=C_LABEL)
+	if(TvFocusable(type))
 		if(tvWin[win].focus<0)tvWin[win].focus=id;
 	return id;
 }
@@ -810,6 +967,213 @@ int TvListCount(TCtl& c)
 	return TvItemCount(&c.text[0]);
 }
 
+// The text of item k of a list or combo box.
+void TvCtlItem(int id, int k, char* out, int max)
+{
+	TCtl& c=tvCtl[id];
+	if(c.virt)TvAppListItem(c.win,id,k,out,max);
+	else TvItemAt(&c.text[0],k,out,max);
+}
+
+// Tells the control's command that its value changed.
+void TvChanged(int win, int id)
+{
+	tvDirty=1;
+	if(tvCtl[id].cmd!=0)TvAppButton(win,id,tvCtl[id].cmd);
+}
+
+void TvSliderSet(int win, int id, int v)
+{
+	TCtl& c=tvCtl[id];
+	if(v>c.count)v=c.count;
+	if(v<0)v=0;
+	if(v==c.val)return;
+	c.val=v;
+	TvChanged(win,id);
+}
+
+// The slider value for a click or drag at column mx.
+int TvSliderAt(int win, int id, int mx)
+{
+	TCtl& c=tvCtl[id];
+	int cells=c.w-1;
+	if(cells<1)return 0;
+	int p=mx-(tvWin[win].x+c.x);
+	if(p<0)p=0;
+	if(p>cells)p=cells;
+	return (p*c.count+cells/2)/cells;
+}
+
+// ---------------------------------------------------------------- combo box drop-down
+
+
+void TvComboBox(int& x, int& y, int& w, int& h)
+{
+	TCtl& c=tvCtl[comboCtl];
+	TWin& t=tvWin[c.win];
+	int rows=TvListCount(c);
+	if(rows>TV_COMBOROWS)rows=TV_COMBOROWS;
+	if(rows<1)rows=1;
+	w=c.w;
+	h=rows+2;
+	x=t.x+c.x;
+	y=t.y+c.y+1;
+	if(y+h>tvH-1)y=t.y+c.y-h;
+	if(y<1)y=1;
+}
+
+void TvComboOpen(int id)
+{
+	comboCtl=id;
+	comboSel=tvCtl[id].val;
+	comboTop=0;
+	tvDirty=1;
+}
+
+void TvComboClose(int pick)
+{
+	int id=comboCtl;
+	comboCtl=-1;
+	tvDirty=1;
+	if(pick)
+		if(tvCtl[id].val!=comboSel)
+		{
+			tvCtl[id].val=comboSel;
+			TvChanged(tvCtl[id].win,id);
+		}
+}
+
+void TvComboClamp()
+{
+	TCtl& c=tvCtl[comboCtl];
+	int n=TvListCount(c);
+	int x;
+	int y;
+	int w;
+	int h;
+	TvComboBox(x,y,w,h);
+	if(comboSel>=n)comboSel=n-1;
+	if(comboSel<0)comboSel=0;
+	if(comboSel<comboTop)comboTop=comboSel;
+	if(comboSel>=comboTop+h-2)comboTop=comboSel-(h-2)+1;
+}
+
+void TvDrawCombo()
+{
+	if(comboCtl<0)return;
+	int x;
+	int y;
+	int w;
+	int h;
+	TvComboBox(x,y,w,h);
+	TvComboClamp();
+	int n=TvListCount(tvCtl[comboCtl]);
+	int rows=h-2;
+	TvClip(0,0,tvW,tvH);
+	TvShadow(x,y,w,h);
+	TvFill(x,y,w,h,' ',0x30);
+	TvFrame(x,y,w,h,0,0x30);
+	char item[200];
+	for(int j=0;j<rows;j++)
+	{
+		int k=comboTop+j;
+		if(k<n)
+		{
+			int at=0x30;
+			if(k==comboSel)
+			{
+				at=0x2F;
+				TvFill(x+1,y+1+j,w-2,1,' ',at);
+			}
+			TvCtlItem(comboCtl,k,&item[0],200);
+			TvTextN(x+1,y+1+j,&item[0],at,w-2);
+		}
+	}
+	if(n>rows)TvVBar(x+w-1,y+1,rows,comboTop,n-rows,0x31);
+	tvCurX=-1;
+}
+
+void TvComboKey(int key)
+{
+	tvDirty=1;
+	if((key==K_ESC)||(key==K_F4))
+	{
+		TvComboClose(0);
+		return;
+	}
+	if((key==K_ENTER)||(key==' ')||(key==K_TAB))
+	{
+		TvComboClose(1);
+		return;
+	}
+	int n=TvListCount(tvCtl[comboCtl]);
+	if(key==K_UP)comboSel--;
+	else if(key==K_DOWN)comboSel++;
+	else if(key==K_PGUP)comboSel=comboSel-TV_COMBOROWS;
+	else if(key==K_PGDN)comboSel=comboSel+TV_COMBOROWS;
+	else if(key==K_HOME)comboSel=0;
+	else if(key==K_END)comboSel=n-1;
+	else if((key>' ')&&(key<127))
+	{
+		// the next item that starts with this letter
+		char item[200];
+		for(int s=1;s<=n;s++)
+		{
+			int k=(comboSel+s)%n;
+			TvCtlItem(comboCtl,k,&item[0],200);
+			if(LowerKey(item[0])==LowerKey(key))
+			{
+				comboSel=k;
+				break;
+			}
+		}
+	}
+	TvComboClamp();
+}
+
+void TvComboMouse(int ev)
+{
+	int x;
+	int y;
+	int w;
+	int h;
+	TvComboBox(x,y,w,h);
+	int n=TvListCount(tvCtl[comboCtl]);
+	int rows=h-2;
+	tvDirty=1;
+	if(ev==EV_WHEEL)
+	{
+		comboSel=comboSel-evWheel;
+		TvComboClamp();
+		return;
+	}
+	int inRows=(evY>y)&&(evY<y+h-1);
+	if((evX==x+w-1)&&inRows&&(n>rows))
+	{
+		if(ev==EV_MDOWN)
+		{
+			int hit=TvVBarHit(y+1,rows,comboTop,n-rows,evY);
+			if(hit==0)comboSel--;
+			if(hit==1)comboSel=comboSel-rows;
+			if(hit==3)comboSel=comboSel+rows;
+			if(hit==4)comboSel++;
+			TvComboClamp();
+		}
+		return;
+	}
+	if(inRows&&(evX>x)&&(evX<x+w-1))
+	{
+		int k=comboTop+evY-y-1;
+		if(k<n)
+		{
+			comboSel=k;
+			if(ev==EV_MUP)TvComboClose(1);
+		}
+		return;
+	}
+	if(ev==EV_MDOWN)TvComboClose(0);
+}
+
 void TvDrawCtl(int id, TWin& t)
 {
 	TCtl& c=tvCtl[id];
@@ -832,9 +1196,12 @@ void TvDrawCtl(int id, TWin& t)
 		TvHotText(bx+(c.w-HotLen(&c.text[0]))/2,y,&c.text[0],at,0x2E);
 		if(!pressed)
 		{
-			TvPut(x+c.w,y,G_LOWHALF,0x70);
+			// the other themes make index 0 a light text colour, so they shade with 8
+			int sh=0x70;
+			if(tvTheme!=TH_CLASSIC)sh=0x78;
+			TvPut(x+c.w,y,G_LOWHALF,sh);
 			for(int i=1;i<=c.w;i++)
-				TvPut(x+i,y+1,G_UPHALF,0x70);
+				TvPut(x+i,y+1,G_UPHALF,sh);
 		}
 	}
 	else if((c.type==C_CHECK)||(c.type==C_RADIO))
@@ -871,6 +1238,63 @@ void TvDrawCtl(int id, TWin& t)
 			tvCurY=y;
 		}
 	}
+	else if(c.type==C_SLIDER)
+	{
+		int p=0;
+		if(c.count>0)p=(c.val*(c.w-1)+c.count/2)/c.count;
+		for(int i=0;i<c.w;i++)
+		{
+			if(i<p)TvPut(x+i,y,G_DHORZ,0x79);
+			else TvPut(x+i,y,G_HORZ,0x78);
+		}
+		int at=0x79;
+		if(focused)at=0x74;
+		TvPut(x+p,y,G_FULL,at);
+	}
+	else if(c.type==C_PROGRESS)
+	{
+		int fill=0;
+		int pct=0;
+		if(c.count>0)
+		{
+			fill=c.val*c.w/c.count;
+			pct=c.val*100/c.count;
+		}
+		char s[8];
+		snprintf(&s[0],8,"%i",pct);
+		int l=StrLen(&s[0]);
+		s[l]='%';
+		s[l+1]=0;
+		l++;
+		int sx=(c.w-l)/2;
+		for(int i=0;i<c.w;i++)
+		{
+			int at=0x78;
+			int ch=G_LIGHT;
+			if(i<fill)
+			{
+				at=0x1F;
+				ch=' ';
+			}
+			if((i>=sx)&&(i<sx+l))
+			{
+				ch=s[i-sx];
+				if(i>=fill)at=0x70;
+			}
+			TvPut(x+i,y,ch,at);
+		}
+	}
+	else if(c.type==C_COMBO)
+	{
+		char item[200];
+		item[0]=0;
+		if(c.val<TvListCount(c))TvCtlItem(id,c.val,&item[0],200);
+		int at=0x1F;
+		if(focused)at=0x2F;
+		TvFill(x,y,c.w-1,1,' ',at);
+		TvTextN(x+1,y,&item[0],at,c.w-3);
+		TvPut(x+c.w-1,y,G_DOWN,0x20);
+	}
 	else if(c.type==C_LIST)
 	{
 		int n=TvListCount(c);
@@ -891,8 +1315,7 @@ void TvDrawCtl(int id, TWin& t)
 			TvFill(x,y+j,c.w-1,1,' ',at);
 			if(k<n)
 			{
-				if(c.virt)TvAppListItem(c.win,id,k,&item[0],256);
-				else TvItemAt(&c.text[0],k,&item[0],256);
+				TvCtlItem(id,k,&item[0],256);
 				TvText(x+1,y+j,&item[0],at);
 			}
 		}
@@ -975,8 +1398,8 @@ void TvDrawWin(int id)
 
 // ---------------------------------------------------------------- menus and status line
 
-#define TV_MAXMENU 8
-#define TV_MAXITEM 48
+#define TV_MAXMENU 16
+#define TV_MAXITEM 96
 #define TV_MAXSTATUS 10
 
 struct TMenu
@@ -984,6 +1407,7 @@ struct TMenu
 	char title[16];
 	int first;
 	int count;
+	int popup;  // a context menu, not on the menu bar
 };
 
 struct TItem
@@ -1009,6 +1433,10 @@ int tvNItem=0;
 int tvNStatus=0;
 int menuOpen=-1;
 int menuSel=0;
+int popX=0;          // where the open context menu is
+int popY=0;
+int popArmed=0;      // the mouse has moved or pressed in the open context menu
+int tvDeskPopup=-1;  // the context menu for a right click on the desktop, or -1
 int tvClockSec=-1;
 
 void TvMenuAdd(char* title)
@@ -1017,7 +1445,17 @@ void TvMenuAdd(char* title)
 	StrCpy(&m.title[0],title,16);
 	m.first=tvNItem;
 	m.count=0;
+	m.popup=0;
 	tvNMenu++;
+}
+
+// Starts a context menu, filled with TvMenuItem like the others. Add these after
+// the menu bar's menus. Returns its number for TvOpenPopup.
+int TvPopupAdd()
+{
+	TvMenuAdd("");
+	tvMenu[tvNMenu-1].popup=1;
+	return tvNMenu-1;
 }
 
 void TvMenuItem(char* text, char* hint, int cmd, int key)
@@ -1067,6 +1505,14 @@ void TvMenuBox(int n, int& x, int& y, int& w, int& h)
 	y=1;
 	w=wid;
 	h=m.count+2;
+	if(m.popup)
+	{
+		x=popX;
+		y=popY;
+		// room for the shadow above the status line
+		if(y+h>tvH-2)y=tvH-2-h;
+		if(y<1)y=1;
+	}
 	if(x+w>tvW)x=tvW-w;
 	if(x<0)x=0;
 }
@@ -1076,6 +1522,7 @@ void TvDrawMenuBar()
 	TvClip(0,0,tvW,tvH);
 	TvFill(0,0,tvW,1,' ',0x70);
 	for(int i=0;i<tvNMenu;i++)
+	if(!tvMenu[i].popup)
 	{
 		int x=TvMenuX(i);
 		int at=0x70;
@@ -1154,6 +1601,7 @@ void TvRedraw()
 		TvDrawWin(tvZ[i]);
 	TvDrawMenuBar();
 	TvDrawStatus();
+	TvDrawCombo();
 	TvDrawDropDown();
 	if(menuOpen>=0)tvCurX=-1;
 	TvFlush();
@@ -1298,6 +1746,7 @@ void DecodeCSI()
 		if(p==3)evKey=K_DEL;
 		if(p==5)evKey=K_PGUP;
 		if(p==6)evKey=K_PGDN;
+		if(p==29)evKey=K_MENU;
 		if((p>=11)&&(p<=15))evKey=K_F1+p-11;
 		if((p>=17)&&(p<=21))evKey=K_F6+p-17;
 		if((p>=23)&&(p<=24))evKey=K_F11+p-23;
@@ -1514,6 +1963,8 @@ void TvSelect(int win, int id)
 	}
 	else if(c.type==C_BUTTON)
 		TvFire(win,id);
+	else if(c.type==C_COMBO)
+		TvComboOpen(id);
 	tvDirty=1;
 }
 
@@ -1526,7 +1977,7 @@ void TvFocusStep(int win, int dir)
 	{
 		i=(i+dir+TV_MAXCTL)%TV_MAXCTL;
 		if(tvCtl[i].used)
-			if((tvCtl[i].win==win)&&(tvCtl[i].type!=C_LABEL))
+			if((tvCtl[i].win==win)&&TvFocusable(tvCtl[i].type))
 			{
 				t.focus=i;
 				tvDirty=1;
@@ -1614,6 +2065,44 @@ int TvCtlKey(int win, int key)
 		c.val=v;
 		return 1;
 	}
+	if(c.type==C_SLIDER)
+	{
+		int v=c.val;
+		int step=c.count/10;
+		if(step<1)step=1;
+		if(key==K_LEFT)v--;
+		else if(key==K_RIGHT)v++;
+		else if(key==K_PGDN)v=v-step;
+		else if(key==K_PGUP)v=v+step;
+		else if(key==K_HOME)v=0;
+		else if(key==K_END)v=c.count;
+		else return 0;
+		TvSliderSet(win,t.focus,v);
+		return 1;
+	}
+	if(c.type==C_COMBO)
+	{
+		if((key==K_F4)||((key==K_DOWN)&&(evMod&MOD_ALT)))
+		{
+			TvComboOpen(t.focus);
+			return 1;
+		}
+		int n=TvListCount(c);
+		int v=c.val;
+		if(key==K_UP)v--;
+		else if(key==K_DOWN)v++;
+		else if(key==K_HOME)v=0;
+		else if(key==K_END)v=n-1;
+		else if(key!=' ')return 0;
+		if(v>=n)v=n-1;
+		if(v<0)v=0;
+		if(v!=c.val)
+		{
+			c.val=v;
+			TvChanged(win,t.focus);
+		}
+		if(key!=' ')return 1;
+	}
 	if(key==' ')
 	{
 		TvSelect(win,t.focus);
@@ -1697,7 +2186,7 @@ int TvCtlAt(int win, int mx, int my)
 	for(int i=0;i<TV_MAXCTL;i++)
 	{
 		if(tvCtl[i].used)
-			if((tvCtl[i].win==win)&&(tvCtl[i].type!=C_LABEL))
+			if((tvCtl[i].win==win)&&TvFocusable(tvCtl[i].type))
 			{
 				TCtl& c=tvCtl[i];
 				int x=t.x+c.x;
@@ -1747,6 +2236,15 @@ void TvCtlMouseDown(int win, int id, int mx, int my)
 	}
 	else if((c.type==C_CHECK)||(c.type==C_RADIO))
 		TvSelect(win,id);
+	else if(c.type==C_SLIDER)
+	{
+		TvSliderSet(win,id,TvSliderAt(win,id,mx));
+		dragMode=6;
+		dragCtl=id;
+		dragWin=win;
+	}
+	else if(c.type==C_COMBO)
+		TvComboOpen(id);
 	else if(c.type==C_INPUT)
 	{
 		int cols=mx-(t.x+c.x);
@@ -1812,6 +2310,18 @@ int TvWinAt(int x, int y)
 	return -1;
 }
 
+// The number of menus on the menu bar, which come before the context menus.
+int TvBarCount()
+{
+	int n=0;
+	while(n<tvNMenu)
+	{
+		if(tvMenu[n].popup)break;
+		n++;
+	}
+	return n;
+}
+
 void TvCloseMenu()
 {
 	menuOpen=-1;
@@ -1824,6 +2334,36 @@ void TvOpenMenu(int n)
 	menuSel=0;
 	if(tvItem[tvMenu[n].first].text[0]==0)menuSel=1;
 	tvDirty=1;
+}
+
+// Opens a context menu with its top left corner at x,y, or at the text cursor
+// (else the middle of the top window) when x<0.
+void TvOpenPopup(int n, int x, int y)
+{
+	if((n<0)||(n>=tvNMenu))return;
+	if(x<0)
+	{
+		x=tvW/2;
+		y=tvH/2;
+		if(tvCurX>=0)
+		{
+			x=tvCurX;
+			y=tvCurY+1;
+		}
+		else
+		{
+			int top=TvTop();
+			if(top>=0)
+			{
+				x=tvWin[top].x+tvWin[top].w/3;
+				y=tvWin[top].y+2;
+			}
+		}
+	}
+	popX=x;
+	popY=y;
+	popArmed=0;
+	TvOpenMenu(n);
 }
 
 void TvMenuPick()
@@ -1849,8 +2389,9 @@ void TvMenuKey(int key)
 	tvDirty=1;
 	if(key==K_ESC)TvCloseMenu();
 	else if(key==K_F10)TvCloseMenu();
-	else if(key==K_LEFT)TvOpenMenu((menuOpen+tvNMenu-1)%tvNMenu);
-	else if(key==K_RIGHT)TvOpenMenu((menuOpen+1)%tvNMenu);
+	else if(tvMenu[menuOpen].popup&&((key==K_LEFT)||(key==K_RIGHT))){}
+	else if(key==K_LEFT)TvOpenMenu((menuOpen+TvBarCount()-1)%TvBarCount());
+	else if(key==K_RIGHT)TvOpenMenu((menuOpen+1)%TvBarCount());
 	else if(key==K_UP)TvMenuMove(-1);
 	else if(key==K_DOWN)TvMenuMove(1);
 	else if(key==K_ENTER)TvMenuPick();
@@ -1878,7 +2419,7 @@ int TvMenuMouse(int ev)
 	if(evY==0)
 	{
 		if((ev==EV_MDOWN)||(menuOpen>=0))
-			for(int i=0;i<tvNMenu;i++)
+			for(int i=0;i<TvBarCount();i++)
 			{
 				int x=TvMenuX(i);
 				if((evX>=x-1)&&(evX<x+HotLen(&tvMenu[i].title[0])+1))
@@ -1905,7 +2446,9 @@ int TvMenuMouse(int ev)
 		{
 			menuSel=i;
 			tvDirty=1;
-			if(ev==EV_MUP)
+			// the release of the click that opened a context menu picks nothing
+			if(ev!=EV_MUP)popArmed=1;
+			else if(popArmed||!tvMenu[menuOpen].popup)
 				TvMenuPick();
 		}
 		return 1;
@@ -1917,6 +2460,11 @@ int TvMenuMouse(int ev)
 void TvMouse()
 {
 	int ev=evType;
+	if(comboCtl>=0)
+	{
+		TvComboMouse(ev);
+		return;
+	}
 	if(ev==EV_WHEEL)
 	{
 		int win=TvWinAt(evX,evY);
@@ -1928,13 +2476,22 @@ void TvMouse()
 		int c=TvCtlAt(win,evX,evY);
 		tvDirty=1;
 		if(c>=0)
-			if(tvCtl[c].type==C_LIST)
+		{
+			int ty=tvCtl[c].type;
+			if((ty==C_LIST)||(ty==C_COMBO))
 			{
 				t.focus=c;
 				if(evWheel>0)TvCtlKey(win,K_UP);
 				else TvCtlKey(win,K_DOWN);
 				return;
 			}
+			if(ty==C_SLIDER)
+			{
+				t.focus=c;
+				TvSliderSet(win,c,tvCtl[c].val+evWheel);
+				return;
+			}
+		}
 		TvAppMouse(win,EV_WHEEL,evX-t.x,evY-t.y);
 		return;
 	}
@@ -1963,6 +2520,11 @@ void TvMouse()
 		if(dragMode==5)
 		{
 			TvListDragThumb(dragWin,dragCtl,evY);
+			return;
+		}
+		if(dragMode==6)
+		{
+			TvSliderSet(dragWin,dragCtl,TvSliderAt(dragWin,dragCtl,evX));
 			return;
 		}
 		TWin& t=tvWin[dragWin];
@@ -2004,6 +2566,27 @@ void TvMouse()
 	if(ev!=EV_MDOWN)
 		return;
 	tvDirty=1;
+	if(evBtn==2)
+	{
+		// a right click asks the window under it for a context menu
+		if(evY==tvH-1)return;
+		int win=TvWinAt(evX,evY);
+		if(win<0)
+		{
+			if(!modal)
+				if(tvDeskPopup>=0)TvOpenPopup(tvDeskPopup,evX,evY);
+			return;
+		}
+		if(modal)
+			if(win!=top)return;
+		TvToFront(win);
+		TWin& t=tvWin[win];
+		int rx=evX-t.x;
+		int ry=evY-t.y;
+		if((rx>0)&&(ry>0)&&(rx<t.w-1)&&(ry<t.h-1))
+			TvAppMouse(win,EV_RDOWN,rx,ry);
+		return;
+	}
 	if(evY==tvH-1)
 	{
 		if(modal)return;
@@ -2068,6 +2651,11 @@ void TvKey()
 {
 	int key=evKey;
 	tvDirty=1;
+	if(comboCtl>=0)
+	{
+		TvComboKey(key);
+		return;
+	}
 	if(menuOpen>=0)
 	{
 		TvMenuKey(key);
@@ -2078,6 +2666,12 @@ void TvKey()
 	if(top>=0)modal=tvWin[top].modal;
 	if(!modal)
 	{
+		if((key==K_MENU)||((key==K_F10)&&(evMod&MOD_SHIFT)))
+		{
+			if(top>=0)TvAppMouse(top,EV_RDOWN,-1,-1);
+			else if(tvDeskPopup>=0)TvOpenPopup(tvDeskPopup,-1,-1);
+			return;
+		}
 		if(key==K_F10)
 		{
 			TvOpenMenu(0);
@@ -2163,7 +2757,7 @@ void TvCheckSize()
 void TvPasteEvent()
 {
 	tvDirty=1;
-	if(menuOpen>=0)return;
+	if((menuOpen>=0)||(comboCtl>=0))return;
 	int top=TvTop();
 	if(top<0)return;
 	if(TvAppPaste(top,tvPaste,tvPasteN))return;
@@ -2190,7 +2784,7 @@ int TvRun(int stopWin)
 			if(tvWin[stopWin].result!=0)
 				return tvWin[stopWin].result;
 		// while keys are queued up, catch up on them first and redraw now and then
-		if(tvDirty)
+		if(tvDirty&&!tvScreenTaken)
 		{
 			behind++;
 			int pending=0;
@@ -2211,6 +2805,16 @@ int TvRun(int stopWin)
 			if(left<wait)wait=left;
 		}
 		TvReadEvent(wait);
+		if((evType!=EV_NONE)&&(evType!=EV_MUP)&&(evType!=EV_MDRAG))
+		{
+			tvLastInput=term_ms();
+			if(tvScreenTaken)
+			{
+				tvScreenTaken=0;
+				tvDirty=1;
+				evType=EV_NONE;
+			}
+		}
 		if(evType==EV_NONE)
 		{
 			int sec=term_time(2);
@@ -2382,6 +2986,9 @@ void TvInit()
 		tvPrevAt[i]=-1;
 	}
 	tvPaste=malloc(TV_PASTEMAX+1);
+	TvSetTheme(TH_CLASSIC);
+	TvInitRgb256();
+	tvLastInput=term_ms();
 #ifdef TV_GFX
 	GfxInit();
 	tvW=GfxCols();
