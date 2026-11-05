@@ -1,12 +1,13 @@
 // A Turbo Vision style desktop in the terminal, written in Scinc and drawn with
 // ANSI escape sequences: a file browser and text editor, a calculator, a calendar, an
-// ASCII table, a sliding puzzle and a dialog with the standard controls.
+// ASCII table, a sliding puzzle, the Circuitfall game and a dialog with the standard controls.
 //
 //   ./build_so.sh                  once, builds the terminal input library
 //   Scinc tvdemo.cpp [file]        from this folder
 #include <stdio.h>
 #include "tv.h"
 #include "tvedit.h"
+#include "circuitfall.h"
 
 #pragma STACK_SIZE 655360
 
@@ -30,6 +31,8 @@ typedef char* pchar;
 #define CM_HELP 108
 #define CM_DIRUP 109
 #define CM_DIRHOME 110
+#define CM_CIRCUIT 111
+#define CM_CIRCUIT2 112
 #define CM_CALCKEY 200
 
 // ---------------------------------------------------------------- calculator
@@ -962,6 +965,7 @@ void TvAppDraw(int win)
 	else if(type==W_ASCII)DrawAscii(win);
 	else if(type==W_PUZZLE)DrawPuzzle(win);
 	else if(type==W_FILES)DrawFiles(win);
+	else if(type==W_CIRCUIT)CfDraw(win);
 }
 
 int TvAppKey(int win, int key)
@@ -973,6 +977,7 @@ int TvAppKey(int win, int key)
 	if(type==W_ASCII)return AsciiKey(t,key);
 	if(type==W_PUZZLE)return PuzzleKey(key);
 	if(type==W_FILES)return FilesKey(win,key);
+	if(type==W_CIRCUIT)return CfKey(win,key);
 	if(type==W_CAL)
 	{
 		if((key==K_LEFT)||(key==K_PGUP))
@@ -994,6 +999,7 @@ int TvAppMouse(int win, int ev, int x, int y)
 	TWin& t=tvWin[win];
 	int type=t.type;
 	if(type==W_VIEW)return ViewerMouse(win,ev,x,y);
+	if(type==W_CIRCUIT)return CfMouse(win,ev,x,y);
 	if(ev!=EV_MDOWN)return 0;
 	if(type==W_CAL)
 	{
@@ -1033,6 +1039,13 @@ void TvAppClosed(int win)
 {
 	if(tvWin[win].type==W_VIEW)
 		EdClosed(win);
+	if(tvWin[win].type==W_CIRCUIT)
+		CfClosed(win);
+}
+
+void TvAppTick()
+{
+	CfTick();
 }
 
 int TvAppCanClose(int win)
@@ -1093,6 +1106,8 @@ void TvAppCommand(int cmd)
 			TvNewCentered(W_PUZZLE,"Puzzle",24,11,WF_DIALOG);
 		}
 	}
+	else if(cmd==CM_CIRCUIT)CfOpen(CF_LOOPS);
+	else if(cmd==CM_CIRCUIT2)CfOpen(CF_WIRES);
 	else if(cmd==CM_CONTROLS)RunControls();
 	else if(cmd==CM_HELP)OpenHelp();
 	else if(cmd==CM_ABOUT)
@@ -1120,6 +1135,8 @@ int main(int argc, pchar* argv)
 	TvMenuItem("Cal~e~ndar","",CM_CALENDAR,0);
 	TvMenuItem("A~S~CII table","",CM_ASCII,0);
 	TvMenuItem("~P~uzzle","",CM_PUZZLE,0);
+	TvMenuItem("Circuitfall: ~l~oops","",CM_CIRCUIT,0);
+	TvMenuItem("Circuitfall: ~w~ires","",CM_CIRCUIT2,0);
 	TvMenuAdd("~F~ile");
 	TvMenuItem("~N~ew","Ctrl+N",CM_NEW,14);
 	TvMenuItem("~O~pen...","F3",CM_OPEN,K_F3);

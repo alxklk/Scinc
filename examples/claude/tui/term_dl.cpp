@@ -2,6 +2,7 @@
 // the terminal size, the local time, listing directories and saving files safely. All drawing is plain
 // ANSI output from the Scinc side.
 #include <algorithm>
+#include <chrono>
 #include <cerrno>
 #include <climits>
 #include <cstdio>
@@ -141,6 +142,14 @@ static int term_time(int what)
 	if(what==3)return t->tm_year+1900;
 	if(what==4)return t->tm_mon+1;
 	return t->tm_mday;
+}
+
+// Milliseconds on a monotonic clock, for game timing.
+static int term_ms()
+{
+	using namespace std::chrono;
+	static steady_clock::time_point start=steady_clock::now();
+	return (int)duration_cast<milliseconds>(steady_clock::now()-start).count();
 }
 
 // ---------------------------------------------------------------- directory listing
@@ -467,6 +476,7 @@ extern "C" int term_read_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_read);
 extern "C" int term_cols_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_cols);return 0;}
 extern "C" int term_rows_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_rows);return 0;}
 extern "C" int term_time_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_time);return 0;}
+extern "C" int term_ms_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_ms);return 0;}
 extern "C" int term_pending_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_pending);return 0;}
 extern "C" int fs_error_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_error);return 0;}
 extern "C" int fs_abspath_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_abspath);return 0;}

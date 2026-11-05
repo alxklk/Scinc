@@ -22,6 +22,7 @@ void TvAppClosed(int win);
 void TvAppListItem(int win, int ctl, int i, char* out, int max); // items of a virtual list
 int  TvAppCanClose(int win);                         // return 0 to keep the window open
 int  TvAppPaste(int win, char* s, int n);            // return 1 if the pasted text was used
+void TvAppTick();                                    // called every tvTickMs while that is above 0
 
 // ---------------------------------------------------------------- keys and events
 
@@ -625,6 +626,8 @@ int tvZ[TV_MAXWIN];  // back to front
 int tvNZ=0;
 int tvRunning=1;
 int tvDirty=1;
+int tvTickMs=0;      // set above 0 for a TvAppTick timer, for animation and games
+int tvNextTick=0;
 
 int dragWin=-1;
 int dragMode=0;      // 1 move, 2 resize, 3 pressed button, 4 captured by the app, 5 list thumb
@@ -2177,7 +2180,14 @@ int TvRun(int stopWin)
 				behind=0;
 			}
 		}
-		TvReadEvent(200);
+		int wait=200;
+		if(tvTickMs>0)
+		{
+			int left=tvNextTick-term_ms();
+			if(left<0)left=0;
+			if(left<wait)wait=left;
+		}
+		TvReadEvent(wait);
 		if(evType==EV_NONE)
 		{
 			int sec=term_time(2);
@@ -2194,6 +2204,15 @@ int TvRun(int stopWin)
 			TvPasteEvent();
 		else
 			TvMouse();
+		if(tvTickMs>0)
+		{
+			int now=term_ms();
+			if(now>=tvNextTick)
+			{
+				tvNextTick=now+tvTickMs;
+				TvAppTick();
+			}
+		}
 	}
 	return 0;
 }
