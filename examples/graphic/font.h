@@ -12,11 +12,11 @@ public:
 };
 
 #define NGLYF 128
-#define NUGLYF 128
+#define NUGLYF 320
 //#define NCMDS (NGLYF*16) 
 //#define NDATA (NGLYF*26*4)
-#define NCMDS 2048
-#define NDATA 16384
+#define NCMDS 8192
+#define NDATA 32768
 
 struct UniChar
 {
@@ -29,19 +29,26 @@ public:
 	int cmds[NCMDS];
 	float data[NDATA];
 	CGlyph g[NGLYF];
-	UniChar u[NUGLYF];
+	UniChar u[NUGLYF];  // sorted by code
+	int nu;             // number of used entries in u
 };
 
 CGlyph* FindGlyph(CFont& f, int g)
 {
 	if(g<NGLYF)
 		return &f.g[g];
-	for(int i=0;i<NUGLYF;i++)
+	int lo=0;
+	int hi=f.nu-1;
+	while(lo<=hi)
 	{
-		if(f.u[i].code==g)
-		{
-			return &f.u[i].g;
-		}
+		int m=(lo+hi)/2;
+		int c=f.u[m].code;
+		if(c==g)
+			return &f.u[m].g;
+		if(c<g)
+			lo=m+1;
+		else
+			hi=m-1;
 	}
 	return 0;
 }
@@ -66,6 +73,7 @@ public:
 			f.u[i].g.w=w;
 			f.u[i].g.col=0;
 		}
+		f.nu=0;
 		curCmd=0;
 		curData=0;
 		curGlyph=-1;
@@ -90,23 +98,49 @@ public:
 		font->data[curData]=d;
 		curData++;
 	}
+	// the entry for a Unicode glyph, kept in code order; an existing code is redefined
 	int NewUGlyph(int uglyph)
 	{
-		int found=-1;
-		for(int i=0;i<NUGLYF;i++)
+		int nu=font->nu;
+		int found=nu;
+		for(int i=0;i<nu;i++)
 		{
-			if(font->u[i].code==0)
+			if(font->u[i].code>=uglyph)
 			{
 				found=i;
-				font->u[found].code=uglyph;
-				font->u[found].g.c0=curCmd;
-				font->u[found].g.d0=curData;
-				font->u[found].g.n=0;
 				break;
 			}
 		}
-		if(found<0)
-			printf(" Font Unicode table overflow, >= %i\n", NUGLYF);
+		int isnew=1;
+		if(found<nu)
+		{
+			if(font->u[found].code==uglyph)
+				isnew=0;
+		}
+		if(isnew)
+		{
+			if(nu>=NUGLYF)
+			{
+				printf(" Font Unicode table overflow, >= %i\n", NUGLYF);
+				return -1;
+			}
+			for(int i=nu;i>found;i--)
+			{
+				font->u[i].code=font->u[i-1].code;
+				font->u[i].g.col=font->u[i-1].g.col;
+				font->u[i].g.w=font->u[i-1].g.w;
+				font->u[i].g.n=font->u[i-1].g.n;
+				font->u[i].g.c0=font->u[i-1].g.c0;
+				font->u[i].g.d0=font->u[i-1].g.d0;
+			}
+			font->nu=nu+1;
+			font->u[found].g.w=font->g[' '].w;
+		}
+		font->u[found].code=uglyph;
+		font->u[found].g.c0=curCmd;
+		font->u[found].g.d0=curData;
+		font->u[found].g.n=0;
+		font->u[found].g.col=0;
 		return found;
 	}
 	void StartGlyph(int glyph)
@@ -128,18 +162,22 @@ public:
 			curUGlyphIdx=NewUGlyph(glyph);
 		}
 	}
-	// a Unicode glyph that looks exactly like an ASCII one (Cyrillic A, O...)
+	// a Unicode glyph that looks exactly like another one (Cyrillic A, O...)
 	// shares its drawing commands
 	void Alias(int uglyph, int glyph)
 	{
+		CGlyph* p=FindGlyph(*font,glyph);
+		if(!p)
+			return;
+		CGlyph src=*p;
 		int i=NewUGlyph(uglyph);
 		if(i<0)
 			return;
-		font->u[i].g.col=font->g[glyph].col;
-		font->u[i].g.w=font->g[glyph].w;
-		font->u[i].g.n=font->g[glyph].n;
-		font->u[i].g.c0=font->g[glyph].c0;
-		font->u[i].g.d0=font->g[glyph].d0;
+		font->u[i].g.col=src.col;
+		font->u[i].g.w=src.w;
+		font->u[i].g.n=src.n;
+		font->u[i].g.c0=src.c0;
+		font->u[i].g.d0=src.d0;
 	}
 	void Width(float w)
 	{
@@ -227,6 +265,16 @@ public:
 		Cmd('/');
 		Data(w);
 		Data(c);
+	}
+	// fills the path with the colour the program set before drawing the glyph,
+	// for solid symbols that take the colour of the text
+	void ink()
+	{
+		if(curGlyph<NGLYF)
+			font->g[curGlyph].col=1;
+		else
+			font->u[curUGlyphIdx].g.col=1;
+		Cmd('F');
 	}
 	void fill(int c)
 	{

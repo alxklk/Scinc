@@ -60,6 +60,11 @@ void DrawGlyph(Graph& g, CFont& f, int s, float x, float y, float sx, float sy)
 			g.stroke();
 			d+=2;
 		}
+		else if(C=='F')
+		{
+			g.fin();
+			g.fill1();
+		}
 		else if(C=='f')
 		{
 			g.rgba32(int(fd[d]));

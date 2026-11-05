@@ -1,6 +1,7 @@
 // A graphic backend for tv.h: the same cell grid, drawn in a window instead of a
-// terminal. Text uses the stroke font from graphic/font.h and letters.h. Box lines,
-// shades and blocks are filled rectangles, so they join exactly from cell to cell.
+// terminal. Text and symbols use the stroke font from graphic/font.h and letters.h.
+// Box lines, shades and blocks are filled rectangles on whole pixels instead of the
+// font's, so they join exactly from cell to cell.
 //
 // tv.h includes this when the program defines TV_GFX before including tv.h,
 // at the point where everything the backend uses from tv.h has been defined.
@@ -229,19 +230,8 @@ int GfxDouble(int ch, int px, int py, int col)
 	return 1;
 }
 
-void GfxTriangle(float x0, float y0, float x1, float y1, float x2, float y2, int col)
-{
-	tvG.clear();
-	tvG.M(x0,y0);
-	tvG.L(x1,y1);
-	tvG.L(x2,y2);
-	tvG.close();
-	tvG.fin();
-	tvG.rgba32(col);
-	tvG.fill1();
-}
-
-// Draws the characters made of filled shapes. Returns 0 for those the stroke pass draws.
+// Draws box lines, blocks and shades as rectangles on whole pixels. Returns 0
+// for the characters the font draws.
 int GfxShape(int ch, int px, int py, int fg, int bg)
 {
 	if(ch<=32)return 1;
@@ -253,88 +243,63 @@ int GfxShape(int ch, int px, int py, int fg, int bg)
 		return 1;
 	}
 	if(GfxDouble(ch,px,py,fg))return 1;
-	int cx=px+GFX_CW/2;
-	int cy=py+GFX_CH/2;
 	if(ch==0x2591)tvG.fillrect(px,py,GFX_CW,GFX_CH,GfxMix(bg,fg,64));
 	else if(ch==0x2592)tvG.fillrect(px,py,GFX_CW,GFX_CH,GfxMix(bg,fg,128));
 	else if(ch==0x2593)tvG.fillrect(px,py,GFX_CW,GFX_CH,GfxMix(bg,fg,192));
 	else if(ch==0x2588)tvG.fillrect(px,py,GFX_CW,GFX_CH,fg);
 	else if(ch==0x2580)tvG.fillrect(px,py,GFX_CW,GFX_CH/2,fg);
 	else if(ch==0x2584)tvG.fillrect(px,py+GFX_CH/2,GFX_CW,GFX_CH/2,fg);
-	else if(ch==0x25A0)tvG.fillrect(cx-3,cy-3,7,7,fg);
-	else if(ch==0x2022)tvG.Circle(cx+0.5,cy+0.5,0,1.6,1,fg);
-	else if(ch==0x2261)
-	{
-		GfxH(px+1,px+GFX_CW-2,cy-4,1,fg);
-		GfxH(px+1,px+GFX_CW-2,cy,1,fg);
-		GfxH(px+1,px+GFX_CW-2,cy+4,1,fg);
-	}
-	else if(ch==0x25B2)GfxTriangle(px+1,cy+3,px+GFX_CW-1,cy+3,cx,cy-4,fg);
-	else if(ch==0x25BC)GfxTriangle(px+1,cy-3,px+GFX_CW-1,cy-3,cx,cy+4,fg);
-	else if(ch==0x25BA)GfxTriangle(px+2,cy-5,px+2,cy+5,px+GFX_CW-1,cy,fg);
-	else if(ch==0x25C4)GfxTriangle(px+GFX_CW-2,cy-5,px+GFX_CW-2,cy+5,px+1,cy,fg);
+	else if(ch==0x258C)tvG.fillrect(px,py,GFX_CW/2,GFX_CH,fg);
+	else if(ch==0x2590)tvG.fillrect(px+GFX_CW/2,py,GFX_CW/2,GFX_CH,fg);
 	else return 0;
 	return 1;
 }
 
-// ---------------------------------------------------------------- strokes
+// ---------------------------------------------------------------- glyphs
 
-float gfxSX=1.5;
-float gfxSY=1.35;
+// the font's character cell (x -1..5, y -4..12) stretched over a 10x20 cell
+float gfxSX=GFX_CW/6.0;
+float gfxSY=GFX_CH/16.0;
 
-void GfxArrowHead(float x, float y, float dx, float dy)
+// 1 for a solid glyph (■ ▲ ♥ ...) that fills itself, 0 for strokes, -1 for none
+int GfxGlyphKind(int ch)
 {
-	// a V opening back along -dx,-dy
-	tvG.M(x-dx*3-dy*3,y-dy*3+dx*3);
-	tvG.L(x,y);
-	tvG.L(x-dx*3+dy*3,y-dy*3-dx*3);
+	CGlyph* pgl=FindGlyph(*gfxFont,ch);
+	if(!pgl)
+		return -1;
+	CGlyph gl=*pgl;
+	if(gl.n<=0)
+		return -1;
+	return gl.col;
 }
 
-// Adds the strokes of one character to the current path.
-void GfxPathChar(int ch, int px, int py)
+// Draws one character from the font, or a small empty box if it has no glyph.
+void GfxGlyph(int ch, int px, int py, int col)
 {
-	float cx=px+GFX_CW/2+0.5;
-	float cy=py+GFX_CH/2+0.5;
-	if(ch==0x2190)
+	int kind=GfxGlyphKind(ch);
+	float ox=px+gfxSX;
+	float oy=py+12*gfxSY;
+	tvG.rgba32(col);
+	if(kind==1)
 	{
-		tvG.M(px+1,cy);
-		tvG.L(px+GFX_CW-1,cy);
-		GfxArrowHead(px+1,cy,-1,0);
+		DrawGlyph(tvG,*gfxFont,ch,ox,oy,gfxSX,gfxSY);
 		return;
 	}
-	if(ch==0x2192)
+	tvG.clear();
+	if(kind==0)
+		DrawGlyph(tvG,*gfxFont,ch,ox,oy,gfxSX,gfxSY);
+	else
 	{
-		tvG.M(px+1,cy);
-		tvG.L(px+GFX_CW-1,cy);
-		GfxArrowHead(px+GFX_CW-1,cy,1,0);
-		return;
+		tvG.M(px+2,py+5);
+		tvG.L(px+GFX_CW-2,py+5);
+		tvG.L(px+GFX_CW-2,py+16);
+		tvG.L(px+2,py+16);
+		tvG.close();
 	}
-	if((ch==0x2191)||(ch==0x2193)||(ch==0x2195))
-	{
-		tvG.M(cx,cy-6);
-		tvG.L(cx,cy+6);
-		if(ch!=0x2193)GfxArrowHead(cx,cy-6,0,-1);
-		if(ch!=0x2191)GfxArrowHead(cx,cy+6,0,1);
-		return;
-	}
-	CGlyph* pgl=FindGlyph(*gfxFont,ch);
-	int have=0;
-	if(pgl)
-	{
-		CGlyph gl=*pgl;
-		if(gl.n>0)have=1;
-	}
-	if(have)
-	{
-		DrawGlyph(tvG,*gfxFont,ch,px+2,py+14,gfxSX,gfxSY);
-		return;
-	}
-	// no glyph: a small empty box
-	tvG.M(px+2,py+5);
-	tvG.L(px+GFX_CW-2,py+5);
-	tvG.L(px+GFX_CW-2,py+16);
-	tvG.L(px+2,py+16);
-	tvG.close();
+	tvG.fin();
+	tvG.rgba32(col);
+	tvG.width(1.2,1.2);
+	tvG.stroke();
 }
 
 // ---------------------------------------------------------------- frames
@@ -390,12 +355,7 @@ void GfxFlush()
 		int px=(i%TV_MAXW)*GFX_CW;
 		int py=(i/TV_MAXW)*GFX_CH;
 		tvG.Clip(px,py,GFX_CW,GFX_CH);
-		tvG.clear();
-		GfxPathChar(tvCh[i],px,py);
-		tvG.fin();
-		tvG.rgba32(gfxPal[tvAt[i]&15]);
-		tvG.width(1.2,1.2);
-		tvG.stroke();
+		GfxGlyph(tvCh[i],px,py,gfxPal[tvAt[i]&15]);
 	}
 	tvG.UnClip();
 	if(gfxCurX>=0)

@@ -321,10 +321,47 @@ void CalShift(TWin& t, int dir)
 
 // Window field: a selected code.
 
+// codes 1..31 and 127 show the symbols of the IBM PC character set, as DOS did
+int AsciiLow(int c)
+{
+	if(c==1)return 0x263A;
+	if(c==2)return 0x263B;
+	if(c==3)return 0x2665;
+	if(c==4)return 0x2666;
+	if(c==5)return 0x2663;
+	if(c==6)return 0x2660;
+	if(c==7)return 0x2022;
+	if(c==8)return 0x25D8;
+	if(c==9)return 0x25CB;
+	if(c==10)return 0x25D9;
+	if(c==11)return 0x2642;
+	if(c==12)return 0x2640;
+	if(c==13)return 0x266A;
+	if(c==14)return 0x266B;
+	if(c==15)return 0x263C;
+	if(c==16)return 0x25BA;
+	if(c==17)return 0x25C4;
+	if(c==18)return 0x2195;
+	if(c==19)return 0x203C;
+	if(c==20)return 0xB6;
+	if(c==21)return 0xA7;
+	if(c==22)return 0x25AC;
+	if(c==23)return 0x21A8;
+	if(c==24)return 0x2191;
+	if(c==25)return 0x2193;
+	if(c==26)return 0x2192;
+	if(c==27)return 0x2190;
+	if(c==28)return 0x221F;
+	if(c==29)return 0x2194;
+	if(c==30)return 0x25B2;
+	if(c==31)return 0x25BC;
+	return ' ';
+}
+
 int AsciiGlyph(int c)
 {
-	if(c<32)return 0x2400+c;
-	if(c==127)return 0x2421;
+	if(c<32)return AsciiLow(c);
+	if(c==127)return 0x2302;
 	if((c>=128)&&(c<160))return 0xB7;
 	return c;
 }
