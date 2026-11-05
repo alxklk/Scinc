@@ -30,6 +30,29 @@ float editHY;
 float editMX;
 float editMY;
 
+int uBase=0;  // the first Unicode glyph shown in the lower half of the grid
+
+// the character code shown in grid cell x,y: ASCII in the upper 8 rows, the
+// font's Unicode glyphs (from uBase) in the lower 8; 0 for an empty cell
+int GridCode(CFont& font, int x, int y)
+{
+	if(y<8)
+		return x+y*16;
+	int i=uBase+(y-8)*16+x;
+	if(i>=font.nu)
+		return 0;
+	return font.u[i].code;
+}
+
+CGlyph GlyphOf(CFont& font, int code)
+{
+	CGlyph* p=FindGlyph(font,code);
+	if(!p)
+		p=&font.g[0];
+	CGlyph gl=*p;
+	return gl;
+}
+
 bool near(float x0, float y0, float x1, float y1)
 {
 	x1-=x0;
@@ -45,7 +68,7 @@ bool findHoverElement(int sym, CFont& font, float mx, float my, int& hCmd, int& 
 	float sy=14;
 	float cx=x;
 	float cy=y;
-	CGlyph& gl=font.g[sym];
+	CGlyph gl=GlyphOf(font,sym);
 	int* pc=&font.cmds[0];
 	float* pd=&font.data[0];
 	int c=gl.c0;
@@ -118,6 +141,10 @@ bool findHoverElement(int sym, CFont& font, float mx, float my, int& hCmd, int& 
 		{
 			float D0=pd[d];
 			c+=1;d+=1;
+		}
+		else if(C=='F')
+		{
+			c+=1;
 		}
 		else
 		{
@@ -334,7 +361,7 @@ int main()
 		cx=0;
 	if(cy<0)
 		cy=0;
-	int code=cx+cy*16;
+	int code=GridCode(font,cx,cy);
 	char teststr[33];for(int i=0;i<32;i++)teststr[i]=' ';
 	int testcur=0;
 	for(int i=0;i<31;i++)
@@ -406,6 +433,18 @@ int main()
 				}
 				mx=ev.x;
 				my=ev.y;
+				if((ev.type=='MWUP')||(ev.type=='MWDN'))
+				{
+					// the wheel pages through the Unicode glyphs
+					if(ev.type=='MWDN')
+					{
+						if(uBase+128<font.nu)
+							uBase+=128;
+					}
+					else if(uBase>=128)
+						uBase-=128;
+					code=GridCode(font,cx,cy);
+				}
 				if(ev.type=='MLDN')
 				{
 					if(hoverEdit)
@@ -429,9 +468,13 @@ int main()
 							cy=icy;
 							SetHostInt("cx",cx);
 							SetHostInt("cy",cy);
-							code=cx+cy*16;
-							teststr[testcur]=code;
-							testcur=(testcur+1)%32;
+							code=GridCode(font,cx,cy);
+							// the test line is single-byte text, so only ASCII goes there
+							if((code>32)&&(code<127))
+							{
+								teststr[testcur]=code;
+								testcur=(testcur+1)%32;
+							}
 							printf("Here!!!\n");
 						}
 					}
@@ -553,7 +596,8 @@ int main()
 			//t.y=Flt2(0,-14);
 			//t.Glyph(code);
 			DrawGlyph(g,font,code,400,400,14,14);
-			if(!font.g[code].col)
+			CGlyph selGl=GlyphOf(font,code);
+			if(!selGl.col)
 			{
 				g.fin();
 				g.rgba(.3,.1,0,.5);
@@ -613,7 +657,7 @@ int main()
 					float y=400;
 					float sx=14;
 					float sy=14;
-					CGlyph& gl=font.g[code];
+					CGlyph gl=GlyphOf(font,code);
 					float cx=x;
 					float cy=y;
 					int* pc=&font.cmds[0];
@@ -718,6 +762,11 @@ int main()
 							if(dbgP){char s[128];snprintf(s,128,"'%c' 0x%x", C,int(D0));stext(s,20,30+nl*10,dbgP);nl++;}
 							c+=1;d+=1;
 						}
+						else if(C=='F')
+						{
+							if(dbgP){stext("'F'",20,30+nl*10,dbgP);nl++;}
+							c+=1;
+						}
 						else
 						{
 							printf("Unknown command %c\n",C);
@@ -763,17 +812,19 @@ int main()
 
 			for(int i=0;i<16;i++)
 			{
-				for(int j=NGLYF/16;j<NGLYF/16+NUGLYF/16;j++)
+				for(int j=8;j<16;j++)
 				{
-					int c=i+(j-NGLYF/16)*16;
-					if(font.u[c].code)
+					int c=uBase+i+(j-8)*16;
+					if(c<font.nu)
 					{
 						char s[16];
 						snprintf(s,16,"%i",c);
 						stext(s,11+i*20,129+j*20,0xffffffff);
 						snprintf(s,16,"%i",font.u[c].code);
 						stext(s,11+i*20,140+j*20,0xffffffff);
-						DrawGlyph(g,font,font.u[c].code,10.5+i*20,150.5+j*20,1,1);
+						// solid glyphs clear the path, so they are filled after the stroke
+						if(font.u[c].g.col==0)
+							DrawGlyph(g,font,font.u[c].code,10.5+i*20,150.5+j*20,1,1);
 					}
 				}
 			}
@@ -790,6 +841,19 @@ int main()
 					int c=i+j*16;
 					if(font.g[c].col!=0)
 						DrawGlyph(g,font,c,10.5+i*20,150.5+j*20,1,1);
+				}
+			}
+			g.rgb(.3,.1,0);
+			for(int i=0;i<16;i++)
+			{
+				for(int j=8;j<16;j++)
+				{
+					int c=uBase+i+(j-8)*16;
+					if(c<font.nu)
+					{
+						if(font.u[c].g.col!=0)
+							DrawGlyph(g,font,font.u[c].code,10.5+i*20,150.5+j*20,1,1);
+					}
 				}
 			}
 
