@@ -4,6 +4,8 @@
 //
 //   ./build_so.sh                  once, builds the terminal input library
 //   Scinc tvdemo.cpp [file]        from this folder
+//
+// tvdemo_gfx.cpp builds the same desktop drawn in a graphic window (tvgfx.h).
 #include <stdio.h>
 #include "tv.h"
 #include "tvedit.h"
@@ -1118,11 +1120,15 @@ void TvAppCommand(int cmd)
 
 int main(int argc, pchar* argv)
 {
+#ifdef TV_GFX
+	tvCloseCmd=CM_QUIT;
+#else
 	if(!term_open())
 	{
 		printf("tvdemo needs an interactive terminal.\n");
 		return 1;
 	}
+#endif
 	EdInit();
 	StrCpy(&ctlName[0],"Scinc",64);
 	fdDir[0]=0;

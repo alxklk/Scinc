@@ -209,9 +209,17 @@ void OutAttr(int at)
 	OutByte('m');
 }
 
+#ifdef TV_GFX
+void GfxFlush();
+#endif
+
 // Sends only the cells that changed since the last call.
 void TvFlush()
 {
+#ifdef TV_GFX
+	GfxFlush();
+	return;
+#endif
 	int curAt=-1;
 	int penX=-1;
 	int penY=-1;
@@ -1297,8 +1305,16 @@ void DecodeCSI()
 	if(evKey==0)evType=EV_NONE;
 }
 
+#ifdef TV_GFX
+#include "tvgfx.h"
+#endif
+
 void TvReadEvent(int timeoutMs)
 {
+#ifdef TV_GFX
+	GfxReadEvent(timeoutMs);
+	return;
+#endif
 	evType=EV_NONE;
 	evMod=0;
 	evUtfN=0;
@@ -2113,6 +2129,9 @@ void TvKey()
 
 void TvCheckSize()
 {
+#ifdef TV_GFX
+	return;
+#endif
 	int w=term_cols();
 	int h=term_rows();
 	if(w>TV_MAXW)w=TV_MAXW;
@@ -2174,7 +2193,11 @@ int TvRun(int stopWin)
 		if(tvDirty)
 		{
 			behind++;
-			if((behind>=16)||!term_pending())
+			int pending=0;
+#ifndef TV_GFX
+			pending=term_pending();
+#endif
+			if((behind>=16)||!pending)
 			{
 				TvRedraw();
 				behind=0;
@@ -2359,6 +2382,12 @@ void TvInit()
 		tvPrevAt[i]=-1;
 	}
 	tvPaste=malloc(TV_PASTEMAX+1);
+#ifdef TV_GFX
+	GfxInit();
+	tvW=GfxCols();
+	tvH=GfxRows();
+	return;
+#endif
 	tvW=term_cols();
 	tvH=term_rows();
 	if(tvW>TV_MAXW)tvW=TV_MAXW;
@@ -2370,6 +2399,9 @@ void TvInit()
 
 void TvDone()
 {
+#ifdef TV_GFX
+	return;
+#endif
 	OutStr("\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?7h\x1b[?25h\x1b[0m\x1b[?1049l");
 	OutFlush();
 	term_close();
