@@ -7,7 +7,9 @@
 //   ./build_so.sh                  once, builds the terminal input library
 //   Scinc tvdemo.cpp [file]        from this folder
 //
-// tvdemo_gfx.cpp builds the same desktop drawn in a graphic window (tvgfx.h).
+// tvdemo_gfx.cpp builds the same desktop drawn in a graphic window (tvgfx.h) with the
+// stroke font, tvdemo_raster.cpp and tvdemo_small.cpp with the interpreter's quicker
+// 9x16 and 6x12 bitmap fonts.
 #include <stdio.h>
 #include "tv.h"
 #include "tvedit.h"
@@ -50,6 +52,7 @@ typedef char* pchar;
 #define CM_LINENUMS 121
 #define CM_WRAP 122
 #define CM_WINLIST 123
+#define CM_SAVERWIN 124
 #define CM_CALCKEY 200
 #define CM_THEMEPICK 300
 #define CM_VOLUME 301
@@ -652,7 +655,7 @@ void PrefsLoad()
 	{
 		svOn=(v[1]!=0);
 		if((v[2]>=1)&&(v[2]<=30))svMinutes=v[2];
-		if(v[3]<=1)svKind=v[3];
+		if(v[3]<=SV_RANDOM)svKind=v[3];
 	}
 	if(k>=6)
 	{
@@ -684,7 +687,7 @@ void RunPrefs()
 	int on=TvAdd(win,C_CHECK,2,4,30,1,"~S~creen saver",0);
 	tvCtl[on].val=svOn;
 	TvAdd(win,C_LABEL,3,5,10,1,"~K~ind",0);
-	int kind=TvAdd(win,C_COMBO,14,5,30,1,"Stars|Plasma",0);
+	int kind=TvAdd(win,C_COMBO,14,5,30,1,"Stars|Plasma|Matrix|Flame|Random",0);
 	tvCtl[kind].val=svKind;
 	TvAdd(win,C_LABEL,3,7,10,1,"~A~fter",0);
 	prefMinCtl=TvAdd(win,C_SLIDER,14,7,20,1,"",0);
@@ -728,6 +731,7 @@ void TickUpdate()
 	int ms=0;
 	if(svOn)ms=500;
 	if((cfWin>=0)||(progWin>=0)||(mbWin>=0)||(lfWin>=0)||(snWin>=0)||tvScreenTaken)ms=30;
+	if(SvWindows()>0)ms=30;
 	if(ms!=tvTickMs)
 	{
 		tvTickMs=ms;
@@ -1349,6 +1353,11 @@ void OpenHelp()
 		"  type a character. Tab changes the tool: Brush, Text, Fill, Pick.\n"
 		"  Ctrl+Z undoes, F2 saves an .ans file, F3 opens one.\n"
 		"\n"
+		"Screen savers\n"
+		"  Stars, plasma, matrix rain and flame, full screen after the idle\n"
+		"  time set in Options, Preferences, or in windows (Saver in a\n"
+		"  window). In a window Space shows the next one, 1-4 pick one.\n"
+		"\n"
 		"Options, Preferences sets the colour theme and the screen saver.\n"
 		"\n"
 		"Your terminal may catch F10 or Alt keys for itself. If it\n"
@@ -1397,6 +1406,7 @@ void TvAppDraw(int win)
 	else if(type==W_PREFS)DrawPrefs(win);
 	else if(type==W_MANDEL)MbDraw(win);
 	else if(type==W_LIFE)LfDraw(win);
+	else if(type==W_SAVER)SvDraw(tvWin[win].a,tvWin[win].x+1,tvWin[win].y+1,tvWin[win].w-2,tvWin[win].h-2);
 	else if(type==W_SONAR)SnDraw(win);
 	else if(type==W_HEX)HxDraw(win);
 	else if(type==W_PAINT)PtDraw(win);
@@ -1414,6 +1424,7 @@ int TvAppKey(int win, int key)
 	if(type==W_CIRCUIT)return CfKey(win,key);
 	if(type==W_MANDEL)return MbKey(win,key);
 	if(type==W_LIFE)return LfKey(win,key);
+	if(type==W_SAVER)return SvWinKey(win,key);
 	if(type==W_SONAR)return SnKey(win,key);
 	if(type==W_HEX)return HxKey(win,key);
 	if(type==W_PAINT)return PtKey(win,key);
@@ -1635,6 +1646,7 @@ void TvAppCommand(int cmd)
 	else if(cmd==CM_MANDEL)MbOpen();
 	else if(cmd==CM_LIFE)LfOpen();
 	else if(cmd==CM_SAVERNOW)SvStart();
+	else if(cmd==CM_SAVERWIN)SvOpenWindow(svKind);
 	else if(cmd==CM_HELP)OpenHelp();
 	else if(cmd==CM_ABOUT)
 		TvMessage("About","Turbo Vision style desktop\nWritten in Scinc, drawn with ANSI escapes",0);
@@ -1675,6 +1687,7 @@ int main(int argc, pchar* argv)
 	TvMenuItem("~G~ame of Life","",CM_LIFE,0);
 	TvMenuItem("S~o~nar","",CM_SONAR,0);
 	TvMenuItem("ANSI pa~i~nt","",CM_PAINT,0);
+	TvMenuItem("Sa~v~er in a window","",CM_SAVERWIN,0);
 	TvMenuAdd("~F~ile");
 	TvMenuItem("~N~ew","Ctrl+N",CM_NEW,14);
 	TvMenuItem("~O~pen...","F3",CM_OPEN,K_F3);
@@ -1706,6 +1719,7 @@ int main(int argc, pchar* argv)
 	TvMenuAdd("~O~ptions");
 	TvMenuItem("~P~references...","",CM_PREFS,0);
 	TvMenuItem("Start screen ~s~aver","",CM_SAVERNOW,0);
+	TvMenuItem("Start saver in a w~i~ndow","",CM_SAVERWIN,0);
 	TvMenuLine();
 	TvMenuItem("~L~ine numbers","off",CM_LINENUMS,0);
 	itemLineNums=tvNItem-1;

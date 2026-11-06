@@ -152,6 +152,14 @@ static int term_ms()
 	return (int)duration_cast<milliseconds>(steady_clock::now()-start).count();
 }
 
+// 1 if the terminal says it shows 24-bit colours, as COLORTERM tells programs.
+static int term_truecolor()
+{
+	const char* c=getenv("COLORTERM");
+	if(!c)return 0;
+	return (strcasecmp(c,"truecolor")==0)||(strcasecmp(c,"24bit")==0);
+}
+
 // ---------------------------------------------------------------- directory listing
 
 struct DirEntry
@@ -478,6 +486,7 @@ extern "C" int term_rows_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_rows);
 extern "C" int term_time_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_time);return 0;}
 extern "C" int term_ms_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_ms);return 0;}
 extern "C" int term_pending_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_pending);return 0;}
+extern "C" int term_truecolor_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_truecolor);return 0;}
 extern "C" int fs_error_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_error);return 0;}
 extern "C" int fs_abspath_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_abspath);return 0;}
 extern "C" int fs_size_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_size);return 0;}

@@ -627,23 +627,43 @@ int LfMouse(int win, int ev, int x, int y)
 	return 0;
 }
 
-// ---------------------------------------------------------------- screen saver
+// ---------------------------------------------------------------- screen savers
 
+// The savers run full screen after idle time, or in windows. One step a frame moves
+// every animation; SvDraw then shows a kind in any block of cells. Windows of the
+// same kind share its animation.
+
+#define W_SAVER 46
 #define SV_STARS 0
 #define SV_PLASMA 1
+#define SV_MATRIX 2
+#define SV_FLAME 3
+#define SV_KINDS 4
+#define SV_RANDOM 4    // the setting only: a kind chosen at each start
 #define SV_NSTARS 220
 
 int svOn=1;
 int svMinutes=5;
-int svKind=SV_STARS;
+int svKind=SV_STARS;   // the setting
+int svCur=SV_STARS;    // what the full screen shows
 int svActive=0;
 int svNext=0;
 int svT=0;
+int svReady=0;
 int svPix[PIX_N];
 float svX[SV_NSTARS];
 float svY[SV_NSTARS];
 float svZ[SV_NSTARS];
 int svSin[256];
+int svPlasma[96];
+int svPlasmaN=0;
+float mxHead[TV_MAXW]; // the matrix rain: per column the row of the bright head,
+float mxSpeed[TV_MAXW];// how far it falls a frame and its trail length
+int mxLen[TV_MAXW];
+int mxCh[TV_CELLS];
+int mxGreen[8];
+int flHeat[38880];     // the fire, PIX_W x (PIX_H+2), heat 0..255
+int flCol[32];
 
 void SvStar(int i, float z)
 {
@@ -652,25 +672,147 @@ void SvStar(int i, float z)
 	svZ[i]=z;
 }
 
-void SvStart()
+void SvDrop(int c, int above)
 {
+	mxHead[c]=-(ToyRandom()%(above+1));
+	mxSpeed[c]=0.25+(ToyRandom()%60)*0.01;
+	mxLen[c]=5+ToyRandom()%18;
+}
+
+int SvRandomChar()
+{
+	char* set="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ@#$%&*+=<>?";
+	int c=set[ToyRandom()%47];
+	return c;
+}
+
+// Sets up every animation once.
+void SvInit()
+{
+	if(svReady)return;
+	svReady=1;
 	toyRng=toyRng+term_ms();
 	for(int i=0;i<SV_NSTARS;i++)
 		SvStar(i,0.05+(ToyRandom()%1000)*0.001);
 	for(int i=0;i<256;i++)
 		svSin[i]=int(31.5+31.5*sin(i*3.14159265/128.));
+	// the plasma colours, then the Mandelbrot's back as they were
 	ToyGradient("005 055 050 550 500 505",10);
-	svT=0;
-	svActive=1;
-	svNext=0;
-	tvScreenTaken=1;
+	svPlasmaN=toyGradN;
+	for(int i=0;i<toyGradN;i++)
+		svPlasma[i]=toyGrad[i];
+	MbPalette();
+	for(int c=0;c<TV_MAXW;c++)
+		SvDrop(c,TV_MAXH);
+	for(int i=0;i<TV_CELLS;i++)
+		mxCh[i]=SvRandomChar();
+	char* g="22 28 34 40 46 82 120 194";
+	int k=0;
+	int i=0;
+	while(k<8)
+	{
+		int v=0;
+		while(g[i]==' ')i++;
+		while((g[i]>='0')&&(g[i]<='9'))
+		{
+			v=v*10+g[i]-'0';
+			i++;
+		}
+		mxGreen[k]=v;
+		k++;
+	}
+	for(int n=0;n<38880;n++)
+		flHeat[n]=0;
+	// black, deep red, red, orange, yellow, white
+	for(int n=0;n<32;n++)
+	{
+		int r=n/3;
+		if(r>5)r=5;
+		int gr=0;
+		if(n>12)gr=(n-12)/3;
+		if(gr>5)gr=5;
+		int b=0;
+		if(n>26)b=(n-26)*5/5;
+		if(b>5)b=5;
+		flCol[n]=16+36*r+6*gr+b;
+	}
+	flCol[0]=16;
 }
 
-void SvFrame()
+// Moves every animation one frame on, the rain and the fire at screen size.
+void SvStep()
 {
+	SvInit();
+	svT++;
+	for(int i=0;i<SV_NSTARS;i++)
+	{
+		svZ[i]=svZ[i]-0.012;
+		if(svZ[i]<0.03)SvStar(i,1.);
+	}
+	for(int c=0;c<tvW;c++)
+	{
+		mxHead[c]=mxHead[c]+mxSpeed[c];
+		if(mxHead[c]-mxLen[c]>tvH)SvDrop(c,tvH/2);
+	}
+	for(int k=0;k<tvW;k++)
+		mxCh[(ToyRandom()%tvH)*TV_MAXW+ToyRandom()%tvW]=SvRandomChar();
+	// fire: two rows of embers below the picture, each pixel the average of three
+	// under it and one two rows down, cooled a little more in a short picture
 	int w=tvW;
 	int h=tvH*2;
-	if(svKind==SV_PLASMA)
+	int cool=1+384/h;
+	for(int x=0;x<w;x++)
+	{
+		int v=0;
+		if(ToyRandom()%10<7)v=230+ToyRandom()%26;
+		flHeat[h*PIX_W+x]=v;
+		flHeat[(h+1)*PIX_W+x]=v;
+	}
+	for(int y=0;y<h;y++)
+	{
+		int row=y*PIX_W;
+		int below=row+PIX_W;
+		for(int x=0;x<w;x++)
+		{
+			int l=x-1;
+			if(l<0)l=0;
+			int r=x+1;
+			if(r>=w)r=w-1;
+			int v=(flHeat[below+l]+flHeat[below+x]+flHeat[below+r]+flHeat[below+PIX_W+x])/4;
+			v=v-ToyRandom()%cool;
+			if(v<0)v=0;
+			flHeat[row+x]=v;
+		}
+	}
+}
+
+// Draws kind in the cells x0,y0 .. x0+wc-1,y0+hc-1.
+void SvDraw(int kind, int x0, int y0, int wc, int hc)
+{
+	int w=wc;
+	int h=hc*2;
+	if(kind==SV_MATRIX)
+	{
+		for(int r=0;r<hc;r++)
+			for(int c=0;c<wc;c++)
+			{
+				float d=mxHead[c%TV_MAXW]-r;
+				int at=TV_C256|16;
+				int ch=' ';
+				if((d>=0.)&&(d<mxLen[c%TV_MAXW]))
+				{
+					int k=7-int(d*7./mxLen[c%TV_MAXW]);
+					if(d<1.)k=7;
+					if(k<0)k=0;
+					at=TV_C256|(mxGreen[k]<<8)|16;
+					if(d<1.)at=TV_C256|(231<<8)|16;
+					ch=mxCh[(r%TV_MAXH)*TV_MAXW+c%TV_MAXW];
+				}
+				TvPut(x0+c,y0+r,ch,at);
+			}
+		return;
+	}
+	if(kind==SV_PLASMA)
 	{
 		int t=svT;
 		for(int y=0;y<h;y++)
@@ -680,18 +822,35 @@ void SvFrame()
 			for(int x=0;x<w;x++)
 			{
 				int v=svSin[(x*4+t)&255]+a+svSin[((x+y)*3+t*3)&255]+svSin[((x*x+y*y*4)/64+t)&255];
-				svPix[row+x]=toyGrad[(v/4+t)%toyGradN];
+				svPix[row+x]=svPlasma[(v/4+t)%svPlasmaN];
+			}
+		}
+	}
+	else if(kind==SV_FLAME)
+	{
+		// the fire burns at screen size, scaled to fit
+		int fw=tvW;
+		int fh=tvH*2;
+		for(int y=0;y<h;y++)
+		{
+			int src=(y*fh/h)*PIX_W;
+			for(int x=0;x<w;x++)
+			{
+				// squared, so that cooling air goes dark rather than red
+				int v=flHeat[src+x*fw/w];
+				int n=(v*v)>>10;
+				if(n>31)n=31;
+				svPix[y*PIX_W+x]=flCol[n];
 			}
 		}
 	}
 	else
 	{
-		for(int i=0;i<PIX_N;i++)
-			svPix[i]=16;
+		for(int y=0;y<h;y++)
+			for(int x=0;x<w;x++)
+				svPix[y*PIX_W+x]=16;
 		for(int i=0;i<SV_NSTARS;i++)
 		{
-			svZ[i]=svZ[i]-0.012;
-			if(svZ[i]<0.03)SvStar(i,1.);
 			int sx=int(w/2+svX[i]/svZ[i]*w/2);
 			int sy=int(h/2+svY[i]/svZ[i]*w/2);
 			if((sx>=0)&&(sx<w)&&(sy>=0)&&(sy<h))
@@ -703,17 +862,64 @@ void SvFrame()
 				if(svZ[i]<0.3)
 					if(sx+1<w)svPix[sy*PIX_W+sx+1]=b;
 			}
-			else SvStar(i,1.);
 		}
 	}
-	svT++;
-	TvClip(0,0,tvW,tvH);
-	ToyShow(&svPix[0],0,0,w,h);
-	tvCurX=-1;
-	TvFlush();
+	ToyShow(&svPix[0],x0,y0,w,h);
 }
 
-// Starts the saver after svMinutes without input and runs its frames.
+void SvStart()
+{
+	SvInit();
+	svCur=svKind;
+	if(svCur>=SV_KINDS)svCur=ToyRandom()%SV_KINDS;
+	svActive=1;
+	svNext=0;
+	tvScreenTaken=1;
+}
+
+int SvWindows()
+{
+	int n=0;
+	for(int i=0;i<TV_MAXWIN;i++)
+		if(tvWin[i].used)
+			if(tvWin[i].type==W_SAVER)n++;
+	return n;
+}
+
+char* SvName(int kind)
+{
+	if(kind==SV_PLASMA)return "Plasma";
+	if(kind==SV_MATRIX)return "Matrix";
+	if(kind==SV_FLAME)return "Flame";
+	return "Stars";
+}
+
+// A saver in a window; field a is its kind. Space or 1-4 change it.
+void SvOpenWindow(int kind)
+{
+	if(kind>=SV_KINDS)kind=ToyRandom()%SV_KINDS;
+	int w=60;
+	int h=20;
+	if(w>tvW)w=tvW;
+	if(h>tvH-2)h=tvH-2;
+	int win=TvNewCentered(W_SAVER,SvName(kind),w,h,WF_RESIZE);
+	if(win<0)return;
+	tvWin[win].a=kind;
+	SvInit();
+}
+
+int SvWinKey(int win, int key)
+{
+	TWin& t=tvWin[win];
+	if((key==' ')||(key==K_ENTER))t.a=(t.a+1)%SV_KINDS;
+	else if((key>='1')&&(key<='4'))t.a=key-'1';
+	else return 0;
+	StrCpy(&t.title[0],SvName(t.a),48);
+	tvDirty=1;
+	return 1;
+}
+
+// Starts the full screen saver after svMinutes without input and runs the frames.
 void SvTick()
 {
 	int now=term_ms();
@@ -722,12 +928,20 @@ void SvTick()
 		svActive=0;
 		if(svOn)
 			if(now-tvLastInput>svMinutes*60000)SvStart();
-		return;
 	}
-	if(!svActive)return;
+	int windows=SvWindows();
+	if((!svActive)&&(windows==0))return;
 	if(now<svNext)return;
 	svNext=now+50;
-	SvFrame();
+	SvStep();
+	if(svActive)
+	{
+		TvClip(0,0,tvW,tvH);
+		SvDraw(svCur,0,0,tvW,tvH);
+		tvCurX=-1;
+		TvFlush();
+	}
+	else tvDirty=1;
 }
 
 #endif // TVTOYS_H

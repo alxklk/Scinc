@@ -10,6 +10,7 @@
 [[scinc::dynlink("term_dl","term_rows_wrapper")]]int term_rows();
 [[scinc::dynlink("term_dl","term_time_wrapper")]]int term_time(int what);
 [[scinc::dynlink("term_dl","term_ms_wrapper")]]int term_ms();
+[[scinc::dynlink("term_dl","term_truecolor_wrapper")]]int term_truecolor();
 
 [[scinc::dynlink("term_dl","fs_list_wrapper")]]int fs_list(char* path, char* resolved, int max, int showHidden);
 [[scinc::dynlink("term_dl","fs_name_wrapper")]]int fs_name(int i, char* out, int max);

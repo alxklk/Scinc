@@ -139,13 +139,52 @@ int tvVga[8];
 // tvFg and tvBg hold 0xFFRRGGBB for the 16 foreground and background indices, kept
 // apart because the same index plays different parts, such as black text on grey
 // dialogs and the black of shadows. The classic theme sends the terminal's own 16
-// colours, the others 24-bit colours.
+// colours, the others 24-bit colours, or the nearest of xterm's 256 when COLORTERM does
+// not say the terminal has 24-bit colour.
 #define TH_CLASSIC 0
 #define TH_DARK 1
 #define TH_MONO 2
 int tvTheme=0;
 int tvFg[16];
 int tvBg[16];
+int tvTrueColor=1;   // the terminal shows 24-bit colours; otherwise themes use xterm's 256
+int tvFg256[16];     // the nearest of those 256 to tvFg and tvBg
+int tvBg256[16];
+
+// The xterm 256 colour palette entry nearest to 0xRRGGBB: the 6x6x6 cube or the grey ramp.
+int TvTo256(int c)
+{
+	int v[3];
+	v[0]=(c>>16)&255;
+	v[1]=(c>>8)&255;
+	v[2]=c&255;
+	int idx=16;
+	int dist=0;
+	for(int k=0;k<3;k++)
+	{
+		// the cube levels are 0, 95, 135, 175, 215, 255
+		int n=0;
+		if(v[k]>=48)n=1;
+		if(v[k]>=115)n=(v[k]-35)/40;
+		if(n>5)n=5;
+		int lv=0;
+		if(n>0)lv=55+n*40;
+		if(k==0)idx=idx+n*36;
+		if(k==1)idx=idx+n*6;
+		if(k==2)idx=idx+n;
+		dist=dist+(v[k]-lv)*(v[k]-lv);
+	}
+	int avg=(v[0]+v[1]+v[2])/3;
+	int g=(avg-3)/10;
+	if(g<0)g=0;
+	if(g>23)g=23;
+	int gv=8+g*10;
+	int gd=0;
+	for(int k=0;k<3;k++)
+		gd=gd+(v[k]-gv)*(v[k]-gv);
+	if(gd<dist)return 232+g;
+	return idx;
+}
 
 // An attribute with TV_C256 set holds two colours of the xterm 256 colour palette,
 // (fg<<8)|bg, which themes leave alone. Pictures use it with half blocks, see TvPix.
@@ -204,6 +243,11 @@ void TvSetTheme(int n)
 		tvTheme=TH_CLASSIC;
 		TvParsePal(&tvFg[0],vga);
 		TvParsePal(&tvBg[0],vga);
+	}
+	for(int i=0;i<16;i++)
+	{
+		tvFg256[i]=TvTo256(tvFg[i]);
+		tvBg256[i]=TvTo256(tvBg[i]);
 	}
 	// the cells keep their attributes, so all of them are sent again
 	for(int i=0;i<TV_CELLS;i++)
@@ -320,6 +364,15 @@ void OutAttr(int at)
 	}
 	int fg=at&15;
 	int bg=(at>>4)&15;
+	if((tvTheme!=TH_CLASSIC)&&!tvTrueColor)
+	{
+		OutStr("\x1b[38;5;");
+		OutInt(tvFg256[fg]);
+		OutStr(";48;5;");
+		OutInt(tvBg256[bg]);
+		OutByte('m');
+		return;
+	}
 	if(tvTheme!=TH_CLASSIC)
 	{
 		OutStr("\x1b[38;2;");
@@ -787,8 +840,9 @@ int comboSel=0;
 int comboTop=0;
 
 int dragWin=-1;
-int dragMode=0;      // 1 move, 2 resize, 3 pressed button, 4 captured by the app, 5 list thumb,
-                     // 6 slider
+int dragMode=0;      // 1 move, 2 resize, 3 pressed control, 4 captured by the app, 5 list thumb,
+                     // 6 slider, 7 pressed close or zoom box (dragCtl 1 or 2), 8 pressed
+                     // status line item (dragCtl its number); 3, 7 and 8 act on release
 int dragDX=0;
 int dragDY=0;
 int dragCtl=-1;
@@ -1360,13 +1414,21 @@ void TvDrawWin(int id)
 	}
 	if(active&&!dragging)
 	{
+		// a pressed box shows in yellow until the button is released
+		int boxAt=at&0xF0|0x0A;
+		int zoomAt=boxAt;
+		if((dragMode==7)&&(dragWin==id)&&pressedInside)
+		{
+			if(dragCtl==1)boxAt=at&0xF0|0x0E;
+			if(dragCtl==2)zoomAt=at&0xF0|0x0E;
+		}
 		TvPut(t.x+2,t.y,'[',at);
-		TvPut(t.x+3,t.y,G_BOX,at&0xF0|0x0A);
+		TvPut(t.x+3,t.y,G_BOX,boxAt);
 		TvPut(t.x+4,t.y,']',at);
 		if(t.flags&WF_RESIZE)
 		{
 			TvPut(t.x+t.w-5,t.y,'[',at);
-			TvPut(t.x+t.w-4,t.y,G_ZOOM,at&0xF0|0x0A);
+			TvPut(t.x+t.w-4,t.y,G_ZOOM,zoomAt);
 			TvPut(t.x+t.w-3,t.y,']',at);
 			TvPut(t.x+t.w-1,t.y+t.h-1,G_BR,at&0xF0|0x0A);
 			TvPut(t.x+t.w-2,t.y+t.h-1,G_HORZ,at&0xF0|0x0A);
@@ -1587,7 +1649,14 @@ void TvDrawStatus()
 	int x=1;
 	for(int i=0;i<tvNStatus;i++)
 	{
-		x=TvHotText(x,tvH-1,&tvStatus[i].text[0],0x70,0x74);
+		int at=0x70;
+		int hot=0x74;
+		if((dragMode==8)&&(dragCtl==i)&&pressedInside)
+		{
+			at=0x20;
+			hot=0x24;
+		}
+		x=TvHotText(x,tvH-1,&tvStatus[i].text[0],at,hot);
 		x=x+2;
 	}
 }
@@ -2235,7 +2304,12 @@ void TvCtlMouseDown(int win, int id, int mx, int my)
 		pressedInside=1;
 	}
 	else if((c.type==C_CHECK)||(c.type==C_RADIO))
-		TvSelect(win,id);
+	{
+		dragMode=3;
+		dragCtl=id;
+		dragWin=win;
+		pressedInside=1;
+	}
 	else if(c.type==C_SLIDER)
 	{
 		TvSliderSet(win,id,TvSliderAt(win,id,mx));
@@ -2457,6 +2531,33 @@ int TvMenuMouse(int ev)
 	return 1;
 }
 
+// The close (1) or zoom (2) box of window win under x,y, or 0.
+int TvFramePart(int win, int x, int y)
+{
+	if(win<0)return 0;
+	if(TvWinAt(x,y)!=win)return 0;
+	TWin& t=tvWin[win];
+	int rx=x-t.x;
+	if(y!=t.y)return 0;
+	if((rx>=2)&&(rx<=4))return 1;
+	if(t.flags&WF_RESIZE)
+		if((rx>=t.w-5)&&(rx<=t.w-3))return 2;
+	return 0;
+}
+
+// The status line item at column x, or -1.
+int TvStatusAt(int x)
+{
+	int sx=1;
+	for(int i=0;i<tvNStatus;i++)
+	{
+		int l=HotLen(&tvStatus[i].text[0]);
+		if((x>=sx)&&(x<sx+l))return i;
+		sx=sx+l+2;
+	}
+	return -1;
+}
+
 void TvMouse()
 {
 	int ev=evType;
@@ -2507,14 +2608,35 @@ void TvMouse()
 			dragMode=0;
 			dragWin=-1;
 			dragCtl=-1;
+			if(!pressedInside)return;
 			if(mode==3)
-				if(tvCtl[ctl].used&&pressedInside)
-					TvFire(win,ctl);
+				if(tvCtl[ctl].used)TvSelect(win,ctl);
+			if(mode==7)
+				if(tvWin[win].used)
+				{
+					if(ctl==2)TvZoom(win);
+					else if(tvWin[win].modal)tvWin[win].result=CM_CANCEL;
+					else if(TvAppCanClose(win))TvClose(win);
+				}
+			if(mode==8)
+			{
+				if(evY==tvH-1)TvCommand(tvStatus[ctl].cmd);
+			}
 			return;
 		}
 		if(dragMode==3)
 		{
 			pressedInside=(TvCtlAt(dragWin,evX,evY)==dragCtl);
+			return;
+		}
+		if(dragMode==7)
+		{
+			pressedInside=(TvFramePart(dragWin,evX,evY)==dragCtl);
+			return;
+		}
+		if(dragMode==8)
+		{
+			pressedInside=(evY==tvH-1)&&(TvStatusAt(evX)==dragCtl);
 			return;
 		}
 		if(dragMode==5)
@@ -2590,16 +2712,13 @@ void TvMouse()
 	if(evY==tvH-1)
 	{
 		if(modal)return;
-		int x=1;
-		for(int i=0;i<tvNStatus;i++)
+		int item=TvStatusAt(evX);
+		if(item>=0)
 		{
-			int l=HotLen(&tvStatus[i].text[0]);
-			if((evX>=x)&&(evX<x+l))
-			{
-				TvCommand(tvStatus[i].cmd);
-				return;
-			}
-			x=x+l+2;
+			dragMode=8;
+			dragCtl=item;
+			dragWin=-1;
+			pressedInside=1;
 		}
 		return;
 	}
@@ -2613,18 +2732,15 @@ void TvMouse()
 	int ry=evY-t.y;
 	if(ry==0)
 	{
-		if((rx>=2)&&(rx<=4))
+		int part=TvFramePart(win,evX,evY);
+		if(part>0)
 		{
-			if(modal)t.result=CM_CANCEL;
-			else if(TvAppCanClose(win))TvClose(win);
+			dragMode=7;
+			dragWin=win;
+			dragCtl=part;
+			pressedInside=1;
 			return;
 		}
-		if(t.flags&WF_RESIZE)
-			if((rx>=t.w-5)&&(rx<=t.w-3))
-			{
-				TvZoom(win);
-				return;
-			}
 		dragWin=win;
 		dragMode=1;
 		dragDX=rx;
@@ -2995,6 +3111,7 @@ void TvInit()
 	tvH=GfxRows();
 	return;
 #endif
+	tvTrueColor=term_truecolor();
 	tvW=term_cols();
 	tvH=term_rows();
 	if(tvW>TV_MAXW)tvW=TV_MAXW;

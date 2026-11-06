@@ -1,5 +1,8 @@
 // A graphic backend for tv.h: the same cell grid, drawn in a window instead of a
-// terminal. Text and symbols use the stroke font from graphic/font.h and letters.h.
+// terminal. Text and symbols use the stroke font from graphic/font.h and letters.h,
+// or with TV_GFX_RASTER the interpreter's 9x16 bitmap font through stexts, which is
+// much quicker, and with TV_GFX_SMALL its 6x12 one. stexts draws only ASCII, so
+// tvrfont9.h and tvrfont6.h hold the other glyphs.
 // Box lines, shades and blocks are filled rectangles on whole pixels instead of the
 // font's, so they join exactly from cell to cell.
 //
@@ -9,18 +12,44 @@
 #ifndef TVGFX_H
 #define TVGFX_H
 
-#ifndef TV_GFX_COLS
-#define TV_GFX_COLS 100
+// Scinc's preprocessor loses track of an #ifdef nested in a skipped block, so these
+// settings use none: each mode sets GFX_CW first and the later ones see it is set.
+#ifdef TV_GFX_SMALL
+#define TV_GFX_RASTER
+#define GFX_CW 6
+#define GFX_CH 12
+#define GFX_STEXT 0
+#define GFX_COLS 150
+#define GFX_ROWS 42
+#define GFX_FONT6
 #endif
-#ifndef TV_GFX_ROWS
-#define TV_GFX_ROWS 32
+#ifdef TV_GFX_RASTER
+#define GFX_RASTER_ON
 #endif
-
+#ifndef GFX_RASTER_ON
 #define GFX_CW 10
 #define GFX_CH 20
+#define GFX_STROKE
+#endif
+#ifndef GFX_CW
+#define GFX_CW 9
+#define GFX_CH 16
+#define GFX_STEXT 1
+#define GFX_FONT9
+#endif
+#ifndef GFX_COLS
+#define GFX_COLS 100
+#define GFX_ROWS 32
+#endif
+#ifndef TV_GFX_COLS
+#define TV_GFX_COLS GFX_COLS
+#endif
+#ifndef TV_GFX_ROWS
+#define TV_GFX_ROWS GFX_ROWS
+#endif
 
-#define G_SCREEN_WIDTH 1000
-#define G_SCREEN_HEIGHT 640
+#define G_SCREEN_WIDTH (TV_GFX_COLS*GFX_CW)
+#define G_SCREEN_HEIGHT (TV_GFX_ROWS*GFX_CH)
 
 #ifndef G_SCREEN_SCALE
 #define G_SCREEN_SCALE 1
@@ -30,12 +59,22 @@
 #define NO_GREEDY_EVENT
 #include "graphics.h"
 #include "../../ws.h"
+#ifdef GFX_FONT6
+#include "tvrfont6.h"
+#endif
+#ifdef GFX_FONT9
+#include "tvrfont9.h"
+#endif
+#ifdef GFX_STROKE
 #include "../../graphic/font.h"
 #include "../../graphic/letters.h"
 #include "../../graphic/gtext.h"
+#endif
 
 Graph tvG;
+#ifndef TV_GFX_RASTER
 CFont* gfxFont;
+#endif
 int gfxList[TV_CELLS];
 int gfxN=0;
 int gfxCurX=-1;
@@ -53,10 +92,12 @@ int tvCloseCmd=0;    // the command the close button sends; 0 quits at once
 
 void GfxInit()
 {
+#ifndef TV_GFX_RASTER
 	gfxFont=(CFont*)malloc(sizeof(CFont));
 	CFontMaker fm;
 	fm.Init(*gfxFont,6);
 	MakeLetters(fm);
+#endif
 	SetEventCallback([](SScincEvent e)->int
 	{
 		if((e.type=='WDEL')||(e.type=='WDST'))
@@ -241,6 +282,67 @@ int GfxShape(int ch, int px, int py, int fg, int bg)
 // ---------------------------------------------------------------- glyphs
 
 // the font's character cell (x -1..5, y -4..12) stretched over a 10x20 cell
+#ifdef TV_GFX_RASTER
+char gfxOne[2];
+
+// ASCII through stexts, other characters from the glyph table as runs of pixels,
+// and anything neither has as a small box.
+void GfxGlyph(int ch, int px, int py, int col)
+{
+	if((ch>32)&&(ch<127))
+	{
+		gfxOne[0]=ch;
+		gfxOne[1]=0;
+		stexts(&gfxOne[0],px,py,col,GFX_STEXT);
+		return;
+	}
+	int lo=0;
+	int hi=RF_N-1;
+	int k=-1;
+	while(lo<=hi)
+	{
+		int m=(lo+hi)/2;
+		int c=rfCode[m];
+		if(c==ch)
+		{
+			k=m;
+			break;
+		}
+		if(c<ch)lo=m+1;
+		else hi=m-1;
+	}
+	if(k<0)
+	{
+		int bw=GFX_CW-4;
+		int bh=GFX_CH/2;
+		int by=py+GFX_CH/4;
+		tvG.fillrect(px+2,by,bw,1,col);
+		tvG.fillrect(px+2,by+bh-1,bw,1,col);
+		tvG.fillrect(px+2,by,1,bh,col);
+		tvG.fillrect(px+1+bw,by,1,bh,col);
+		return;
+	}
+	for(int r=0;r<RF_H;r++)
+	{
+		int v=rfBits[k*RF_H+r];
+		int start=-1;
+		for(int x=0;x<=RF_W;x++)
+		{
+			int on=0;
+			if(x<RF_W)on=(v>>(RF_W-1-x))&1;
+			if(on)
+			{
+				if(start<0)start=x;
+			}
+			else if(start>=0)
+			{
+				tvG.fillrect(px+start,py+r,x-start,1,col);
+				start=-1;
+			}
+		}
+	}
+}
+#else
 float gfxSX=GFX_CW/6.0;
 float gfxSY=GFX_CH/16.0;
 
@@ -284,6 +386,7 @@ void GfxGlyph(int ch, int px, int py, int col)
 	tvG.width(1.2,1.2);
 	tvG.stroke();
 }
+#endif
 
 // ---------------------------------------------------------------- frames
 
