@@ -1,8 +1,9 @@
 // A graphic backend for tv.h: the same cell grid, drawn in a window instead of a
 // terminal. Text and symbols use the stroke font from graphic/font.h and letters.h,
 // or with TV_GFX_RASTER the interpreter's 9x16 bitmap font through stexts, which is
-// much quicker, and with TV_GFX_SMALL its 6x12 one. stexts draws only ASCII, so
-// tvrfont9.h and tvrfont6.h hold the other glyphs.
+// much quicker, and with TV_GFX_SMALL its 6x12 one. Both fonts hold ASCII, the IBM
+// PC symbols and Windows-1251 (tvrmap.h says where each character is); tvrfont9.h
+// and tvrfont6.h hold the Latin-1 letters and the few signs they do not have.
 // Box lines, shades and blocks are filled rectangles on whole pixels instead of the
 // font's, so they join exactly from cell to cell.
 //
@@ -59,6 +60,9 @@
 #define NO_GREEDY_EVENT
 #include "graphics.h"
 #include "../../ws.h"
+#ifdef GFX_RASTER_ON
+#include "tvrmap.h"
+#endif
 #ifdef GFX_FONT6
 #include "tvrfont6.h"
 #endif
@@ -284,14 +288,37 @@ int GfxShape(int ch, int px, int py, int fg, int bg)
 // the font's character cell (x -1..5, y -4..12) stretched over a 10x20 cell
 #ifdef TV_GFX_RASTER
 char gfxOne[2];
+char gfxRun[TV_MAXW+1];
 
-// ASCII through stexts, other characters from the glyph table as runs of pixels,
-// and anything neither has as a small box.
+// The byte that draws ch in the interpreter's fonts, or 0 when they do not have it.
+int GfxByte(int ch)
+{
+	if(ch<128)
+	{
+		if(ch>32)return ch;
+		return 0;
+	}
+	int lo=0;
+	int hi=RM_N-1;
+	while(lo<=hi)
+	{
+		int m=(lo+hi)/2;
+		int c=rmCode[m];
+		if(c==ch)return rmByte[m];
+		if(c<ch)lo=m+1;
+		else hi=m-1;
+	}
+	return 0;
+}
+
+// One character: through stexts when the font has it, otherwise from the glyph
+// table as runs of pixels, and anything neither has as a small box.
 void GfxGlyph(int ch, int px, int py, int col)
 {
-	if((ch>32)&&(ch<127))
+	int b=GfxByte(ch);
+	if(b)
 	{
-		gfxOne[0]=ch;
+		gfxOne[0]=b;
 		gfxOne[1]=0;
 		stexts(&gfxOne[0],px,py,col,GFX_STEXT);
 		return;
@@ -432,6 +459,42 @@ void GfxFlush()
 			}
 		}
 	}
+#ifdef TV_GFX_RASTER
+	// cells side by side in one colour go to stexts as one string; the bitmap
+	// glyphs fill their cells exactly, so nothing needs clipping
+	int k=0;
+	while(k<gfxN)
+	{
+		int i=gfxList[k];
+		int fg=TvAtFg(tvAt[i]);
+		int px=(i%TV_MAXW)*GFX_CW;
+		int py=(i/TV_MAXW)*GFX_CH;
+		int b=GfxByte(tvCh[i]);
+		k++;
+		if(!b)
+		{
+			GfxGlyph(tvCh[i],px,py,fg);
+			continue;
+		}
+		gfxRun[0]=b;
+		int n=1;
+		while(k<gfxN)
+		{
+			int j=gfxList[k];
+			if(j!=i+n)break;
+			if(j%TV_MAXW==0)break;
+			if(TvAtFg(tvAt[j])!=fg)break;
+			int b2=GfxByte(tvCh[j]);
+			if(!b2)break;
+			gfxRun[n]=b2;
+			n++;
+			k++;
+		}
+		gfxRun[n]=0;
+		stexts(&gfxRun[0],px,py,fg,GFX_STEXT);
+	}
+#endif
+#ifndef TV_GFX_RASTER
 	// the strokes, each clipped to its cell, since some glyphs reach a little
 	// past it and a neighbour that does not change would keep those pixels
 	// (one small stroke per cell is also faster than one big path per colour)
@@ -444,6 +507,7 @@ void GfxFlush()
 		GfxGlyph(tvCh[i],px,py,TvAtFg(tvAt[i]));
 	}
 	tvG.UnClip();
+#endif
 	if(gfxCurX>=0)
 	{
 		int i=gfxCurY*TV_MAXW+gfxCurX;

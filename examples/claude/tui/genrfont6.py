@@ -5,9 +5,10 @@ import re,unicodedata
 
 def load(path):
     s=open(path).read()
+    c0=int(re.search(r'6,12,(\d+),',s).group(1))
     s=s[s.index('font6x12Data[]={'):]
     rows=re.findall(r'BIN8\("([^"]*)"\)',s)
-    return {32+i:[r.ljust(6)[:6] for r in rows[i*12:(i+1)*12]] for i in range(len(rows)//12)}
+    return {c0+i:[r.ljust(6)[:6] for r in rows[i*12:(i+1)*12]] for i in range(len(rows)//12)}
 
 def A(top,art):
     out=[' '*6]*12
@@ -29,9 +30,10 @@ def build(path):
     f=load(path)
     L=lambda c:f[ord(c)]
     gl={}
-    # the font's own symbols above ASCII
-    for b,u in ((0xF8,0xB0),(0xF9,0x2219),(0xFA,0xB7)):
-        gl[u]=f[b]
+    # the symbols the font had at their IBM PC places before it became Windows-1251
+    gl[0xB0]=A(1,"..**../.*..*./.*..*./..**..")
+    gl[0x2219]=A(5,"..**../..**..")
+    gl[0xB7]=A(5,"..**../..**..")
     # ---- Latin-1 accents: capitals in rows 0-1, small letters in rows 1-3
     capacc={'grave':".*...",'acute':"...*.",'circ':"..*../.*.*.",'tilde':".**.*/*..*.",'diaer':".*.*.",'ring':"..*../.*.*."}
     lowacc={'grave':".*.../..*..",'acute':"...*./..*..",'circ':"..*../.*.*.",'tilde':".**.*/*..*.",'diaer':"/.*.*.",'ring':"..*../.*.*./..*.."}
@@ -161,6 +163,22 @@ def build(path):
     cy['ґ']=over(cy['г'],3,"....*")
     cy['Ў']=over(cy['У'],0,".***.")
     cy['ў']=over(L('y'),2,"*...*/.***.")
+    # Serbian and Macedonian, the rest of Windows-1251
+    cy['Ѓ']=over(cy['Г'],0,"...*.")
+    cy['ѓ']=over(cy['г'],2,"...*./..*..")
+    cy['Ќ']=over(cy['К'],0,"...*.")
+    cy['ќ']=over(cy['к'],2,"...*./..*..")
+    for k,v in (('Ј','J'),('ј','j'),('Ѕ','S'),('ѕ','s')): cy[k]=L(v)
+    cy['Ћ']=U("****../.*..../.*..../.***../.*..*./.*..*./.*..*.")
+    cy['Ђ']=A(2,"****../.*..../.*..../.***../.*..*./.*..*./.*..*./....*./...*..")
+    cy['ћ']=A(2,".*..../***.../.*..../.***../.*..*./.*..*./.*..*.")
+    cy['ђ']=A(2,".*..../***.../.*..../.***../.*..*./.*..*./.*..*./....*./...*..")
+    cy['Џ']=U("*...*/*...*/*...*/*...*/*...*/*...*/*****/..*..")
+    cy['џ']=l("*...*/*...*/*...*/*...*/*****/..*..")
+    cy['Љ']=U("..**../.*.*../.*.*../.*.**./.*.*.*/.*.*.*/*..**.")
+    cy['Њ']=U("*..*../*..*../*..*../*****./*..*.*/*..*.*/*..**.")
+    cy['љ']=l("..**../.*.*../.*.**./.*.*.*/*..**.")
+    cy['њ']=l("*..*../*..*../*****./*..*.*/*..**.")
     for k,v in cy.items(): gl[ord(k)]=v
     # ---- the IBM PC symbols and punctuation
     sym={

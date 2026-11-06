@@ -2,7 +2,7 @@
 # Builds tvrfont9.h and tvrfont6.h, the glyphs tvgfx.h's raster modes draw themselves
 # because stext skips bytes above 127: from ground/font9x16.h plus glyphs drawn here,
 # and for 6x12 from genrfont6.py.
-import os,re,sys,unicodedata
+import os,re,sys,unicodedata,collections
 here=os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0,here)
 src=open(os.path.join(here,'../../../../ground/font9x16.h')).read()
@@ -10,15 +10,26 @@ rows=re.findall(r'"([^"]*)"',src[src.index('font9x16Data[]={'):])
 g=[rows[i*16:(i+1)*16] for i in range(256)]
 low=[0,0x263A,0x263B,0x2665,0x2666,0x2663,0x2660,0x2022,0x25D8,0x25CB,0x25D9,0x2642,0x2640,0x266A,0x266B,0x263C,
      0x25BA,0x25C4,0x2195,0x203C,0x00B6,0x00A7,0x25AC,0x21A8,0x2191,0x2193,0x2192,0x2190,0x221F,0x2194,0x25B2,0x25BC]
+# the 256 characters of both interpreter fonts (see genfonts.py): byte -> Unicode
+def layout():
+    m={0:None,0x7F:0x2302}
+    for b in range(1,32): m[b]=low[b]
+    for b in range(32,127): m[b]=b
+    for b in range(128,256):
+        try: m[b]=ord(bytes([b]).decode('cp1251'))
+        except UnicodeDecodeError: m[b]=None
+    return m
 glyphs={}
 for b in range(1,32): glyphs[low[b]]=g[b]
 glyphs[0x2302]=g[127]
+# the font once had one placeholder glyph in many places of 0x80..0xBF; it is left out
+seen=collections.Counter(tuple(g[b]) for b in range(128,256))
 for b in range(128,256):
     try: u=ord(bytes([b]).decode('cp1251'))
     except UnicodeDecodeError: continue
-    # most of 0x80..0xBF is one placeholder glyph, which is left out
-    if g[b]==g[0xA8]: continue
+    if seen[tuple(g[b])]>1: continue
     if u>=0x80 and u not in glyphs: glyphs[u]=g[b]
+glyphs[0xA0]=[' '*9]*16
 def art(lines): 
     lines=[l.ljust(9,'.') for l in lines]
     return [l.replace('.',' ') for l in lines]
@@ -130,6 +141,24 @@ uk[0x40E]=withacc(cyr('У'),0,breve)
 uk[0x45E]=withacc(cyr('у'),2,breve)
 gr=cyr('С'); put(gr,6,[".*****..."]); uk[0x404]=rows_of(gr)
 gr=cyr('с'); put(gr,8,[".*****..."]); uk[0x454]=rows_of(gr)
+# Serbian and Macedonian, the rest of Windows-1251
+gr=cyr('Г'); uk[0x403]=withacc(gr,0,ACC['acute'])
+gr=cyr('г'); uk[0x453]=withacc(gr,2,ACC['acute'])
+gr=cyr('К'); uk[0x40C]=withacc(gr,0,ACC['acute'])
+gr=cyr('к'); uk[0x45C]=withacc(gr,2,ACC['acute'])
+for u,c in ((0x408,'J'),(0x458,'j'),(0x405,'S'),(0x455,'s')): uk[u]=g[ord(c)]
+tsh=["...**....","...*****.","...**..**","...**..**","...**..**","...**..**","..****.**"]
+uk[0x40B]=art16(2,[".******..",".*.**.*..","...**...."]+tsh)
+uk[0x402]=art16(2,[".******..",".*.**.*..","...**...."]+tsh+[".......**",".....***."])
+tshl=["..**.....","******...","..**.....","..**.**..","..***.**.","..**..**.","..**..**.","..**..**.","..**..**.",".***..**."]
+uk[0x45B]=art16(2,tshl)
+uk[0x452]=art16(2,tshl+["......**.","....***.."])
+uk[0x40F]=art16(2,[".**...**."]*9+[".*******.","....*....","....*...."])
+uk[0x45F]=art16(5,[".**...**."]*6+[".*******.","....*....","....*...."])
+uk[0x409]=art16(2,["..****...",".**.**...",".**.**...",".**.**...",".**.****.",".**.**.**",".**.**.**",".**.**.**",".**.**.**","**..****."])
+uk[0x40A]=art16(2,[".**.**...",".**.**...",".**.**...",".**.**...",".*******.",".**.**.**",".**.**.**",".**.**.**",".**.**.**",".**.****."])
+uk[0x459]=art16(5,["..****...",".**.**...",".**.****.",".**.**.**",".**.**.**",".**.**.**","**..****."])
+uk[0x45A]=art16(5,[".**.**...",".**.**...",".*******.",".**.**.**",".**.**.**",".**.**.**",".**.****."])
 punct={
 0x2013:art16(8,[".*******."]),
 0x2014:art16(8,["*********"]),
@@ -177,14 +206,33 @@ def write(name,glyphs,w,h,lines):
     print(name,len(codes),"glyphs, Cyrillic",sum(1 for u in codes if 0x400<=u<0x500),
           ", Latin-1",sum(1 for u in codes if 0xA0<=u<0x100))
 
-write('tvrfont9.h',glyphs,9,16,[
-    "9x16 glyphs for tvgfx.h's raster mode, for the characters stext cannot draw:",
-    "the Windows-1251 letters and IBM PC symbols of ground/font9x16.h, with Latin-1,",
-    "Ukrainian letters, punctuation and a few signs added in the same style."])
+def writemap():
+    pairs=sorted((u,b) for b,u in layout().items() if u is not None and u>=0x80)
+    def wrap(vals,per):
+        return ",\n".join("\t"+",".join(vals[i:i+per]) for i in range(0,len(vals),per))
+    out=["// Where the characters above ASCII are in the interpreter's two bitmap fonts,",
+         "// which genfonts.py lays out alike: IBM PC symbols at 1..31 and 127, Windows-1251",
+         "// above 127. rmCode is sorted for a binary search. Made by genrfont.py, do not edit.",
+         "#ifndef TVRMAP_H\n#define TVRMAP_H\n",
+         "#define RM_N %d\n"%len(pairs),
+         "int rmCode[%d]={\n%s};\n"%(len(pairs),wrap(["0x%04X"%u for u,b in pairs],12)),
+         "int rmByte[%d]={\n%s};\n"%(len(pairs),wrap([str(b) for u,b in pairs],16)),
+         "#endif // TVRMAP_H"]
+    open(os.path.join(here,'tvrmap.h'),'w').write("\n".join(out)+"\n")
+    print('tvrmap.h',len(pairs),'characters')
 
-import genrfont6
-g6=genrfont6.build(os.path.join(here,'../../../../ground/font6x12.h'))
-write('tvrfont6.h',g6,6,12,[
-    "6x12 glyphs for tvgfx.h's small raster mode, for the characters stext cannot draw.",
-    "ground/font6x12.h has only ASCII and the IBM PC box characters, so these are",
-    "composed from its letters or drawn in genrfont6.py: Cyrillic, Latin-1, symbols."])
+if __name__=='__main__':
+  # the fonts draw these themselves, so the tables leave them out
+  infont=set(u for u in layout().values() if u is not None)
+  writemap()
+  write('tvrfont9.h',{u:r for u,r in glyphs.items() if u not in infont},9,16,[
+    "9x16 glyphs for tvgfx.h's raster mode, for the characters the interpreter's",
+    "font9x16 does not have (see tvrmap.h for those it has): Latin-1 letters and",
+    "signs, drawn in the font's style."])
+
+  import genrfont6
+  g6=genrfont6.build(os.path.join(here,'../../../../ground/font6x12.h'))
+  write('tvrfont6.h',{u:r for u,r in g6.items() if u not in infont},6,12,[
+    "6x12 glyphs for tvgfx.h's small raster mode, for the characters the interpreter's",
+    "font6x12 does not have (see tvrmap.h for those it has): Latin-1 letters and",
+    "signs, drawn in genrfont6.py."])
