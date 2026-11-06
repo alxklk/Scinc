@@ -8,7 +8,11 @@
 #ifndef TVAPPS_H
 #define TVAPPS_H
 
+// guarded here too: Scinc reads a header again on every #include, and it can only
+// read 16 files in all
+#ifndef TV_H
 #include "tv.h"
+#endif
 
 #define W_SONAR 43
 #define W_HEX 44

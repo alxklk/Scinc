@@ -11,7 +11,19 @@
 // stroke font, tvdemo_raster.cpp and tvdemo_small.cpp with the interpreter's quicker
 // 9x16 and 6x12 bitmap fonts.
 #include <stdio.h>
+// tvdemo writes every hook of tv.h itself
+#define TVAPP_DRAW
+#define TVAPP_KEY
+#define TVAPP_MOUSE
+#define TVAPP_COMMAND
+#define TVAPP_BUTTON
+#define TVAPP_CLOSED
+#define TVAPP_LISTITEM
+#define TVAPP_CANCLOSE
+#define TVAPP_PASTE
+#define TVAPP_TICK
 #include "tv.h"
+#include "tvapp.h"
 #include "tvedit.h"
 #include "circuitfall.h"
 #include "tvtoys.h"
@@ -1657,19 +1669,10 @@ void TvAppCommand(int cmd)
 
 int main(int argc, pchar* argv)
 {
-#ifdef TV_GFX
-	tvCloseCmd=CM_QUIT;
-#else
-	if(!term_open())
-	{
-		printf("tvdemo needs an interactive terminal.\n");
-		return 1;
-	}
-#endif
+	if(!TvStart(CM_QUIT))return 1;
 	EdInit();
 	StrCpy(&ctlName[0],"Scinc",64);
 	fdDir[0]=0;
-	TvInit();
 	PrefsLoad();
 	TvSetTheme(prefTheme);
 	TickUpdate();
@@ -1780,6 +1783,6 @@ int main(int argc, pchar* argv)
 		OpenHelp();
 
 	TvRun(-1);
-	TvDone();
+	TvStop();
 	return 0;
 }

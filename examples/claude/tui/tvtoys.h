@@ -6,7 +6,11 @@
 #ifndef TVTOYS_H
 #define TVTOYS_H
 
+// guarded here too: Scinc reads a header again on every #include, and it can only
+// read 16 files in all
+#ifndef TV_H
 #include "tv.h"
+#endif
 
 #define W_MANDEL 41
 #define W_LIFE 42

@@ -776,6 +776,7 @@ int TvVBarPos(int y, int h, int max, int my)
 
 #define WF_RESIZE 1
 #define WF_DIALOG 2
+#define WF_HELP 4    // the cyan of Turbo Vision's help windows
 
 struct TWin
 {
@@ -1393,6 +1394,12 @@ void TvDrawWin(int id)
 		bg=0x70;
 		fr=0x7F;
 		pas=0x78;
+	}
+	if(t.flags&WF_HELP)
+	{
+		bg=0x30;
+		fr=0x3F;
+		pas=0x37;
 	}
 	TvClip(0,1,tvW,tvH-1);
 	TvShadow(t.x,t.y,t.w,t.h);
