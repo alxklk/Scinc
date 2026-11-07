@@ -191,15 +191,40 @@ int TvTo256(int c)
 #define TV_C256 0x10000
 int tvRgb256[256];
 
+// An attribute with TV_RGB set holds two colours of 15 bits, 5 per channel,
+// (fg<<15)|bg: 32 levels a channel where the 256 palette has 6. Sent as 24-bit colour,
+// or as the nearest of the 256 when the terminal has no 24-bit colour. Test it before
+// TV_C256, whose bit lies inside the fg here. See TvPixRgb.
+#define TV_RGB 0x40000000
+
+// 0xRRGGBB to 15 bits and back (to 0xFFRRGGBB).
+int TvTo15(int c)
+{
+	return (((c>>19)&31)<<10)|(((c>>11)&31)<<5)|((c>>3)&31);
+}
+
+int TvFrom15(int v)
+{
+	int r=(v>>10)&31;
+	int g=(v>>5)&31;
+	int b=v&31;
+	r=(r<<3)|(r>>2);
+	g=(g<<3)|(g>>2);
+	b=(b<<3)|(b>>2);
+	return 0xFF000000|(r<<16)|(g<<8)|b;
+}
+
 // The 0xFFRRGGBB colours of a cell attribute.
 int TvAtFg(int at)
 {
+	if(at&TV_RGB)return TvFrom15((at>>15)&32767);
 	if(at&TV_C256)return tvRgb256[(at>>8)&255];
 	return tvFg[at&15];
 }
 
 int TvAtBg(int at)
 {
+	if(at&TV_RGB)return TvFrom15(at&32767);
 	if(at&TV_C256)return tvRgb256[at&255];
 	return tvBg[(at>>4)&15];
 }
@@ -353,6 +378,27 @@ void OutRgb(int c)
 
 void OutAttr(int at)
 {
+	if(at&TV_RGB)
+	{
+		int f=TvAtFg(at);
+		int b=TvAtBg(at);
+		if(tvTrueColor)
+		{
+			OutStr("\x1b[38;2;");
+			OutRgb(f);
+			OutStr(";48;2;");
+			OutRgb(b);
+		}
+		else
+		{
+			OutStr("\x1b[38;5;");
+			OutInt(TvTo256(f));
+			OutStr(";48;5;");
+			OutInt(TvTo256(b));
+		}
+		OutByte('m');
+		return;
+	}
 	if(at&TV_C256)
 	{
 		OutStr("\x1b[38;5;");
@@ -480,6 +526,16 @@ void TvPix(int x, int y, int top, int bottom)
 {
 	if(top==bottom)TvPut(x,y,' ',TV_C256|bottom);
 	else TvPut(x,y,G_UPHALF,TV_C256|(top<<8)|bottom);
+}
+
+// Two square pixels in one cell, top and bottom, as 0xRRGGBB (kept to 5 bits a
+// channel, see TV_RGB).
+void TvPixRgb(int x, int y, int top, int bottom)
+{
+	int t=TvTo15(top);
+	int b=TvTo15(bottom);
+	if(t==b)TvPut(x,y,' ',TV_RGB|(b<<15)|b);
+	else TvPut(x,y,G_UPHALF,TV_RGB|(t<<15)|b);
 }
 
 int StrLen(char* s)
@@ -1468,7 +1524,7 @@ void TvDrawWin(int id)
 // ---------------------------------------------------------------- menus and status line
 
 #define TV_MAXMENU 16
-#define TV_MAXITEM 96
+#define TV_MAXITEM 128
 #define TV_MAXSTATUS 10
 
 struct TMenu
@@ -1476,7 +1532,7 @@ struct TMenu
 	char title[16];
 	int first;
 	int count;
-	int popup;  // a context menu, not on the menu bar
+	int popup;  // 1 a context menu, 2 a submenu; neither is on the menu bar
 };
 
 struct TItem
@@ -1485,6 +1541,7 @@ struct TItem
 	char hint[12];
 	int cmd;
 	int key;
+	int sub;    // the submenu this item opens, or -1
 };
 
 struct TStatus
@@ -1505,6 +1562,10 @@ int menuSel=0;
 int popX=0;          // where the open context menu is
 int popY=0;
 int popArmed=0;      // the mouse has moved or pressed in the open context menu
+int menuSub=-1;      // the open submenu of the open menu, or -1
+int subSel=0;
+int subX=0;          // where the open submenu is
+int subY=0;
 int tvDeskPopup=-1;  // the context menu for a right click on the desktop, or -1
 int tvClockSec=-1;
 
@@ -1534,8 +1595,34 @@ void TvMenuItem(char* text, char* hint, int cmd, int key)
 	StrCpy(&it.hint[0],hint,12);
 	it.cmd=cmd;
 	it.key=key;
+	it.sub=-1;
 	tvNItem++;
 	tvMenu[tvNMenu-1].count++;
+}
+
+// Adds an item that opens a submenu, marked with an arrow, and returns the item's
+// number for TvSubmenuAdd. Enter, Right, its hot key or a click opens the submenu;
+// Left or Esc goes back.
+int TvMenuSub(char* text)
+{
+	TvMenuItem(text,"",0,0);
+	return tvNItem-1;
+}
+
+// Starts the submenu of item (from TvMenuSub), filled with TvMenuItem like the
+// others. Add these after the menu bar's menus, as context menus are. Several items
+// may open the same submenu: TvSubmenuShare(item, sub).
+int TvSubmenuAdd(int item)
+{
+	TvMenuAdd("");
+	tvMenu[tvNMenu-1].popup=2;
+	tvItem[item].sub=tvNMenu-1;
+	return tvNMenu-1;
+}
+
+void TvSubmenuShare(int item, int sub)
+{
+	tvItem[item].sub=sub;
 }
 
 void TvMenuLine()
@@ -1578,6 +1665,11 @@ void TvMenuBox(int n, int& x, int& y, int& w, int& h)
 	{
 		x=popX;
 		y=popY;
+		if(m.popup==2)
+		{
+			x=subX;
+			y=subY;
+		}
 		// room for the shadow above the status line
 		if(y+h>tvH-2)y=tvH-2-h;
 		if(y<1)y=1;
@@ -1609,19 +1701,19 @@ void TvDrawMenuBar()
 	TvText(tvW-9,0,&clk[0],0x70);
 }
 
-void TvDrawDropDown()
+// Draws menu n with item sel highlighted.
+void TvDrawMenuList(int n, int sel)
 {
-	if(menuOpen<0)return;
 	int x;
 	int y;
 	int w;
 	int h;
-	TvMenuBox(menuOpen,x,y,w,h);
+	TvMenuBox(n,x,y,w,h);
 	TvClip(0,0,tvW,tvH);
 	TvShadow(x,y,w,h);
 	TvFill(x,y,w,h,' ',0x70);
 	TvFrame(x,y,w,h,0,0x70);
-	TMenu& m=tvMenu[menuOpen];
+	TMenu& m=tvMenu[n];
 	for(int i=0;i<m.count;i++)
 	{
 		TItem& it=tvItem[m.first+i];
@@ -1637,7 +1729,7 @@ void TvDrawDropDown()
 		{
 			int at=0x70;
 			int hot=0x74;
-			if(i==menuSel)
+			if(i==sel)
 			{
 				at=0x20;
 				hot=0x24;
@@ -1645,8 +1737,16 @@ void TvDrawDropDown()
 			}
 			TvHotText(x+2,ry,&it.text[0],at,hot);
 			TvText(x+w-2-StrLen(&it.hint[0]),ry,&it.hint[0],at);
+			if(it.sub>=0)TvPut(x+w-2,ry,0x25BA,at);
 		}
 	}
+}
+
+void TvDrawDropDown()
+{
+	if(menuOpen<0)return;
+	TvDrawMenuList(menuOpen,menuSel);
+	if(menuSub>=0)TvDrawMenuList(menuSub,subSel);
 }
 
 void TvDrawStatus()
@@ -2406,12 +2506,14 @@ int TvBarCount()
 void TvCloseMenu()
 {
 	menuOpen=-1;
+	menuSub=-1;
 	tvDirty=1;
 }
 
 void TvOpenMenu(int n)
 {
 	menuOpen=n;
+	menuSub=-1;
 	menuSel=0;
 	if(tvItem[tvMenu[n].first].text[0]==0)menuSel=1;
 	tvDirty=1;
@@ -2447,28 +2549,112 @@ void TvOpenPopup(int n, int x, int y)
 	TvOpenMenu(n);
 }
 
+// Opens the submenu of the selected item, beside it: on the right, or on the left
+// when the right has no room.
+void TvOpenSub()
+{
+	int s=tvItem[tvMenu[menuOpen].first+menuSel].sub;
+	if(s<0)return;
+	int x;
+	int y;
+	int w;
+	int h;
+	TvMenuBox(menuOpen,x,y,w,h);
+	menuSub=s;
+	subSel=0;
+	if(tvItem[tvMenu[s].first].text[0]==0)subSel=1;
+	subX=x+w-1;
+	subY=y+menuSel;
+	int sx;
+	int sy;
+	int sw;
+	int sh;
+	TvMenuBox(s,sx,sy,sw,sh);
+	if(x+w-1+sw>tvW)subX=x-sw+1;
+	tvDirty=1;
+}
+
 void TvMenuPick()
 {
-	TItem& it=tvItem[tvMenu[menuOpen].first+menuSel];
+	int n=menuOpen;
+	int sel=menuSel;
+	if(menuSub>=0)
+	{
+		n=menuSub;
+		sel=subSel;
+	}
+	TItem& it=tvItem[tvMenu[n].first+sel];
+	if(it.sub>=0)
+	{
+		TvOpenSub();
+		return;
+	}
 	int cmd=it.cmd;
 	TvCloseMenu();
 	if(cmd!=0)TvCommand(cmd);
 }
 
+// Moves the highlight in the submenu if one is open, else in the menu.
 void TvMenuMove(int dir)
 {
-	TMenu& m=tvMenu[menuOpen];
+	int n=menuOpen;
+	int sel=menuSel;
+	if(menuSub>=0)
+	{
+		n=menuSub;
+		sel=subSel;
+	}
+	TMenu& m=tvMenu[n];
 	for(int k=0;k<m.count;k++)
 	{
-		menuSel=(menuSel+dir+m.count)%m.count;
-		if(tvItem[m.first+menuSel].text[0]!=0)break;
+		sel=(sel+dir+m.count)%m.count;
+		if(tvItem[m.first+sel].text[0]!=0)break;
 	}
+	if(menuSub>=0)subSel=sel;
+	else menuSel=sel;
+}
+
+// The item of menu n whose hot letter is key, or -1.
+int TvMenuHot(int n, int key)
+{
+	TMenu& m=tvMenu[n];
+	for(int i=0;i<m.count;i++)
+		if(HotChar(&tvItem[m.first+i].text[0])==LowerKey(key))return i;
+	return -1;
 }
 
 void TvMenuKey(int key)
 {
 	tvDirty=1;
-	if(key==K_ESC)TvCloseMenu();
+	if(menuSub>=0)
+	{
+		if((key==K_ESC)||(key==K_LEFT))
+		{
+			menuSub=-1;
+			return;
+		}
+		if((key==K_UP)||(key==K_DOWN)||(key==K_ENTER)||(key<127))
+		{
+			if(key==K_UP)TvMenuMove(-1);
+			else if(key==K_DOWN)TvMenuMove(1);
+			else if(key==K_ENTER)TvMenuPick();
+			else
+			{
+				int i=TvMenuHot(menuSub,key);
+				if(i>=0)
+				{
+					subSel=i;
+					TvMenuPick();
+				}
+			}
+			return;
+		}
+		// Right, F10 and Alt+letter go on to the menu bar
+		menuSub=-1;
+		if(tvMenu[menuOpen].popup&&(key==K_RIGHT))return;
+	}
+	if((key==K_RIGHT)&&(tvItem[tvMenu[menuOpen].first+menuSel].sub>=0))TvOpenSub();
+	else if(key==K_ESC)TvCloseMenu();
 	else if(key==K_F10)TvCloseMenu();
 	else if(tvMenu[menuOpen].popup&&((key==K_LEFT)||(key==K_RIGHT))){}
 	else if(key==K_LEFT)TvOpenMenu((menuOpen+TvBarCount()-1)%TvBarCount());
@@ -2483,14 +2669,12 @@ void TvMenuKey(int key)
 	}
 	else if(key<127)
 	{
-		TMenu& m=tvMenu[menuOpen];
-		for(int i=0;i<m.count;i++)
-			if(HotChar(&tvItem[m.first+i].text[0])==LowerKey(key))
-			{
-				menuSel=i;
-				TvMenuPick();
-				return;
-			}
+		int i=TvMenuHot(menuOpen,key);
+		if(i>=0)
+		{
+			menuSel=i;
+			TvMenuPick();
+		}
 	}
 }
 
@@ -2519,13 +2703,41 @@ int TvMenuMouse(int ev)
 	int y;
 	int w;
 	int h;
+	if(menuSub>=0)
+	{
+		TvMenuBox(menuSub,x,y,w,h);
+		if((evX>=x)&&(evX<x+w)&&(evY>=y)&&(evY<y+h))
+		{
+			int i=evY-y-1;
+			if((evX>x)&&(evX<x+w-1)&&(i>=0)&&(i<h-2))
+				if(tvItem[tvMenu[menuSub].first+i].text[0]!=0)
+				{
+					subSel=i;
+					tvDirty=1;
+					if(ev!=EV_MUP)popArmed=1;
+					else if(popArmed||!tvMenu[menuOpen].popup)
+						TvMenuPick();
+				}
+			return 1;
+		}
+	}
 	TvMenuBox(menuOpen,x,y,w,h);
 	if((evX>x)&&(evX<x+w-1)&&(evY>y)&&(evY<y+h-1))
 	{
 		int i=evY-y-1;
-		if(tvItem[tvMenu[menuOpen].first+i].text[0]!=0)
+		TItem& it=tvItem[tvMenu[menuOpen].first+i];
+		if((it.text[0]!=0)&&(it.sub>=0))
+		{
+			// pressing or dragging onto it opens its submenu; releasing there keeps it
+			menuSel=i;
+			if(ev!=EV_MUP)popArmed=1;
+			if(menuSub!=it.sub)TvOpenSub();
+			tvDirty=1;
+		}
+		else if(it.text[0]!=0)
 		{
 			menuSel=i;
+			menuSub=-1;
 			tvDirty=1;
 			// the release of the click that opened a context menu picks nothing
 			if(ev!=EV_MUP)popArmed=1;

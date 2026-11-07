@@ -65,6 +65,8 @@ typedef char* pchar;
 #define CM_WRAP 122
 #define CM_WINLIST 123
 #define CM_SAVERWIN 124
+#define CM_SVNOW 400    // + a saver kind, SV_RANDOM the last
+#define CM_SVWIN 420
 #define CM_CALCKEY 200
 #define CM_THEMEPICK 300
 #define CM_VOLUME 301
@@ -636,17 +638,18 @@ void DrawControls(int win)
 #define CFG_FILE "tvdemo.cfg"
 int prefTheme=0;
 
-// The settings file holds: theme, saver on, saver minutes, saver kind, line numbers, wrap.
+// The settings file holds: theme, saver on, saver minutes, saver kind, line numbers,
+// wrap, and the saver numbering: 3 has Random at 7, 2 had it at 6, none at 4.
 void PrefsLoad()
 {
 	char buf[64];
 	int n=fs_load(CFG_FILE,&buf[0],63);
 	if(n<=0)return;
 	buf[n]=0;
-	int v[6];
+	int v[7];
 	int k=0;
 	int i=0;
-	while((k<6)&&(buf[i]!=0))
+	while((k<7)&&(buf[i]!=0))
 	{
 		if((buf[i]>='0')&&(buf[i]<='9'))
 		{
@@ -668,6 +671,8 @@ void PrefsLoad()
 		svOn=(v[1]!=0);
 		if((v[2]>=1)&&(v[2]<=30))svMinutes=v[2];
 		if(v[3]<=SV_RANDOM)svKind=v[3];
+		if((k<7)&&(v[3]==4))svKind=SV_RANDOM;
+		if((k>=7)&&(v[6]==2)&&(v[3]==6))svKind=SV_RANDOM;
 	}
 	if(k>=6)
 	{
@@ -679,7 +684,7 @@ void PrefsLoad()
 void PrefsSave()
 {
 	char buf[64];
-	snprintf(&buf[0],64,"%i %i %i %i %i %i\n",prefTheme,svOn,svMinutes,svKind,edLineNums,edWrap);
+	snprintf(&buf[0],64,"%i %i %i %i %i %i 3\n",prefTheme,svOn,svMinutes,svKind,edLineNums,edWrap);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -699,7 +704,7 @@ void RunPrefs()
 	int on=TvAdd(win,C_CHECK,2,4,30,1,"~S~creen saver",0);
 	tvCtl[on].val=svOn;
 	TvAdd(win,C_LABEL,3,5,10,1,"~K~ind",0);
-	int kind=TvAdd(win,C_COMBO,14,5,30,1,"Stars|Plasma|Matrix|Flame|Random",0);
+	int kind=TvAdd(win,C_COMBO,14,5,30,1,"Stars|Plasma|Matrix|Flame|Reaction-diffusion|Fluid|Landscape|Random",0);
 	tvCtl[kind].val=svKind;
 	TvAdd(win,C_LABEL,3,7,10,1,"~A~fter",0);
 	prefMinCtl=TvAdd(win,C_SLIDER,14,7,20,1,"",0);
@@ -1366,9 +1371,19 @@ void OpenHelp()
 		"  Ctrl+Z undoes, F2 saves an .ans file, F3 opens one.\n"
 		"\n"
 		"Screen savers\n"
-		"  Stars, plasma, matrix rain and flame, full screen after the idle\n"
-		"  time set in Options, Preferences, or in windows (Saver in a\n"
-		"  window). In a window Space shows the next one, 1-4 pick one.\n"
+		"  Stars, plasma, matrix rain, flame, reaction-diffusion, fluid and\n"
+		"  landscape,\n"
+		"  full screen after the idle time set in Options, Preferences, or\n"
+		"  at once from Options, Start screen saver. Start saver in a window\n"
+		"  (or Saver in a window in the = menu) opens one in a window, where\n"
+		"  Space shows the next one and 1-7 pick one.\n"
+		"  Reaction-diffusion grows Gray-Scott patterns (coral, mitosis,\n"
+		"  maze, worms, holes, bubbles): P the next pattern, R starts it\n"
+		"  again, dragging the mouse drops chemical. Fluid is a stable\n"
+		"  fluids simulation with three coloured jets: dragging stirs it,\n"
+		"  R clears it. Landscape flies over generated land (red desert,\n"
+		"  islands, glacier, dusk): the arrows steer and climb, N gives new\n"
+		"  land.\n"
 		"\n"
 		"Options, Preferences sets the colour theme and the screen saver.\n"
 		"\n"
@@ -1461,6 +1476,8 @@ int TvAppMouse(int win, int ev, int x, int y)
 	TWin& t=tvWin[win];
 	int type=t.type;
 	if(type==W_SONAR)return SnMouse(win,ev,x,y);
+	if(type==W_SAVER)
+		if(ev!=EV_RDOWN)return SvWinMouse(win,ev,x,y);
 	if(ev==EV_RDOWN)
 	{
 		if(t.flags&WF_DIALOG)return 0;
@@ -1659,6 +1676,8 @@ void TvAppCommand(int cmd)
 	else if(cmd==CM_LIFE)LfOpen();
 	else if(cmd==CM_SAVERNOW)SvStart();
 	else if(cmd==CM_SAVERWIN)SvOpenWindow(svKind);
+	else if((cmd>=CM_SVNOW)&&(cmd<=CM_SVNOW+SV_RANDOM))SvStartKind(cmd-CM_SVNOW);
+	else if((cmd>=CM_SVWIN)&&(cmd<=CM_SVWIN+SV_RANDOM))SvOpenWindow(cmd-CM_SVWIN);
 	else if(cmd==CM_HELP)OpenHelp();
 	else if(cmd==CM_ABOUT)
 		TvMessage("About","Turbo Vision style desktop\nWritten in Scinc, drawn with ANSI escapes",0);
@@ -1666,6 +1685,20 @@ void TvAppCommand(int cmd)
 }
 
 // ---------------------------------------------------------------- main
+
+// One item per saver kind, then Random, giving commands base+kind.
+void SaverItems(int base)
+{
+	TvMenuItem("~S~tars","",base+SV_STARS,0);
+	TvMenuItem("~P~lasma","",base+SV_PLASMA,0);
+	TvMenuItem("~M~atrix","",base+SV_MATRIX,0);
+	TvMenuItem("~F~lame","",base+SV_FLAME,0);
+	TvMenuItem("~R~eaction-diffusion","",base+SV_REACT,0);
+	TvMenuItem("Fl~u~id","",base+SV_FLUID,0);
+	TvMenuItem("~L~andscape","",base+SV_LAND,0);
+	TvMenuLine();
+	TvMenuItem("R~a~ndom","",base+SV_RANDOM,0);
+}
 
 int main(int argc, pchar* argv)
 {
@@ -1690,7 +1723,7 @@ int main(int argc, pchar* argv)
 	TvMenuItem("~G~ame of Life","",CM_LIFE,0);
 	TvMenuItem("S~o~nar","",CM_SONAR,0);
 	TvMenuItem("ANSI pa~i~nt","",CM_PAINT,0);
-	TvMenuItem("Sa~v~er in a window","",CM_SAVERWIN,0);
+	int itemDeskSaver=TvMenuSub("Sa~v~er in a window");
 	TvMenuAdd("~F~ile");
 	TvMenuItem("~N~ew","Ctrl+N",CM_NEW,14);
 	TvMenuItem("~O~pen...","F3",CM_OPEN,K_F3);
@@ -1721,8 +1754,8 @@ int main(int argc, pchar* argv)
 	TvMenuItem("~P~rogress...","",CM_PROGRESS,0);
 	TvMenuAdd("~O~ptions");
 	TvMenuItem("~P~references...","",CM_PREFS,0);
-	TvMenuItem("Start screen ~s~aver","",CM_SAVERNOW,0);
-	TvMenuItem("Start saver in a w~i~ndow","",CM_SAVERWIN,0);
+	int itemSaverNow=TvMenuSub("Start screen ~s~aver");
+	int itemSaverWin=TvMenuSub("Start saver in a w~i~ndow");
 	TvMenuLine();
 	TvMenuItem("~L~ine numbers","off",CM_LINENUMS,0);
 	itemLineNums=tvNItem-1;
@@ -1739,6 +1772,13 @@ int main(int argc, pchar* argv)
 	TvMenuItem("~L~ist...","Alt+0",CM_WINLIST,K_ALT+'0');
 	TvMenuAdd("~H~elp");
 	TvMenuItem("~K~eys and mouse","F1",CM_HELP,K_F1);
+
+	// the savers, full screen and in a window; the second also from the = menu
+	TvSubmenuAdd(itemSaverNow);
+	SaverItems(CM_SVNOW);
+	int subWin=TvSubmenuAdd(itemSaverWin);
+	SaverItems(CM_SVWIN);
+	TvSubmenuShare(itemDeskSaver,subWin);
 
 	popEdit=TvPopupAdd();
 	TvMenuItem("~U~ndo","Ctrl+Z",CM_UNDO,0);
