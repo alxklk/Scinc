@@ -296,7 +296,7 @@ int glw_poll()
 			if(k == 0)
 				k = letter;
 			if(k != 0)
-				PushEvent(1, k, Mods(e.key.keysym.mod), letter, 0);
+				PushEvent(1, k, Mods(e.key.keysym.mod), letter, e.key.repeat ? 1 : 0);
 			break;
 		}
 		case SDL_TEXTINPUT:

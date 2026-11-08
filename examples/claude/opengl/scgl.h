@@ -47,7 +47,7 @@ typedef float* FLOATV;
 
 // ---- events read by glwNextEvent(e): e[0] is the type, then up to four values.
 // Mods are bits: 1 Shift, 2 Ctrl, 4 Alt.
-#define GLW_EV_KEY     1  // e[1] key (as glwGetKey, letters lower case), e[2] mods, e[3] the Latin letter or digit at that key's place, whatever the layout
+#define GLW_EV_KEY     1  // e[1] key (as glwGetKey, letters lower case), e[2] mods, e[3] the Latin letter or digit at that key's place, whatever the layout, e[4] 1 for an auto-repeat
 #define GLW_EV_MDOWN   2  // e[1] x, e[2] y in pixels, e[3] button 0 left 1 middle 2 right, e[4] mods
 #define GLW_EV_MUP     3  // as GLW_EV_MDOWN
 #define GLW_EV_MMOVE   4  // e[1] x, e[2] y
