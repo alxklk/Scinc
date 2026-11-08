@@ -140,16 +140,26 @@ int tvVga[8];
 // apart because the same index plays different parts, such as black text on grey
 // dialogs and the black of shadows. The classic theme sends the terminal's own 16
 // colours, the others 24-bit colours, or the nearest of xterm's 256 when COLORTERM does
-// not say the terminal has 24-bit colour.
+// not say the terminal has 24-bit colour. The custom theme can use any of the three:
+// tvCustDepth says which, and tvCustFg and tvCustBg hold VGA colour numbers (4), xterm
+// palette numbers (8) or 0xRRGGBB (24).
 #define TH_CLASSIC 0
 #define TH_DARK 1
 #define TH_MONO 2
+#define TH_CUSTOM 3
 int tvTheme=0;
 int tvFg[16];
 int tvBg[16];
 int tvTrueColor=1;   // the terminal shows 24-bit colours; otherwise themes use xterm's 256
 int tvFg256[16];     // the nearest of those 256 to tvFg and tvBg
 int tvBg256[16];
+int tvDepth=4;       // how the theme sends colours: 4 the terminal's 16, 8 the 256, 24 bits
+int tvFgI[16];       // at depth 4 VGA numbers, at depth 8 palette numbers
+int tvBgI[16];
+int tvBtnShadow=0x70;  // a button's shadow: index 0 or 8, whichever text colour is darker
+int tvCustDepth=4;
+int tvCustFg[16];
+int tvCustBg[16];
 
 // The xterm 256 colour palette entry nearest to 0xRRGGBB: the 6x6x6 cube or the grey ramp.
 int TvTo256(int c)
@@ -197,6 +207,146 @@ int tvRgb256[256];
 // TV_C256, whose bit lies inside the fg here. See TvPixRgb.
 #define TV_RGB 0x40000000
 
+// Roles: what the desktop draws with. A role attribute, TV_ROLE|r, takes the colours
+// of role r in the current theme. The built-in themes give a role the palette colours
+// of its VGA attribute in tvRoleDef; the custom theme sets each one itself. A role
+// with a clear background (the syntax colours and line numbers in the custom theme,
+// when tvCustRBg is -1) takes the editor's background. Test TV_RGB before TV_ROLE,
+// whose bit lies inside the TV_RGB fg, and TV_ROLE before TV_C256.
+#define TV_ROLE 0x20000000
+#define R_DESK 0
+#define R_MENU 1
+#define R_MENU_HOT 2
+#define R_MENU_SEL 3
+#define R_MENU_SELHOT 4
+#define R_STATUS 5
+#define R_STATUS_HOT 6
+#define R_STATUS_SEL 7
+#define R_STATUS_SELHOT 8
+#define R_SHADOW 9
+#define R_WIN 10
+#define R_WIN_FRAME 11
+#define R_WIN_PASSIVE 12
+#define R_WIN_ICON 13
+#define R_WIN_PRESSED 14
+#define R_DLG 15
+#define R_DLG_FRAME 16
+#define R_DLG_PASSIVE 17
+#define R_DLG_ICON 18
+#define R_DLG_PRESSED 19
+#define R_HELP 20
+#define R_HELP_FRAME 21
+#define R_HELP_PASSIVE 22
+#define R_HELP_ICON 23
+#define R_HELP_PRESSED 24
+#define R_LABEL_HOT 25
+#define R_BTN 26
+#define R_BTN_DEF 27
+#define R_BTN_FOCUS 28
+#define R_BTN_HOT 29
+#define R_BTN_SHADOW 30
+#define R_CHECK 31
+#define R_CHECK_FOCUS 32
+#define R_CHECK_HOT 33
+#define R_INPUT 34
+#define R_INPUT_ARROW 35
+#define R_SLIDER 36
+#define R_SLIDER_TRACK 37
+#define R_SLIDER_FOCUS 38
+#define R_PROGRESS 39
+#define R_LIST 40
+#define R_LIST_SEL 41
+#define R_LIST_FOCUS 42
+#define R_SCROLL 43
+#define R_COMBO_ARROW 44
+#define R_ED_TEXT 45
+#define R_ED_KEYWORD 46
+#define R_ED_COMMENT 47
+#define R_ED_STRING 48
+#define R_ED_NUMBER 49
+#define R_ED_PREPROC 50
+#define R_ED_SYMBOL 51
+#define R_ED_LINENO 52
+#define R_ED_LINECUR 53
+#define R_ED_SELECT 54
+#define R_ED_FOUND 55
+#define R_ED_MATCH 56
+#define R_ED_SCROLL 57
+#define R_N 58
+#define A_DESK (TV_ROLE|0)
+#define A_MENU (TV_ROLE|1)
+#define A_MENU_HOT (TV_ROLE|2)
+#define A_MENU_SEL (TV_ROLE|3)
+#define A_MENU_SELHOT (TV_ROLE|4)
+#define A_STATUS (TV_ROLE|5)
+#define A_STATUS_HOT (TV_ROLE|6)
+#define A_STATUS_SEL (TV_ROLE|7)
+#define A_STATUS_SELHOT (TV_ROLE|8)
+#define A_SHADOW (TV_ROLE|9)
+#define A_WIN (TV_ROLE|10)
+#define A_WIN_FRAME (TV_ROLE|11)
+#define A_WIN_PASSIVE (TV_ROLE|12)
+#define A_WIN_ICON (TV_ROLE|13)
+#define A_WIN_PRESSED (TV_ROLE|14)
+#define A_DLG (TV_ROLE|15)
+#define A_DLG_FRAME (TV_ROLE|16)
+#define A_DLG_PASSIVE (TV_ROLE|17)
+#define A_DLG_ICON (TV_ROLE|18)
+#define A_DLG_PRESSED (TV_ROLE|19)
+#define A_HELP (TV_ROLE|20)
+#define A_HELP_FRAME (TV_ROLE|21)
+#define A_HELP_PASSIVE (TV_ROLE|22)
+#define A_HELP_ICON (TV_ROLE|23)
+#define A_HELP_PRESSED (TV_ROLE|24)
+#define A_LABEL_HOT (TV_ROLE|25)
+#define A_BTN (TV_ROLE|26)
+#define A_BTN_DEF (TV_ROLE|27)
+#define A_BTN_FOCUS (TV_ROLE|28)
+#define A_BTN_HOT (TV_ROLE|29)
+#define A_BTN_SHADOW (TV_ROLE|30)
+#define A_CHECK (TV_ROLE|31)
+#define A_CHECK_FOCUS (TV_ROLE|32)
+#define A_CHECK_HOT (TV_ROLE|33)
+#define A_INPUT (TV_ROLE|34)
+#define A_INPUT_ARROW (TV_ROLE|35)
+#define A_SLIDER (TV_ROLE|36)
+#define A_SLIDER_TRACK (TV_ROLE|37)
+#define A_SLIDER_FOCUS (TV_ROLE|38)
+#define A_PROGRESS (TV_ROLE|39)
+#define A_LIST (TV_ROLE|40)
+#define A_LIST_SEL (TV_ROLE|41)
+#define A_LIST_FOCUS (TV_ROLE|42)
+#define A_SCROLL (TV_ROLE|43)
+#define A_COMBO_ARROW (TV_ROLE|44)
+#define A_ED_TEXT (TV_ROLE|45)
+#define A_ED_KEYWORD (TV_ROLE|46)
+#define A_ED_COMMENT (TV_ROLE|47)
+#define A_ED_STRING (TV_ROLE|48)
+#define A_ED_NUMBER (TV_ROLE|49)
+#define A_ED_PREPROC (TV_ROLE|50)
+#define A_ED_SYMBOL (TV_ROLE|51)
+#define A_ED_LINENO (TV_ROLE|52)
+#define A_ED_LINECUR (TV_ROLE|53)
+#define A_ED_SELECT (TV_ROLE|54)
+#define A_ED_FOUND (TV_ROLE|55)
+#define A_ED_MATCH (TV_ROLE|56)
+#define A_ED_SCROLL (TV_ROLE|57)
+int tvRoleDef[58]={0x71,0x70,0x74,0x20,0x24,0x70,0x74,0x20,0x24,0x08,0x1E,0x1F,0x17,0x1A,0x1E,0x70,0x7F,0x78,0x7A,0x7E,0x30,0x3F,0x37,0x3A,0x3E,0x7E,0x20,0x2B,0x2F,0x2E,0x70,0x30,0x3F,0x3E,0x1F,0x1A,0x79,0x78,0x74,0x1F,0x30,0x3E,0x2F,0x31,0x20,0x1E,0x1F,0x17,0x1B,0x1D,0x1A,0x1C,0x17,0x1E,0x30,0x4F,0x2F,0x13};
+int tvRFgI[58];      // the role colours as tvFgI and tvBgI hold them for the depth
+int tvRBgI[58];
+int tvRFg[58];       // 0xFFRRGGBB
+int tvRBg[58];
+int tvRFg256[58];
+int tvRBg256[58];
+int tvCustRFg[58];   // the custom theme's roles, as tvCustFg; -1 a clear background
+int tvCustRBg[58];
+
+// A role whose background can be clear: the editor's syntax colours and line numbers.
+int TvRoleClear(int r)
+{
+	return ((r>=R_ED_KEYWORD)&&(r<=R_ED_LINECUR));
+}
+
 // 0xRRGGBB to 15 bits and back (to 0xFFRRGGBB).
 int TvTo15(int c)
 {
@@ -218,6 +368,7 @@ int TvFrom15(int v)
 int TvAtFg(int at)
 {
 	if(at&TV_RGB)return TvFrom15((at>>15)&32767);
+	if(at&TV_ROLE)return tvRFg[at&255];
 	if(at&TV_C256)return tvRgb256[(at>>8)&255];
 	return tvFg[at&15];
 }
@@ -225,6 +376,7 @@ int TvAtFg(int at)
 int TvAtBg(int at)
 {
 	if(at&TV_RGB)return TvFrom15(at&32767);
+	if(at&TV_ROLE)return tvRBg[at&255];
 	if(at&TV_C256)return tvRgb256[at&255];
 	return tvBg[(at>>4)&15];
 }
@@ -249,11 +401,50 @@ void TvParsePal(int* dst, char* s)
 	}
 }
 
+// The VGA colours in their own order: blue is 1, red 4.
+char* tvVgaHex="000000 0000aa 00aa00 00aaaa aa0000 aa00aa aa5500 aaaaaa 555555 5555ff 55ff55 55ffff ff5555 ff55ff ffff55 ffffff";
+
+// Rec. 601 brightness of 0xRRGGBB, 0..255.
+int TvLuma(int c)
+{
+	return (((c>>16)&255)*299+((c>>8)&255)*587+(c&255)*114)/1000;
+}
+
+// The 0xFFRRGGBB of a custom theme value at depth d.
+int TvCustRgb(int d, int v)
+{
+	if(d==4)
+	{
+		int vga[16];
+		TvParsePal(&vga[0],tvVgaHex);
+		return vga[v&15];
+	}
+	if(d==8)return tvRgb256[v&255];
+	return 0xFF000000|v;
+}
+
 void TvSetTheme(int n)
 {
-	char* vga="000000 0000aa 00aa00 00aaaa aa0000 aa00aa aa5500 aaaaaa 555555 5555ff 55ff55 55ffff ff5555 ff55ff ffff55 ffffff";
+	char* vga=tvVgaHex;
 	tvTheme=n;
-	if(n==TH_DARK)
+	tvDepth=24;
+	for(int i=0;i<16;i++)
+	{
+		tvFgI[i]=i;
+		tvBgI[i]=i;
+	}
+	if(n==TH_CUSTOM)
+	{
+		tvDepth=tvCustDepth;
+		for(int i=0;i<16;i++)
+		{
+			tvFgI[i]=tvCustFg[i];
+			tvBgI[i]=tvCustBg[i];
+			tvFg[i]=TvCustRgb(tvDepth,tvCustFg[i]);
+			tvBg[i]=TvCustRgb(tvDepth,tvCustBg[i]);
+		}
+	}
+	else if(n==TH_DARK)
 	{
 		TvParsePal(&tvFg[0],"d4d4d4 4a4a50 6a9955 4ec9b0 f47067 c586c0 d7ba7d 9a9a9a 18181a 569cd6 89d185 9cdcfe f48771 d7a0f0 e8dfa8 ffffff");
 		TvParsePal(&tvBg[0],"0c0c0c 1e1e1e 2e6b40 264f78 6b2020 5a2a5a 6b5a1e 333337 252526 3a5a9a 3c8a50 3a8a9a a04040 a050a0 a09030 d0d0d0");
@@ -266,6 +457,7 @@ void TvSetTheme(int n)
 	else
 	{
 		tvTheme=TH_CLASSIC;
+		tvDepth=4;
 		TvParsePal(&tvFg[0],vga);
 		TvParsePal(&tvBg[0],vga);
 	}
@@ -273,6 +465,42 @@ void TvSetTheme(int n)
 	{
 		tvFg256[i]=TvTo256(tvFg[i]);
 		tvBg256[i]=TvTo256(tvBg[i]);
+	}
+	tvBtnShadow=0x70;
+	if(TvLuma(tvFg[8])<TvLuma(tvFg[0]))tvBtnShadow=0x78;
+	for(int r=0;r<R_N;r++)
+	{
+		int def=tvRoleDef[r];
+		if(r==R_BTN_SHADOW)def=tvBtnShadow;
+		int fg=def&15;
+		int bg=(def>>4)&15;
+		int clear=TvRoleClear(r);
+		if(n==TH_CUSTOM)
+		{
+			tvRFgI[r]=tvCustRFg[r];
+			tvRFg[r]=TvCustRgb(tvDepth,tvCustRFg[r]);
+			clear=(tvCustRBg[r]<0);
+			if(!clear)
+			{
+				tvRBgI[r]=tvCustRBg[r];
+				tvRBg[r]=TvCustRgb(tvDepth,tvCustRBg[r]);
+			}
+		}
+		else
+		{
+			tvRFgI[r]=tvFgI[fg];
+			tvRFg[r]=tvFg[fg];
+			tvRBgI[r]=tvBgI[bg];
+			tvRBg[r]=tvBg[bg];
+		}
+		// R_ED_TEXT comes before the roles that can be clear
+		if(clear&&(r!=R_ED_TEXT))
+		{
+			tvRBgI[r]=tvRBgI[R_ED_TEXT];
+			tvRBg[r]=tvRBg[R_ED_TEXT];
+		}
+		tvRFg256[r]=TvTo256(tvRFg[r]);
+		tvRBg256[r]=TvTo256(tvRBg[r]);
 	}
 	// the cells keep their attributes, so all of them are sent again
 	for(int i=0;i<TV_CELLS;i++)
@@ -399,7 +627,23 @@ void OutAttr(int at)
 		OutByte('m');
 		return;
 	}
-	if(at&TV_C256)
+	int fgI=0;
+	int bgI=0;
+	int fgC=0;
+	int bgC=0;
+	int fg256=0;
+	int bg256=0;
+	if(at&TV_ROLE)
+	{
+		int r=at&255;
+		fgI=tvRFgI[r];
+		bgI=tvRBgI[r];
+		fgC=tvRFg[r];
+		bgC=tvRBg[r];
+		fg256=tvRFg256[r];
+		bg256=tvRBg256[r];
+	}
+	else if(at&TV_C256)
 	{
 		OutStr("\x1b[38;5;");
 		OutInt((at>>8)&255);
@@ -408,26 +652,46 @@ void OutAttr(int at)
 		OutByte('m');
 		return;
 	}
-	int fg=at&15;
-	int bg=(at>>4)&15;
-	if((tvTheme!=TH_CLASSIC)&&!tvTrueColor)
+	else
+	{
+		int fi=at&15;
+		int bi=(at>>4)&15;
+		fgI=tvFgI[fi];
+		bgI=tvBgI[bi];
+		fgC=tvFg[fi];
+		bgC=tvBg[bi];
+		fg256=tvFg256[fi];
+		bg256=tvBg256[bi];
+	}
+	if(tvDepth==8)
 	{
 		OutStr("\x1b[38;5;");
-		OutInt(tvFg256[fg]);
+		OutInt(fgI&255);
 		OutStr(";48;5;");
-		OutInt(tvBg256[bg]);
+		OutInt(bgI&255);
 		OutByte('m');
 		return;
 	}
-	if(tvTheme!=TH_CLASSIC)
+	if((tvDepth==24)&&!tvTrueColor)
+	{
+		OutStr("\x1b[38;5;");
+		OutInt(fg256);
+		OutStr(";48;5;");
+		OutInt(bg256);
+		OutByte('m');
+		return;
+	}
+	if(tvDepth==24)
 	{
 		OutStr("\x1b[38;2;");
-		OutRgb(tvFg[fg]);
+		OutRgb(fgC);
 		OutStr(";48;2;");
-		OutRgb(tvBg[bg]);
+		OutRgb(bgC);
 		OutByte('m');
 		return;
 	}
+	int fg=fgI&15;
+	int bg=bgI&15;
 	int f=tvVga[fg&7]+30;
 	if(fg>7)f=f+60;
 	int b=tvVga[bg&7]+40;
@@ -750,7 +1014,7 @@ void TvShadow(int x, int y, int w, int h)
 			int px=x+w+i;
 			int py=y+j;
 			if((px>=clipX0)&&(px<clipX1)&&(py>=clipY0)&&(py<clipY1))
-				tvAt[py*TV_MAXW+px]=0x08;
+				tvAt[py*TV_MAXW+px]=A_SHADOW;
 		}
 	}
 	for(int i=2;i<w;i++)
@@ -758,7 +1022,7 @@ void TvShadow(int x, int y, int w, int h)
 		int px=x+i;
 		int py=y+h;
 		if((px>=clipX0)&&(px<clipX1)&&(py>=clipY0)&&(py<clipY1))
-			tvAt[py*TV_MAXW+px]=0x08;
+			tvAt[py*TV_MAXW+px]=A_SHADOW;
 	}
 }
 
@@ -816,6 +1080,8 @@ int TvVBarPos(int y, int h, int max, int my)
 #define C_SLIDER 6    // val from 0 to count
 #define C_PROGRESS 7  // val from 0 to count, shown as a bar with the percentage
 #define C_COMBO 8     // val is the item picked from a drop-down list, items as for C_LIST
+#define C_VIEW 9      // an area the application draws in TvAppDraw and serves in TvAppKey
+                      // (when it has the focus) and TvAppMouse; a press captures the mouse
 
 #define CM_OK 1
 #define CM_CANCEL 2
@@ -1182,25 +1448,25 @@ void TvDrawCombo()
 	int rows=h-2;
 	TvClip(0,0,tvW,tvH);
 	TvShadow(x,y,w,h);
-	TvFill(x,y,w,h,' ',0x30);
-	TvFrame(x,y,w,h,0,0x30);
+	TvFill(x,y,w,h,' ',A_LIST);
+	TvFrame(x,y,w,h,0,A_LIST);
 	char item[200];
 	for(int j=0;j<rows;j++)
 	{
 		int k=comboTop+j;
 		if(k<n)
 		{
-			int at=0x30;
+			int at=A_LIST;
 			if(k==comboSel)
 			{
-				at=0x2F;
+				at=A_LIST_FOCUS;
 				TvFill(x+1,y+1+j,w-2,1,' ',at);
 			}
 			TvCtlItem(comboCtl,k,&item[0],200);
 			TvTextN(x+1,y+1+j,&item[0],at,w-2);
 		}
 	}
-	if(n>rows)TvVBar(x+w-1,y+1,rows,comboTop,n-rows,0x31);
+	if(n>rows)TvVBar(x+w-1,y+1,rows,comboTop,n-rows,A_SCROLL);
 	tvCurX=-1;
 }
 
@@ -1293,23 +1559,22 @@ void TvDrawCtl(int id, TWin& t)
 	int focused=(t.focus==id)&&(TvTop()==c.win);
 	if(c.type==C_LABEL)
 	{
-		TvHotText(x,y,&c.text[0],0x70,0x7E);
+		TvHotText(x,y,&c.text[0],A_DLG,A_LABEL_HOT);
 	}
 	else if(c.type==C_BUTTON)
 	{
 		int pressed=(dragMode==3)&&(dragCtl==id)&&pressedInside;
-		int at=0x20;
-		if(c.isDefault)at=0x2B;
-		if(focused)at=0x2F;
+		int at=A_BTN;
+		if(c.isDefault)at=A_BTN_DEF;
+		if(focused)at=A_BTN_FOCUS;
 		int bx=x;
 		if(pressed)bx=x+1;
 		TvFill(bx,y,c.w,1,' ',at);
-		TvHotText(bx+(c.w-HotLen(&c.text[0]))/2,y,&c.text[0],at,0x2E);
+		TvHotText(bx+(c.w-HotLen(&c.text[0]))/2,y,&c.text[0],at,A_BTN_HOT);
 		if(!pressed)
 		{
-			// the other themes make index 0 a light text colour, so they shade with 8
-			int sh=0x70;
-			if(tvTheme!=TH_CLASSIC)sh=0x78;
+			// the dark themes make index 0 a light text colour, so they shade with 8
+			int sh=A_BTN_SHADOW;
 			TvPut(x+c.w,y,G_LOWHALF,sh);
 			for(int i=1;i<=c.w;i++)
 				TvPut(x+i,y+1,G_UPHALF,sh);
@@ -1317,8 +1582,8 @@ void TvDrawCtl(int id, TWin& t)
 	}
 	else if((c.type==C_CHECK)||(c.type==C_RADIO))
 	{
-		int at=0x30;
-		if(focused)at=0x3F;
+		int at=A_CHECK;
+		if(focused)at=A_CHECK_FOCUS;
 		TvFill(x,y,c.w,1,' ',at);
 		if(c.type==C_CHECK)
 		{
@@ -1330,7 +1595,7 @@ void TvDrawCtl(int id, TWin& t)
 			TvText(x+1,y,"( )",at);
 			if(c.val)TvPut(x+2,y,G_DOT,at);
 		}
-		TvHotText(x+5,y,&c.text[0],at,0x3E);
+		TvHotText(x+5,y,&c.text[0],at,A_CHECK_HOT);
 	}
 	else if(c.type==C_INPUT)
 	{
@@ -1340,9 +1605,9 @@ void TvDrawCtl(int id, TWin& t)
 		if(c.val<c.top)c.top=c.val;
 		while(TvColsBetween(&c.text[0],c.top,c.val)>c.w-1)
 			TvUtf8(&c.text[0],c.top);
-		TvFill(x,y,c.w,1,' ',0x1F);
-		TvTextN(x,y,&c.text[c.top],0x1F,c.w);
-		if(c.top>0)TvPut(x,y,G_LEFT,0x1A);
+		TvFill(x,y,c.w,1,' ',A_INPUT);
+		TvTextN(x,y,&c.text[c.top],A_INPUT,c.w);
+		if(c.top>0)TvPut(x,y,G_LEFT,A_INPUT_ARROW);
 		if(focused)
 		{
 			tvCurX=x+TvColsBetween(&c.text[0],c.top,c.val);
@@ -1355,11 +1620,11 @@ void TvDrawCtl(int id, TWin& t)
 		if(c.count>0)p=(c.val*(c.w-1)+c.count/2)/c.count;
 		for(int i=0;i<c.w;i++)
 		{
-			if(i<p)TvPut(x+i,y,G_DHORZ,0x79);
-			else TvPut(x+i,y,G_HORZ,0x78);
+			if(i<p)TvPut(x+i,y,G_DHORZ,A_SLIDER);
+			else TvPut(x+i,y,G_HORZ,A_SLIDER_TRACK);
 		}
-		int at=0x79;
-		if(focused)at=0x74;
+		int at=A_SLIDER;
+		if(focused)at=A_SLIDER_FOCUS;
 		TvPut(x+p,y,G_FULL,at);
 	}
 	else if(c.type==C_PROGRESS)
@@ -1380,17 +1645,17 @@ void TvDrawCtl(int id, TWin& t)
 		int sx=(c.w-l)/2;
 		for(int i=0;i<c.w;i++)
 		{
-			int at=0x78;
+			int at=A_DLG_PASSIVE;
 			int ch=G_LIGHT;
 			if(i<fill)
 			{
-				at=0x1F;
+				at=A_PROGRESS;
 				ch=' ';
 			}
 			if((i>=sx)&&(i<sx+l))
 			{
 				ch=s[i-sx];
-				if(i>=fill)at=0x70;
+				if(i>=fill)at=A_DLG;
 			}
 			TvPut(x+i,y,ch,at);
 		}
@@ -1400,11 +1665,11 @@ void TvDrawCtl(int id, TWin& t)
 		char item[200];
 		item[0]=0;
 		if(c.val<TvListCount(c))TvCtlItem(id,c.val,&item[0],200);
-		int at=0x1F;
-		if(focused)at=0x2F;
+		int at=A_INPUT;
+		if(focused)at=A_LIST_FOCUS;
 		TvFill(x,y,c.w-1,1,' ',at);
 		TvTextN(x+1,y,&item[0],at,c.w-3);
-		TvPut(x+c.w-1,y,G_DOWN,0x20);
+		TvPut(x+c.w-1,y,G_DOWN,A_COMBO_ARROW);
 	}
 	else if(c.type==C_LIST)
 	{
@@ -1416,12 +1681,12 @@ void TvDrawCtl(int id, TWin& t)
 		if(c.val>=c.top+c.h)c.top=c.val-c.h+1;
 		for(int j=0;j<c.h;j++)
 		{
-			int at=0x30;
+			int at=A_LIST;
 			int k=c.top+j;
 			if(k==c.val)
 			{
-				at=0x3E;
-				if(focused)at=0x2F;
+				at=A_LIST_SEL;
+				if(focused)at=A_LIST_FOCUS;
 			}
 			TvFill(x,y+j,c.w-1,1,' ',at);
 			if(k<n)
@@ -1433,7 +1698,7 @@ void TvDrawCtl(int id, TWin& t)
 		clipX1=saveX1;
 		int mx=n-c.h;
 		if(mx<0)mx=0;
-		TvVBar(x+c.w-1,y,c.h,c.top,mx,0x31);
+		TvVBar(x+c.w-1,y,c.h,c.top,mx,A_SCROLL);
 	}
 }
 
@@ -1442,20 +1707,26 @@ void TvDrawWin(int id)
 	TWin& t=tvWin[id];
 	int active=(TvTop()==id);
 	int dialog=t.flags&WF_DIALOG;
-	int bg=0x1E;
-	int fr=0x1F;
-	int pas=0x17;
+	int bg=A_WIN;
+	int fr=A_WIN_FRAME;
+	int pas=A_WIN_PASSIVE;
+	int icon=A_WIN_ICON;
+	int press=A_WIN_PRESSED;
 	if(dialog)
 	{
-		bg=0x70;
-		fr=0x7F;
-		pas=0x78;
+		bg=A_DLG;
+		fr=A_DLG_FRAME;
+		pas=A_DLG_PASSIVE;
+		icon=A_DLG_ICON;
+		press=A_DLG_PRESSED;
 	}
 	if(t.flags&WF_HELP)
 	{
-		bg=0x30;
-		fr=0x3F;
-		pas=0x37;
+		bg=A_HELP;
+		fr=A_HELP_FRAME;
+		pas=A_HELP_PASSIVE;
+		icon=A_HELP_ICON;
+		press=A_HELP_PRESSED;
 	}
 	TvClip(0,1,tvW,tvH-1);
 	TvShadow(t.x,t.y,t.w,t.h);
@@ -1463,7 +1734,7 @@ void TvDrawWin(int id)
 	int at=pas;
 	if(active)at=fr;
 	int dragging=(dragWin==id)&&((dragMode==1)||(dragMode==2));
-	if(dragging)at=at&0xF0|0x0A;
+	if(dragging)at=icon;
 	TvFrame(t.x,t.y,t.w,t.h,active&&!dragging,at);
 	// title
 	int tl=TvCols(&t.title[0]);
@@ -1478,12 +1749,12 @@ void TvDrawWin(int id)
 	if(active&&!dragging)
 	{
 		// a pressed box shows in yellow until the button is released
-		int boxAt=at&0xF0|0x0A;
+		int boxAt=icon;
 		int zoomAt=boxAt;
 		if((dragMode==7)&&(dragWin==id)&&pressedInside)
 		{
-			if(dragCtl==1)boxAt=at&0xF0|0x0E;
-			if(dragCtl==2)zoomAt=at&0xF0|0x0E;
+			if(dragCtl==1)boxAt=press;
+			if(dragCtl==2)zoomAt=press;
 		}
 		TvPut(t.x+2,t.y,'[',at);
 		TvPut(t.x+3,t.y,G_BOX,boxAt);
@@ -1493,8 +1764,8 @@ void TvDrawWin(int id)
 			TvPut(t.x+t.w-5,t.y,'[',at);
 			TvPut(t.x+t.w-4,t.y,G_ZOOM,zoomAt);
 			TvPut(t.x+t.w-3,t.y,']',at);
-			TvPut(t.x+t.w-1,t.y+t.h-1,G_BR,at&0xF0|0x0A);
-			TvPut(t.x+t.w-2,t.y+t.h-1,G_HORZ,at&0xF0|0x0A);
+			TvPut(t.x+t.w-1,t.y+t.h-1,G_BR,icon);
+			TvPut(t.x+t.w-2,t.y+t.h-1,G_HORZ,icon);
 		}
 	}
 	if((t.num>0)&&(t.w>12))
@@ -1681,24 +1952,24 @@ void TvMenuBox(int n, int& x, int& y, int& w, int& h)
 void TvDrawMenuBar()
 {
 	TvClip(0,0,tvW,tvH);
-	TvFill(0,0,tvW,1,' ',0x70);
+	TvFill(0,0,tvW,1,' ',A_MENU);
 	for(int i=0;i<tvNMenu;i++)
 	if(!tvMenu[i].popup)
 	{
 		int x=TvMenuX(i);
-		int at=0x70;
-		int hot=0x74;
+		int at=A_MENU;
+		int hot=A_MENU_HOT;
 		if(menuOpen==i)
 		{
-			at=0x20;
-			hot=0x24;
+			at=A_MENU_SEL;
+			hot=A_MENU_SELHOT;
 			TvFill(x-1,0,HotLen(&tvMenu[i].title[0])+2,1,' ',at);
 		}
 		TvHotText(x,0,&tvMenu[i].title[0],at,hot);
 	}
 	char clk[16];
 	snprintf(&clk[0],16,"%02i:%02i:%02i",term_time(0),term_time(1),term_time(2));
-	TvText(tvW-9,0,&clk[0],0x70);
+	TvText(tvW-9,0,&clk[0],A_MENU);
 }
 
 // Draws menu n with item sel highlighted.
@@ -1711,8 +1982,8 @@ void TvDrawMenuList(int n, int sel)
 	TvMenuBox(n,x,y,w,h);
 	TvClip(0,0,tvW,tvH);
 	TvShadow(x,y,w,h);
-	TvFill(x,y,w,h,' ',0x70);
-	TvFrame(x,y,w,h,0,0x70);
+	TvFill(x,y,w,h,' ',A_MENU);
+	TvFrame(x,y,w,h,0,A_MENU);
 	TMenu& m=tvMenu[n];
 	for(int i=0;i<m.count;i++)
 	{
@@ -1721,18 +1992,18 @@ void TvDrawMenuList(int n, int sel)
 		if(it.text[0]==0)
 		{
 			for(int k=1;k<w-1;k++)
-				TvPut(x+k,ry,G_HORZ,0x70);
-			TvPut(x,ry,0x251C,0x70);
-			TvPut(x+w-1,ry,0x2524,0x70);
+				TvPut(x+k,ry,G_HORZ,A_MENU);
+			TvPut(x,ry,0x251C,A_MENU);
+			TvPut(x+w-1,ry,0x2524,A_MENU);
 		}
 		else
 		{
-			int at=0x70;
-			int hot=0x74;
+			int at=A_MENU;
+			int hot=A_MENU_HOT;
 			if(i==sel)
 			{
-				at=0x20;
-				hot=0x24;
+				at=A_MENU_SEL;
+				hot=A_MENU_SELHOT;
 				TvFill(x+1,ry,w-2,1,' ',at);
 			}
 			TvHotText(x+2,ry,&it.text[0],at,hot);
@@ -1752,16 +2023,16 @@ void TvDrawDropDown()
 void TvDrawStatus()
 {
 	TvClip(0,0,tvW,tvH);
-	TvFill(0,tvH-1,tvW,1,' ',0x70);
+	TvFill(0,tvH-1,tvW,1,' ',A_STATUS);
 	int x=1;
 	for(int i=0;i<tvNStatus;i++)
 	{
-		int at=0x70;
-		int hot=0x74;
+		int at=A_STATUS;
+		int hot=A_STATUS_HOT;
 		if((dragMode==8)&&(dragCtl==i)&&pressedInside)
 		{
-			at=0x20;
-			hot=0x24;
+			at=A_STATUS_SEL;
+			hot=A_STATUS_SELHOT;
 		}
 		x=TvHotText(x,tvH-1,&tvStatus[i].text[0],at,hot);
 		x=x+2;
@@ -1772,7 +2043,7 @@ void TvRedraw()
 {
 	tvCurX=-1;
 	TvClip(0,0,tvW,tvH);
-	TvFill(0,1,tvW,tvH-2,G_LIGHT,0x71);
+	TvFill(0,1,tvW,tvH-2,G_LIGHT,A_DESK);
 	for(int i=0;i<tvNZ;i++)
 		TvDrawWin(tvZ[i]);
 	TvDrawMenuBar();
@@ -2128,7 +2399,10 @@ void TvSelect(int win, int id)
 {
 	TCtl& c=tvCtl[id];
 	if(c.type==C_CHECK)
+	{
 		c.val=!c.val;
+		if(c.cmd!=0)TvChanged(win,id);
+	}
 	else if(c.type==C_RADIO)
 	{
 		for(int i=0;i<TV_MAXCTL;i++)
@@ -2136,6 +2410,7 @@ void TvSelect(int win, int id)
 				if((tvCtl[i].win==win)&&(tvCtl[i].type==C_RADIO)&&(tvCtl[i].group==c.group))
 					tvCtl[i].val=0;
 		c.val=1;
+		if(c.cmd!=0)TvChanged(win,id);
 	}
 	else if(c.type==C_BUTTON)
 		TvFire(win,id);
@@ -2426,6 +2701,11 @@ void TvCtlMouseDown(int win, int id, int mx, int my)
 	}
 	else if(c.type==C_COMBO)
 		TvComboOpen(id);
+	else if(c.type==C_VIEW)
+	{
+		TvCaptureMouse(win);
+		TvAppMouse(win,EV_MDOWN,mx-t.x,my-t.y);
+	}
 	else if(c.type==C_INPUT)
 	{
 		int cols=mx-(t.x+c.x);

@@ -35,7 +35,7 @@
 #define ED_CLIPMAX 1000000
 #define ED_TAB 4
 
-#define AT_SELECT 0x30
+#define AT_SELECT A_ED_SELECT
 
 typedef char* EdChars;
 typedef int* EdInts;
@@ -51,27 +51,56 @@ int vwLineN=0;
 
 int RunSaveAs(int win);
 
-// ---------------------------------------------------------------- C/C++ highlighting
+// ---------------------------------------------------------------- syntax highlighting
 
-#define HL_TEXT 0x1E
-#define HL_KEYWORD 0x1F
-#define HL_COMMENT 0x17
-#define HL_STRING 0x1B
-#define HL_NUMBER 0x1D
-#define HL_PREPROC 0x1A
-#define HL_SYMBOL 0x1C
+// The languages, the window's field f: C/C++, Python, and anything else, where
+// numbers, punctuation and the common comments (#, // and /* */) are coloured.
+// LANG_NONE (no colours) is only for files with lines too long to colour.
+#define LANG_NONE 0
+#define LANG_C 1
+#define LANG_PY 2
+#define LANG_OTHER 3
+
+#define HL_TEXT A_ED_TEXT
+#define HL_KEYWORD A_ED_KEYWORD
+#define HL_COMMENT A_ED_COMMENT
+#define HL_STRING A_ED_STRING
+#define HL_NUMBER A_ED_NUMBER
+#define HL_PREPROC A_ED_PREPROC
+#define HL_SYMBOL A_ED_SYMBOL
 
 // The state a line starts in, carried over from the line before it.
 #define HS_NORMAL 0
 #define HS_COMMENT 1  // inside /* */
 #define HS_STRING 2   // a string continued with a backslash
 #define HS_PREPROC 3  // a directive continued with a backslash
+#define HS_TRIPLE2 4  // inside a Python """ string
+#define HS_TRIPLE1 5  // inside a Python ''' string
 
 int hlRun=0;        // the state while a file is loading
 int hlAt[4100];     // the colour of each byte of the line last scanned
 
-char* hlWords;
-int hlFirst[128];   // where the words with this first letter start in hlWords, or -1
+char* hlWords;       // the C/C++ keywords
+char* hlPyWords;     // the Python ones
+int hlFirst[256];    // where the words with this first letter start, or -1: C/C++ at
+                     // 0..127, Python at 128..255
+
+// Fills hlFirst[base..base+127] for a word list grouped by first letter.
+void HlIndex(char* words, int base)
+{
+	for(int i=0;i<128;i++)
+		hlFirst[base+i]=-1;
+	int i=0;
+	int atStart=1;
+	while(words[i]!=0)
+	{
+		int c=words[i];
+		if(atStart)
+			if(hlFirst[base+c]<0)hlFirst[base+c]=i;
+		atStart=(c=='|');
+		i++;
+	}
+}
 
 void HlInit()
 {
@@ -82,35 +111,34 @@ void HlInit()
 		"private|protected|public|register|reinterpret_cast|return|short|signed|sizeof|static|"
 		"static_cast|struct|switch|template|this|throw|true|try|typedef|typename|union|unsigned|"
 		"using|virtual|void|volatile|wchar_t|while|";
-	for(int i=0;i<128;i++)
-		hlFirst[i]=-1;
-	int i=0;
-	int atStart=1;
-	while(hlWords[i]!=0)
-	{
-		int c=hlWords[i];
-		if(atStart)
-			if(hlFirst[c]<0)hlFirst[c]=i;
-		atStart=(c=='|');
-		i++;
-	}
+	hlPyWords="False|None|True|and|as|assert|async|await|break|class|cls|continue|def|del|"
+		"elif|else|except|finally|for|from|global|if|import|in|is|lambda|nonlocal|not|or|"
+		"pass|raise|return|self|try|while|with|yield|";
+	HlIndex(hlWords,0);
+	HlIndex(hlPyWords,128);
 }
 
-// Is the n bytes of text at vwText[p] a keyword?
-int HlIsKeyword(int p, int n)
+// Is the n bytes of text at vwText[p] a keyword of lang (LANG_C or LANG_PY)?
+int HlIsKeyword(int lang, int p, int n)
 {
 	int first=vwText[p];
 	if(first>=128)return 0;
+	char* words=hlWords;
 	int w=hlFirst[first];
+	if(lang==LANG_PY)
+	{
+		words=hlPyWords;
+		w=hlFirst[128+first];
+	}
 	if(w<0)return 0;
-	while(hlWords[w]==first)
+	while(words[w]==first)
 	{
 		int k=0;
-		while((k<n)&&(hlWords[w+k]==vwText[p+k]))
+		while((k<n)&&(words[w+k]==vwText[p+k]))
 			k++;
-		if((k==n)&&(hlWords[w+k]=='|'))
+		if((k==n)&&(words[w+k]=='|'))
 			return 1;
-		while(hlWords[w]!='|')
+		while(words[w]!='|')
 			w++;
 		w++;
 	}
@@ -129,9 +157,44 @@ int HlDigit(int c)
 	return (c>='0')&&(c<='9');
 }
 
+// Colours a number starting at vwText[i] (0x1F, 1.5e-3, 1_000, suffixes) and
+// returns where it ends.
+int HlNumber(int start, int i)
+{
+	while(HlDigit(vwText[i])||HlIdentStart(vwText[i])||(vwText[i]=='.'))
+	{
+		int e=vwText[i];
+		hlAt[i-start]=HL_NUMBER;
+		i++;
+		if((e=='e')||(e=='E'))
+			if((vwText[i]=='-')||(vwText[i]=='+'))
+			{
+				hlAt[i-start]=HL_NUMBER;
+				i++;
+			}
+	}
+	return i;
+}
+
+// Colours the rest of the line from vwText[i] as a comment.
+void HlToEnd(int start, int i)
+{
+	while(vwText[i]!=0)
+	{
+		hlAt[i-start]=HL_COMMENT;
+		i++;
+	}
+}
+
+// A byte that is not a letter, digit, space or UTF-8 is punctuation.
+int HlPunct(int c)
+{
+	return (c>' ')&&(c<127);
+}
+
 // Colours the line starting at vwText[start] into hlAt and returns the state the
 // next line starts in.
-int HlLine(int start, int state)
+int HlLineC(int start, int state)
 {
 	int i=start;
 	int pre=(state==HS_PREPROC);
@@ -207,29 +270,14 @@ int HlLine(int start, int state)
 			hlAt[i-start]=HL_PREPROC;
 			i++;
 		}
-		else if(HlDigit(c)||((c=='.')&&HlDigit(n)))
-		{
-			// also takes in 0x1F, 1.5e-3 and suffixes
-			while(HlDigit(vwText[i])||HlIdentStart(vwText[i])||(vwText[i]=='.'))
-			{
-				int e=vwText[i];
-				hlAt[i-start]=HL_NUMBER;
-				i++;
-				if((e=='e')||(e=='E'))
-					if((vwText[i]=='-')||(vwText[i]=='+'))
-					{
-						hlAt[i-start]=HL_NUMBER;
-						i++;
-					}
-			}
-		}
+		else if(HlDigit(c)||((c=='.')&&HlDigit(n)))i=HlNumber(start,i);
 		else if(HlIdentStart(c))
 		{
 			int p=i;
 			while(HlIdentStart(vwText[i])||HlDigit(vwText[i]))
 				i++;
 			int at=HL_TEXT;
-			if(HlIsKeyword(p,i-p))at=HL_KEYWORD;
+			if(HlIsKeyword(LANG_C,p,i-p))at=HL_KEYWORD;
 			for(int k=p;k<i;k++)
 				hlAt[k-start]=at;
 		}
@@ -254,8 +302,176 @@ int HlLine(int start, int state)
 	return HS_NORMAL;
 }
 
-// Does this file name end in a C or C++ extension?
-int HlIsCFile(char* name)
+// Python: keywords, # comments, strings with their r/b/f/u prefixes, triple quoted
+// strings across lines, @decorators, numbers and punctuation.
+int HlLinePy(int start, int state)
+{
+	int i=start;
+	int quote=0;        // the quote of the open string, 0 for none
+	int triple=0;
+	if(state==HS_TRIPLE2)
+	{
+		quote='"';
+		triple=1;
+	}
+	if(state==HS_TRIPLE1)
+	{
+		quote=39;
+		triple=1;
+	}
+	while(vwText[i]!=0)
+	{
+		int c=vwText[i];
+		int n=vwText[i+1];
+		if(quote!=0)
+		{
+			hlAt[i-start]=HL_STRING;
+			i++;
+			if((c==92)&&(n!=0))
+			{
+				hlAt[i-start]=HL_STRING;
+				i++;
+			}
+			else if(c==quote)
+			{
+				if(!triple)quote=0;
+				else if((vwText[i]==quote)&&(vwText[i+1]==quote))
+				{
+					hlAt[i-start]=HL_STRING;
+					hlAt[i+1-start]=HL_STRING;
+					i=i+2;
+					quote=0;
+				}
+			}
+		}
+		else if(c=='#')
+		{
+			HlToEnd(start,i);
+			while(vwText[i]!=0)i++;
+		}
+		else if((c=='"')||(c==39))
+		{
+			quote=c;
+			triple=(n==c)&&(vwText[i+2]==c);
+			int k=1;
+			if(triple)k=3;
+			for(int j=0;j<k;j++)
+				hlAt[i+j-start]=HL_STRING;
+			i=i+k;
+		}
+		else if(c=='@')
+		{
+			// a decorator: the @ and the dotted name after it
+			hlAt[i-start]=HL_PREPROC;
+			i++;
+			while(HlIdentStart(vwText[i])||HlDigit(vwText[i])||(vwText[i]=='.'))
+			{
+				hlAt[i-start]=HL_PREPROC;
+				i++;
+			}
+		}
+		else if(HlDigit(c)||((c=='.')&&HlDigit(n)))i=HlNumber(start,i);
+		else if(HlIdentStart(c))
+		{
+			int p=i;
+			while(HlIdentStart(vwText[i])||HlDigit(vwText[i]))
+				i++;
+			int at=HL_TEXT;
+			int q=vwText[i];
+			if(((q=='"')||(q==39))&&(i-p<=2))
+			{
+				// a string prefix such as r, b, f, rb
+				int all=1;
+				for(int k=p;k<i;k++)
+				{
+					int l=LowerKey(vwText[k]);
+					if((l!='r')&&(l!='b')&&(l!='f')&&(l!='u'))all=0;
+				}
+				if(all)at=HL_STRING;
+			}
+			if(at==HL_TEXT)
+				if(HlIsKeyword(LANG_PY,p,i-p))at=HL_KEYWORD;
+			for(int k=p;k<i;k++)
+				hlAt[k-start]=at;
+		}
+		else
+		{
+			hlAt[i-start]=HL_TEXT;
+			if(HlPunct(c))hlAt[i-start]=HL_SYMBOL;
+			i++;
+		}
+	}
+	if(triple&&(quote=='"'))return HS_TRIPLE2;
+	if(triple&&(quote==39))return HS_TRIPLE1;
+	return HS_NORMAL;
+}
+
+// Any other language: numbers and punctuation, and comments: // to the end of the
+// line, /* */ across lines, and # to the end of the line where it starts the line
+// or follows a space (so that #fff or a#b stay as they are).
+int HlLineOther(int start, int state)
+{
+	int i=start;
+	int prev=' ';
+	while(vwText[i]!=0)
+	{
+		int c=vwText[i];
+		int n=vwText[i+1];
+		if(state==HS_COMMENT)
+		{
+			hlAt[i-start]=HL_COMMENT;
+			i++;
+			if((c=='*')&&(n=='/'))
+			{
+				hlAt[i-start]=HL_COMMENT;
+				i++;
+				state=HS_NORMAL;
+			}
+		}
+		else if(((c=='/')&&(n=='/'))||((c=='#')&&((prev==' ')||(prev==9))))
+		{
+			HlToEnd(start,i);
+			while(vwText[i]!=0)i++;
+		}
+		else if((c=='/')&&(n=='*'))
+		{
+			hlAt[i-start]=HL_COMMENT;
+			hlAt[i+1-start]=HL_COMMENT;
+			i=i+2;
+			state=HS_COMMENT;
+		}
+		else if(HlDigit(c)||((c=='.')&&HlDigit(n)))i=HlNumber(start,i);
+		else if(HlIdentStart(c))
+		{
+			// words stay plain, so that the digits in x86 or utf8 do too
+			while(HlIdentStart(vwText[i])||HlDigit(vwText[i]))
+			{
+				hlAt[i-start]=HL_TEXT;
+				i++;
+			}
+		}
+		else
+		{
+			hlAt[i-start]=HL_TEXT;
+			if(HlPunct(c))hlAt[i-start]=HL_SYMBOL;
+			i++;
+		}
+		prev=vwText[i-1];
+	}
+	if(state==HS_COMMENT)return HS_COMMENT;
+	return HS_NORMAL;
+}
+
+// Colours a line of lang into hlAt; returns the state the next line starts in.
+int HlLine(int lang, int start, int state)
+{
+	if(lang==LANG_PY)return HlLinePy(start,state);
+	if(lang==LANG_OTHER)return HlLineOther(start,state);
+	return HlLineC(start,state);
+}
+
+// The extension of name, lower case, in ext (8 bytes), empty if none.
+void HlExt(char* name, char* ext)
 {
 	int dot=-1;
 	int k=0;
@@ -264,20 +480,25 @@ int HlIsCFile(char* name)
 		if(name[k]=='.')dot=k;
 		k++;
 	}
-	if(dot<0)return 0;
-	char ext[8];
 	int n=0;
-	k=dot+1;
-	while((name[k]!=0)&&(n<7))
+	if(dot>=0)
 	{
-		ext[n]=LowerKey(name[k]);
-		n++;
-		k++;
+		k=dot+1;
+		while((name[k]!=0)&&(n<7))
+		{
+			ext[n]=LowerKey(name[k]);
+			n++;
+			k++;
+		}
 	}
 	ext[n]=0;
-	char* known="c|cc|cpp|cxx|h|hh|hpp|hxx|inl";
+}
+
+// Is ext one of the count names in the list known (separated by |)?
+int HlExtIn(char* ext, char* known, int count)
+{
 	char item[8];
-	for(int i=0;i<9;i++)
+	for(int i=0;i<count;i++)
 	{
 		TvItemAt(known,i,&item[0],8);
 		int same=1;
@@ -293,10 +514,20 @@ int HlIsCFile(char* name)
 	return 0;
 }
 
+// The language of a file, from its name.
+int HlLangOf(char* name)
+{
+	char ext[8];
+	HlExt(name,&ext[0]);
+	if(HlExtIn(&ext[0],"c|cc|cpp|cxx|h|hh|hpp|hxx|inl",9))return LANG_C;
+	if(HlExtIn(&ext[0],"py|pyw|pyi",3))return LANG_PY;
+	return LANG_OTHER;
+}
+
 // ---------------------------------------------------------------- the line pool
 
 // Window fields: a top line, b left column, c first line in the tables, d line count,
-// e the first wrapped row of line a shown, f set to highlight C/C++ syntax.
+// e the first wrapped row of line a shown, f the language (LANG_*) it is coloured as.
 
 struct TEdit
 {
@@ -458,7 +689,7 @@ void EdRehl(TWin& t, int y)
 	while(y<t.d)
 	{
 		vwState[t.c+y]=state;
-		state=HlLine(vwLine[t.c+y],state);
+		state=HlLine(t.f,vwLine[t.c+y],state);
 		y++;
 		if(y<t.d)
 			if(vwState[t.c+y]==state)break;
@@ -471,7 +702,7 @@ void EdRehlAll(TWin& t)
 	for(int y=0;y<t.d;y++)
 	{
 		vwState[t.c+y]=state;
-		if(t.f)state=HlLine(vwLine[t.c+y],state);
+		if(t.f)state=HlLine(t.f,vwLine[t.c+y],state);
 	}
 }
 
@@ -1127,7 +1358,7 @@ void EdFindBrackets(int win)
 	if(x<0)return;
 	if(t.f)
 	{
-		HlLine(start,vwState[i]);
+		HlLine(t.f,start,vwState[i]);
 		if((hlAt[x]==HL_COMMENT)||(hlAt[x]==HL_STRING))return;
 	}
 	int c=vwText[start+x];
@@ -1149,7 +1380,7 @@ void EdFindBrackets(int win)
 		int ls=vwLine[li];
 		if(n>0)
 		{
-			if(t.f)HlLine(ls,vwState[li]);
+			if(t.f)HlLine(t.f,ls,vwState[li]);
 			if(dir>0)p=0;
 			else p=vwLen[li]-1;
 		}
@@ -1465,31 +1696,41 @@ void EdEnter(int win)
 		edIndent[n+1]=c;
 		n++;
 	}
-	// in C, one more level after an opening brace, with spaces if the line uses them
-	if(t.f)
+	// one more level after an opening brace in C, or a colon in Python (comments
+	// after it aside), with spaces if the line uses them or, in Python, always
+	if((t.f==LANG_C)||(t.f==LANG_PY))
 	{
+		if(t.f==LANG_PY)HlLine(t.f,p,vwState[t.c+e.cy]);
 		int b=e.cx-1;
 		while(b>=0)
 		{
 			int c=vwText[p+b];
-			if((c!=' ')&&(c!=9))break;
+			int skip=(c==' ')||(c==9);
+			if(t.f==LANG_PY)
+				if(hlAt[b]==HL_COMMENT)skip=1;
+			if(!skip)break;
 			b--;
 		}
+		int opens=0;
 		if(b>=0)
-			if(vwText[p+b]=='{')
+		{
+			if((t.f==LANG_C)&&(vwText[p+b]=='{'))opens=1;
+			if((t.f==LANG_PY)&&(vwText[p+b]==':')&&(hlAt[b]==HL_SYMBOL))opens=1;
+		}
+		if(opens)
+		{
+			if(((n>0)&&(edIndent[1]==' '))||((n==0)&&(t.f==LANG_PY)))
 			{
-				if((n>0)&&(edIndent[1]==' '))
-				{
-					for(int k=0;k<ED_TAB;k++)
-						edIndent[n+1+k]=' ';
-					n=n+ED_TAB;
-				}
-				else
-				{
-					edIndent[n+1]=9;
-					n++;
-				}
+				for(int k=0;k<ED_TAB;k++)
+					edIndent[n+1+k]=' ';
+				n=n+ED_TAB;
 			}
+			else
+			{
+				edIndent[n+1]=9;
+				n++;
+			}
+		}
 	}
 	if(EdInsert(win,e.cy,e.cx,&edIndent[0],n+1))EdSetCursor(win,edEndY,edEndX);
 	else EdShowErr();
@@ -1708,7 +1949,7 @@ int EdNewFile(char* path)
 		return -1;
 	}
 	StrCpy(&ed[win].path[0],path,ED_PATH);
-	tvWin[win].f=HlIsCFile(path);
+	tvWin[win].f=HlLangOf(path);
 	EdRehlAll(tvWin[win]);
 	return win;
 }
@@ -1829,7 +2070,8 @@ int OpenFile(char* name)
 		VwAppend(t,"",0);
 	e.crlf=(crlfs>lfs);
 	e.ro=truncated|nuls|longLines;
-	if(!longLines)t.f=HlIsCFile(&full[0]);
+	t.f=LANG_NONE;
+	if(!longLines)t.f=HlLangOf(&full[0]);
 	EdRehlAll(t);
 	if(truncated)
 		TvMessage("Read only","The file is too large, so only its beginning is shown.\nIt cannot be edited.",0);
@@ -1901,7 +2143,7 @@ int EdSaveAs(int win, char* path)
 	StrCpy(&t.title[0],&copy[EdBase(&copy[0])],48);
 	e.stamp=fs_stamp(&copy[0]);
 	e.savedVer=e.ver;
-	int c=HlIsCFile(&copy[0]);
+	int c=HlLangOf(&copy[0]);
 	if(c!=t.f)
 	{
 		t.f=c;
@@ -2277,6 +2519,9 @@ void DrawViewer(int win)
 	int curCol=0;
 	int j=0;
 	int k=t.a;
+	// the editor's own background, under the text and past its end
+	TvFill(t.x+1,t.y+1,t.w-2,rows,' ',A_ED_TEXT);
+	if(g>0)TvFill(t.x+1,t.y+1,g,rows,' ',A_ED_LINENO);
 	int sub=0;
 	if(edWrap)sub=t.e;
 	while((j<rows)&&(k<t.d))
@@ -2293,7 +2538,7 @@ void DrawViewer(int win)
 				if(k==edY1)selA=edX1;
 				if(k==edY2)selB=edX2;
 			}
-		if(t.f)HlLine(start,vwState[i]);
+		if(t.f)HlLine(t.f,start,vwState[i]);
 		EdWrapLine(i,cols);
 		if(k==e.cy)
 		{
@@ -2319,8 +2564,8 @@ void DrawViewer(int win)
 			}
 			num[nl]=' ';
 			num[nl+1]=0;
-			int at=0x17;
-			if(k==e.cy)at=0x1E;
+			int at=A_ED_LINENO;
+			if(k==e.cy)at=A_ED_LINECUR;
 			if(sub==0)TvText(t.x+1,t.y+1+j,&num[0],at);
 		}
 		for(int r=sub;(r<edRowN)&&(j<rows);r++)
@@ -2331,7 +2576,7 @@ void DrawViewer(int win)
 			int col=EdCol(i,edRowAt[r]);
 			int base=col+t.b;
 			if(g>0)
-				if(r>0)TvFill(t.x+1,t.y+1+j,g,1,' ',0x17);
+				if(r>0)TvFill(t.x+1,t.y+1+j,g,1,' ',A_ED_LINENO);
 			while(p<end)
 			{
 				int off=p-start;
@@ -2340,10 +2585,10 @@ void DrawViewer(int win)
 				if((off>=selA)&&(off<selB))at=AT_SELECT;
 				if((k==edBmY)&&(off==edBmX))
 				{
-					at=0x4F;
-					if(edBmY2>=0)at=0x2F;
+					at=A_ED_FOUND;
+					if(edBmY2>=0)at=A_ED_MATCH;
 				}
-				if((k==edBmY2)&&(off==edBmX2))at=0x2F;
+				if((k==edBmY2)&&(off==edBmX2))at=A_ED_MATCH;
 				int c=TvUtf8(vwText,p);
 				if(c==9)
 				{
@@ -2396,14 +2641,14 @@ void DrawViewer(int win)
 	clipY1=tvH-1;
 	if(front)
 	{
-		TvVBar(t.x+t.w-1,t.y+1,rows,t.a,mxTop,0x13);
+		TvVBar(t.x+t.w-1,t.y+1,rows,t.a,mxTop,A_ED_SCROLL);
 		char pos[40];
 		snprintf(&pos[0],40," %i:%i ",e.cy+1,EdCol(t.c+e.cy,e.cx)+1);
-		int after=TvText(t.x+3,t.y+t.h-1,&pos[0],0x1F);
-		if(e.ro)TvText(after,t.y+t.h-1,"Read only ",0x1E);
+		int after=TvText(t.x+3,t.y+t.h-1,&pos[0],A_WIN_FRAME);
+		if(e.ro)TvText(after,t.y+t.h-1,"Read only ",A_WIN);
 	}
 	if(EdModified(win))
-		TvPut(t.x+1,t.y+t.h-1,'*',0x1E);
+		TvPut(t.x+1,t.y+t.h-1,'*',A_WIN);
 	clipX1=save;
 	clipY1=savey;
 }
@@ -2571,7 +2816,7 @@ int EdDedent(int win)
 {
 	TWin& t=tvWin[win];
 	TEdit& e=ed[win];
-	if((!t.f)||e.sel||(e.cx==0))return 0;
+	if((t.f!=LANG_C)||e.sel||(e.cx==0))return 0;
 	int p=vwLine[t.c+e.cy];
 	for(int k=0;k<e.cx;k++)
 	{

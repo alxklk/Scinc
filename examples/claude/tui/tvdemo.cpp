@@ -65,6 +65,7 @@ typedef char* pchar;
 #define CM_WRAP 122
 #define CM_WINLIST 123
 #define CM_SAVERWIN 124
+#define CM_THEMEED 125
 #define CM_SVNOW 400    // + a saver kind, SV_RANDOM the last
 #define CM_SVWIN 420
 #define CM_CALCKEY 200
@@ -318,10 +319,10 @@ void DrawCalendar(int win)
 	char mon[16];
 	TvItemAt(names,t.b-1,&mon[0],16);
 	snprintf(&head[0],32,"%s %i",&mon[0],t.a);
-	TvText(t.x+(t.w-StrLen(&head[0]))/2,t.y+1,&head[0],0x7F);
+	TvText(t.x+(t.w-StrLen(&head[0]))/2,t.y+1,&head[0],A_DLG_FRAME);
 	TvPut(t.x+2,t.y+1,G_LEFT,0x71);
 	TvPut(t.x+t.w-3,t.y+1,G_RIGHT,0x71);
-	TvText(t.x+2,t.y+2,"Su Mo Tu We Th Fr Sa",0x70);
+	TvText(t.x+2,t.y+2,"Su Mo Tu We Th Fr Sa",A_DLG);
 	int first=WeekDay(t.a,t.b,1);
 	int n=DaysIn(t.a,t.b);
 	int today=0;
@@ -334,7 +335,7 @@ void DrawCalendar(int win)
 		int cx=t.x+2+(cell%7)*3;
 		int cy=t.y+3+cell/7;
 		snprintf(&num[0],4,"%2i",d);
-		int at=0x70;
+		int at=A_DLG;
 		if(d==today)at=0x1E;
 		TvText(cx,cy,&num[0],at);
 	}
@@ -409,14 +410,14 @@ void DrawAscii(int win)
 	TWin& t=tvWin[win];
 	for(int c=0;c<256;c++)
 	{
-		int at=0x70;
+		int at=A_DLG;
 		if(c==t.a)at=0x2F;
 		TvPut(t.x+1+c%32,t.y+1+c/32,AsciiGlyph(c),at);
 	}
 	char s[40];
 	snprintf(&s[0],40," Char:   Dec: %3i  Hex: %02X ",t.a,t.a);
-	TvText(t.x+1,t.y+9,&s[0],0x70);
-	TvPut(t.x+8,t.y+9,AsciiGlyph(t.a),0x7F);
+	TvText(t.x+1,t.y+9,&s[0],A_DLG);
+	TvPut(t.x+8,t.y+9,AsciiGlyph(t.a),A_DLG_FRAME);
 }
 
 int AsciiKey(TWin& t, int key)
@@ -517,8 +518,8 @@ void DrawPuzzle(int win)
 		}
 	}
 	snprintf(&s[0],8,"%i",boardMoves);
-	TvText(t.x+2,t.y+9,"Moves:",0x70);
-	TvText(t.x+9,t.y+9,&s[0],0x70);
+	TvText(t.x+2,t.y+9,"Moves:",A_DLG);
+	TvText(t.x+9,t.y+9,&s[0],A_DLG);
 	if(BoardSolved())
 		TvText(t.x+13,t.y+9,"Solved!",0x7A);
 }
@@ -630,7 +631,7 @@ void DrawControls(int win)
 	TWin& t=tvWin[win];
 	char s[8];
 	snprintf(&s[0],8,"%2i",tvCtl[ctlVolCtl].val);
-	TvText(t.x+34,t.y+14,&s[0],0x70);
+	TvText(t.x+34,t.y+14,&s[0],A_DLG);
 }
 
 // ---------------------------------------------------------------- preferences
@@ -665,7 +666,7 @@ void PrefsLoad()
 		else i++;
 	}
 	if(k>=1)
-		if(v[0]<=2)prefTheme=v[0];
+		prefTheme=v[0];
 	if(k>=4)
 	{
 		svOn=(v[1]!=0);
@@ -673,6 +674,8 @@ void PrefsLoad()
 		if(v[3]<=SV_RANDOM)svKind=v[3];
 		if((k<7)&&(v[3]==4))svKind=SV_RANDOM;
 		if((k>=7)&&(v[6]==2)&&(v[3]==6))svKind=SV_RANDOM;
+		if((k>=7)&&(v[6]==3)&&(v[3]==7))svKind=SV_RANDOM;
+		if((k>=7)&&(v[6]==4)&&(v[3]==8))svKind=SV_RANDOM;
 	}
 	if(k>=6)
 	{
@@ -684,7 +687,7 @@ void PrefsLoad()
 void PrefsSave()
 {
 	char buf[64];
-	snprintf(&buf[0],64,"%i %i %i %i %i %i 3\n",prefTheme,svOn,svMinutes,svKind,edLineNums,edWrap);
+	snprintf(&buf[0],64,"%i %i %i %i %i %i 5\n",prefTheme,svOn,svMinutes,svKind,edLineNums,edWrap);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -699,12 +702,14 @@ void RunPrefs()
 	int win=TvNewCentered(W_PREFS,"Preferences",48,14,WF_DIALOG);
 	if(win<0)return;
 	TvAdd(win,C_LABEL,3,2,10,1,"~T~heme",0);
-	int th=TvAdd(win,C_COMBO,14,2,30,1,"Classic blue|Dark|Mono",CM_THEMEPICK);
+	char names[200];
+	TeThemeNames(&names[0],200);
+	int th=TvAdd(win,C_COMBO,14,2,30,1,&names[0],CM_THEMEPICK);
 	tvCtl[th].val=prefTheme;
 	int on=TvAdd(win,C_CHECK,2,4,30,1,"~S~creen saver",0);
 	tvCtl[on].val=svOn;
 	TvAdd(win,C_LABEL,3,5,10,1,"~K~ind",0);
-	int kind=TvAdd(win,C_COMBO,14,5,30,1,"Stars|Plasma|Matrix|Flame|Reaction-diffusion|Fluid|Landscape|Random",0);
+	int kind=TvAdd(win,C_COMBO,14,5,30,1,"Stars|Plasma|Matrix|Flame|Reaction-diffusion|Fluid|Landscape|Labyrinth|Objects|Random",0);
 	tvCtl[kind].val=svKind;
 	TvAdd(win,C_LABEL,3,7,10,1,"~A~fter",0);
 	prefMinCtl=TvAdd(win,C_SLIDER,14,7,20,1,"",0);
@@ -726,7 +731,7 @@ void RunPrefs()
 	prefMinCtl=-1;
 	TvClose(win);
 	// the combo box showed each theme as it was picked
-	TvSetTheme(prefTheme);
+	TeUseTheme(prefTheme);
 }
 
 void DrawPrefs(int win)
@@ -734,7 +739,7 @@ void DrawPrefs(int win)
 	TWin& t=tvWin[win];
 	char s[16];
 	snprintf(&s[0],16,"%i min",tvCtl[prefMinCtl].val+1);
-	TvText(t.x+36,t.y+7,&s[0],0x70);
+	TvText(t.x+36,t.y+7,&s[0],A_DLG);
 }
 
 // ---------------------------------------------------------------- progress bar demo
@@ -964,6 +969,11 @@ void TvAppListItem(int win, int ctl, int i, char* out, int max)
 		WinListItem(i,out,max);
 		return;
 	}
+	if(tvWin[win].type==W_THEME)
+	{
+		TeListItem(ctl,i,out,max);
+		return;
+	}
 	int isDir=fs_name(i,out,max-1);
 	if(isDir)
 	{
@@ -1017,7 +1027,7 @@ void DrawFiles(int win)
 		TvPut(x,t.y+2,G_LEFT,0x71);
 		x++;
 	}
-	TvText(x,t.y+2,&fdDir[i],0x70);
+	TvText(x,t.y+2,&fdDir[i],A_DLG);
 	// details of the selected entry
 	char info[80];
 	char name[256];
@@ -1371,12 +1381,12 @@ void OpenHelp()
 		"  Ctrl+Z undoes, F2 saves an .ans file, F3 opens one.\n"
 		"\n"
 		"Screen savers\n"
-		"  Stars, plasma, matrix rain, flame, reaction-diffusion, fluid and\n"
-		"  landscape,\n"
+		"  Stars, plasma, matrix rain, flame, reaction-diffusion, fluid,\n"
+		"  landscape, labyrinth and objects,\n"
 		"  full screen after the idle time set in Options, Preferences, or\n"
 		"  at once from Options, Start screen saver. Start saver in a window\n"
 		"  (or Saver in a window in the = menu) opens one in a window, where\n"
-		"  Space shows the next one and 1-7 pick one.\n"
+		"  Space shows the next one and 1-9 pick one.\n"
 		"  Reaction-diffusion grows Gray-Scott patterns (coral, mitosis,\n"
 		"  maze, worms, holes, bubbles): P the next pattern, R starts it\n"
 		"  again, dragging the mouse drops chemical. Fluid is a stable\n"
@@ -1384,8 +1394,26 @@ void OpenHelp()
 		"  R clears it. Landscape flies over generated land (red desert,\n"
 		"  islands, glacier, dusk): the arrows steer and climb, N gives new\n"
 		"  land.\n"
+		"  Labyrinth walks through generated mazes (stone halls, hedge\n"
+		"  garden, station) until it finds the gate out: the arrows walk\n"
+		"  yourself (the walker takes over after five seconds), M shows\n"
+		"  the map, N gives a new maze.\n"
+		"  Objects turns a box, metaballs, a torus, a torus knot or a\n"
+		"  cylinder in copper, silver, gold, red plastic, cheese, pink\n"
+		"  plaster or red-hot iron, or a small molecule or a piece of\n"
+		"  diamond or graphene, drawn by its own scanline renderer: O the\n"
+		"  next object, M the next material, N both anew.\n"
 		"\n"
 		"Options, Preferences sets the colour theme and the screen saver.\n"
+		"Options, Theme editor makes the Custom theme: pick an item on the\n"
+		"left (menus, windows, dialogs, controls, the editor and its syntax\n"
+		"colours, and the palette games and paint use), Text or Background,\n"
+		"and its colour from the terminal's 16, xterm's 256, or any 24-bit\n"
+		"colour with the RGB/HSV square and sliders. The radio button by a\n"
+		"slider picks the channel the square leaves out. Syntax colours and\n"
+		"line numbers can have a clear background: the editor's. Save keeps\n"
+		"the theme, Save as keeps it under a new name; Classic blue is built\n"
+		"in and stays as it is.\n"
 		"\n"
 		"Your terminal may catch F10 or Alt keys for itself. If it\n"
 		"does, use the mouse or Ctrl+Q.\n";
@@ -1437,6 +1465,7 @@ void TvAppDraw(int win)
 	else if(type==W_SONAR)SnDraw(win);
 	else if(type==W_HEX)HxDraw(win);
 	else if(type==W_PAINT)PtDraw(win);
+	else if(type==W_THEME)TeDraw(win);
 }
 
 int TvAppKey(int win, int key)
@@ -1455,6 +1484,7 @@ int TvAppKey(int win, int key)
 	if(type==W_SONAR)return SnKey(win,key);
 	if(type==W_HEX)return HxKey(win,key);
 	if(type==W_PAINT)return PtKey(win,key);
+	if(type==W_THEME)return TeKey(win,key);
 	if(type==W_CAL)
 	{
 		if((key==K_LEFT)||(key==K_PGUP))
@@ -1476,6 +1506,7 @@ int TvAppMouse(int win, int ev, int x, int y)
 	TWin& t=tvWin[win];
 	int type=t.type;
 	if(type==W_SONAR)return SnMouse(win,ev,x,y);
+	if(type==W_THEME)return TeMouse(win,ev,x,y);
 	if(type==W_SAVER)
 		if(ev!=EV_RDOWN)return SvWinMouse(win,ev,x,y);
 	if(ev==EV_RDOWN)
@@ -1522,7 +1553,12 @@ void TvAppButton(int win, int ctl, int cmd)
 {
 	if(cmd==CM_THEMEPICK)
 	{
-		TvSetTheme(tvCtl[ctl].val);
+		TeUseTheme(tvCtl[ctl].val);
+		return;
+	}
+	if((cmd>=CM_TEDEPTH)&&(cmd<=CM_TETHEME))
+	{
+		TeButton(win,ctl,cmd);
 		return;
 	}
 	if(cmd==CM_VOLUME)
@@ -1671,6 +1707,15 @@ void TvAppCommand(int cmd)
 	else if(cmd==CM_CIRCUIT2)CfOpen(CF_WIRES);
 	else if(cmd==CM_CONTROLS)RunControls();
 	else if(cmd==CM_PREFS)RunPrefs();
+	else if(cmd==CM_THEMEED)
+	{
+		int r=TeRun(prefTheme);
+		if(r>=0)
+		{
+			prefTheme=r;
+			PrefsSave();
+		}
+	}
 	else if(cmd==CM_PROGRESS)RunProgress();
 	else if(cmd==CM_MANDEL)MbOpen();
 	else if(cmd==CM_LIFE)LfOpen();
@@ -1696,6 +1741,8 @@ void SaverItems(int base)
 	TvMenuItem("~R~eaction-diffusion","",base+SV_REACT,0);
 	TvMenuItem("Fl~u~id","",base+SV_FLUID,0);
 	TvMenuItem("~L~andscape","",base+SV_LAND,0);
+	TvMenuItem("La~b~yrinth","",base+SV_MAZE,0);
+	TvMenuItem("~O~bjects","",base+SV_OBJ,0);
 	TvMenuLine();
 	TvMenuItem("R~a~ndom","",base+SV_RANDOM,0);
 }
@@ -1707,7 +1754,9 @@ int main(int argc, pchar* argv)
 	StrCpy(&ctlName[0],"Scinc",64);
 	fdDir[0]=0;
 	PrefsLoad();
-	TvSetTheme(prefTheme);
+	TeLoadThemes();
+	if(prefTheme>=teThN)prefTheme=0;
+	TeUseTheme(prefTheme);
 	TickUpdate();
 
 	TvMenuAdd("~=~");
@@ -1754,6 +1803,7 @@ int main(int argc, pchar* argv)
 	TvMenuItem("~P~rogress...","",CM_PROGRESS,0);
 	TvMenuAdd("~O~ptions");
 	TvMenuItem("~P~references...","",CM_PREFS,0);
+	TvMenuItem("~T~heme editor...","",CM_THEMEED,0);
 	int itemSaverNow=TvMenuSub("Start screen ~s~aver");
 	int itemSaverWin=TvMenuSub("Start saver in a w~i~ndow");
 	TvMenuLine();
