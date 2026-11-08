@@ -699,6 +699,23 @@ void GfxEvent(SScincEvent& e)
 	}
 }
 
+SScincEvent gfxHeld;  // an event GfxPending took from the queue to look at
+int gfxHeldN=0;
+
+// 1 when input is waiting: TvRun then handles it before drawing, so a fast drag
+// costs one frame for all the moves that came in meanwhile, not one each.
+int GfxPending()
+{
+	if(gfxHeldN)return 1;
+	Poll();
+	if(GetScincEvent(gfxHeld))
+	{
+		gfxHeldN=1;
+		return 1;
+	}
+	return 0;
+}
+
 void TvCommand(int cmd);
 
 // Waits up to timeoutMs for the next event, like TvReadEvent does for a terminal.
@@ -717,6 +734,12 @@ void GfxReadEvent(int timeoutMs)
 			if(tvCloseCmd!=0)TvCommand(tvCloseCmd);
 			else tvRunning=0;
 			return;
+		}
+		if(gfxHeldN)
+		{
+			gfxHeldN=0;
+			GfxEvent(gfxHeld);
+			if(evType!=EV_NONE)return;
 		}
 		SScincEvent e;
 		while(GetScincEvent(e))

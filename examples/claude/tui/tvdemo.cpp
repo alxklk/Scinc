@@ -9,7 +9,8 @@
 //
 // tvdemo_gfx.cpp builds the same desktop drawn in a graphic window (tvgfx.h) with the
 // stroke font, tvdemo_raster.cpp and tvdemo_small.cpp with the interpreter's quicker
-// 9x16 and 6x12 bitmap fonts.
+// 9x16 and 6x12 bitmap fonts. tvdemo_gl.cpp and tvdemo_gl_small.cpp draw the same
+// two fonts with OpenGL (tvgl.h) from a glyph atlas, in a resizable, zoomable window.
 #include <stdio.h>
 // tvdemo writes every hook of tv.h itself
 #define TVAPP_DRAW

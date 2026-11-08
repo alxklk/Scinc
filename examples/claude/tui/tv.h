@@ -2201,7 +2201,16 @@ void DecodeCSI()
 	if(evKey==0)evType=EV_NONE;
 }
 
+// TV_GL (with TV_GFX) picks the OpenGL backend instead of the Graph one. The
+// choice is made with a marker, since #ifdef blocks must not nest here.
 #ifdef TV_GFX
+#define TV_GFX_GRAPH
+#endif
+#ifdef TV_GL
+#undef TV_GFX_GRAPH
+#include "tvgl.h"
+#endif
+#ifdef TV_GFX_GRAPH
 #include "tvgfx.h"
 #endif
 
@@ -3338,11 +3347,16 @@ void TvKey()
 
 void TvCheckSize()
 {
+	int w=0;
+	int h=0;
 #ifdef TV_GFX
-	return;
+	w=GfxCols();
+	h=GfxRows();
 #endif
-	int w=term_cols();
-	int h=term_rows();
+#ifndef TV_GFX
+	w=term_cols();
+	h=term_rows();
+#endif
 	if(w>TV_MAXW)w=TV_MAXW;
 	if(h>TV_MAXH)h=TV_MAXH;
 	if((w==tvW)&&(h==tvH))return;
@@ -3364,7 +3378,9 @@ void TvCheckSize()
 			if(t.x>tvW-4)t.x=tvW-4;
 		}
 	}
+#ifndef TV_GFX
 	OutStr("\x1b[0m\x1b[2J");
+#endif
 	tvDirty=1;
 }
 
@@ -3403,6 +3419,9 @@ int TvRun(int stopWin)
 		{
 			behind++;
 			int pending=0;
+#ifdef TV_GFX
+			pending=GfxPending();
+#endif
 #ifndef TV_GFX
 			pending=term_pending();
 #endif

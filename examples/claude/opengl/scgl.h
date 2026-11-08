@@ -18,8 +18,13 @@
 #ifdef __SCINC__
 
 typedef float* FLOATV;
+// The library's path, relative to the program's folder: a program elsewhere
+// defines SCGL_DL before including this, e.g. "../opengl/scgl_dl".
+#ifndef SCGL_DL
+#define SCGL_DL "scgl_dl"
+#endif
 #define NAME(name) #name"_wrapper"
-#define WRAP(rettype, name, args, ...) [[scinc::dynlink("scgl_dl", NAME(name) )]]rettype name args;
+#define WRAP(rettype, name, args, ...) [[scinc::dynlink(SCGL_DL, NAME(name) )]]rettype name args;
 
 // ---- key codes returned by glwGetKey()/accepted by glwKeyDown() ----
 // Printable keys are their ASCII code ('a', '1', ' ' ...).
@@ -35,7 +40,19 @@ typedef float* FLOATV;
 #define GLW_KEY_PGDN    1006
 #define GLW_KEY_HOME    1007
 #define GLW_KEY_END     1008
-#define GLW_KEY_F1      1101
+#define GLW_KEY_F1      1101  // F2..F12 follow
+#define GLW_KEY_INSERT  1009
+#define GLW_KEY_DELETE   127
+#define GLW_KEY_MENU    1010  // the context menu key
+
+// ---- events read by glwNextEvent(e): e[0] is the type, then up to four values.
+// Mods are bits: 1 Shift, 2 Ctrl, 4 Alt.
+#define GLW_EV_KEY     1  // e[1] key (as glwGetKey, letters lower case), e[2] mods, e[3] the Latin letter or digit at that key's place, whatever the layout
+#define GLW_EV_MDOWN   2  // e[1] x, e[2] y in pixels, e[3] button 0 left 1 middle 2 right, e[4] mods
+#define GLW_EV_MUP     3  // as GLW_EV_MDOWN
+#define GLW_EV_MMOVE   4  // e[1] x, e[2] y
+#define GLW_EV_TEXT    5  // e[1] a typed character (Unicode), e[2] mods
+#define GLW_EV_WHEEL   6  // e[1] steps, up > 0
 
 // ---- OpenGL constants (values from GL/gl.h) ----
 #define GL_FALSE                      0
@@ -164,7 +181,8 @@ typedef float* FLOATV;
 #define GL_NEAREST_MIPMAP_LINEAR 0x2702
 #define GL_LINEAR_MIPMAP_LINEAR  0x2703
 #define GL_GENERATE_MIPMAP       0x8191   // glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, 1) before glwTexImage2D
-#define GL_TEXTURE_MAX_ANISOTROPY 0x84FE  // sharper textures at grazing angles (EXT/GL 4.6)
+#define GL_TEXTURE_MAX_ANISOTROPY 0x84FE
+#define GL_TEXTURE0              0x84C0   // glActiveTexture(GL_TEXTURE0+n)  // sharper textures at grazing angles (EXT/GL 4.6)
 
 #else  // native side (compiled into scgl_dl.so by scgl_dl.cpp)
 
@@ -188,7 +206,8 @@ WRAP(double, glwTime,        (), {return glw_time();})
 WRAP(void,   glwSetTitle,    (char* title), {glw_set_title(title);})
 WRAP(void,   glwSwapInterval,(int n), {glw_swap_interval(n);})
 // Drawable size in pixels; glwResized() returns 1 once after every resize
-// (and once after glwInit), so call reshape code when it fires.
+// (and once after glwInit, and when the window needs repainting), so call
+// reshape code when it fires.
 WRAP(int,    glwWidth,       (), {return glw_width();})
 WRAP(int,    glwHeight,      (), {return glw_height();})
 WRAP(int,    glwResized,     (), {return glw_resized();})
@@ -196,6 +215,16 @@ WRAP(int,    glwResized,     (), {return glw_resized();})
 // empty); glwKeyDown(key) tells whether a key is currently held.
 WRAP(int,    glwGetKey,      (), {return glw_get_key();})
 WRAP(int,    glwKeyDown,     (int key), {return glw_key_down(key);})
+// The full event queue (GLW_EV_*): fills e[0..4] and returns 1, or returns 0 when
+// it is empty. glwPoll fills it.
+WRAP(int,    glwNextEvent,   (int* e), {return glw_next_event(e);})
+// How many events wait in that queue (glwPoll first, to move new ones into it).
+WRAP(int,    glwEventCount,  (), {return (glw_ev_tail - glw_ev_head + EVQ) % EVQ;})
+// Sleeps until an event arrives or ms milliseconds pass; returns 1 for an event.
+// Call glwPoll after it.
+WRAP(int,    glwWaitEvent,   (int ms), {return SDL_WaitEventTimeout(nullptr, ms);})
+// After glwPoll returned 0 for the close button, keeps the window open after all.
+WRAP(void,   glwCancelQuit,  (), {glw_quit = false;})
 // Mouse: position in window pixels, button mask (1 left, 2 middle, 4 right),
 // and accumulated wheel steps since the previous glwMouseWheel() call.
 WRAP(int,    glwMouseX,      (), {return glw_mouse_x;})
@@ -301,6 +330,10 @@ WRAP(void, glTexEnvi,     (int target, int pname, int v), {glTexEnvi(target, pna
 WRAP(void, glCopyTexImage2D, (int target, int level, int internalFormat, int x, int y, int w, int h, int border), {glCopyTexImage2D(target, level, internalFormat, x, y, w, h, border);})
 WRAP(void, glCopyTexSubImage2D, (int target, int level, int xoff, int yoff, int x, int y, int w, int h), {glCopyTexSubImage2D(target, level, xoff, yoff, x, y, w, h);})
 WRAP(void, glwTexImage2D, (int w, int h, int* pixels), {glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels);})
+// replaces a w*h rectangle at x,y of the bound texture with pixels[offset...]
+WRAP(void, glwTexSubImage2D, (int x, int y, int w, int h, int* pixels, int offset), {glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, GL_BGRA, GL_UNSIGNED_BYTE, pixels + offset);})
+// the texture unit the next glBindTexture goes to: GL_TEXTURE0+n (GL 1.3)
+WRAP(void, glActiveTexture,   (int unit), {p_glActiveTexture(unit);})
 
 // ============================ shaders (GLSL, OpenGL 2.0+) ===============
 // Build a program from GLSL source strings or from two files; returns the

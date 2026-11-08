@@ -9,6 +9,7 @@
 # 9x16 keeps every glyph it already had at the right place; the rest comes from
 # genrfont.py (9x16) and genrfont6.py (6x12), which draw them in each font's style.
 # Running it again gives the same files.
+# Then run genglfont.py, which copies the fonts into tvgl.h's tables.
 import os,sys,collections
 here=os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0,here)

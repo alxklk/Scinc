@@ -45,6 +45,7 @@ const KeyMap keyMap[] = {
 	{SDLK_F1, 1101}, {SDLK_F2, 1102}, {SDLK_F3, 1103}, {SDLK_F4, 1104},
 	{SDLK_F5, 1105}, {SDLK_F6, 1106}, {SDLK_F7, 1107}, {SDLK_F8, 1108},
 	{SDLK_F9, 1109}, {SDLK_F10, 1110}, {SDLK_F11, 1111}, {SDLK_F12, 1112},
+	{SDLK_INSERT, 1009}, {SDLK_APPLICATION, 1010}, {SDLK_MENU, 1010}, {SDLK_KP_ENTER, 13},
 };
 
 int ToGlwKey(SDL_Keycode k, Uint16 mod)
@@ -76,6 +77,84 @@ void PushKey(int key)
 	glw_key_tail = next;
 }
 
+// The full event queue read by glwNextEvent (see GLW_EV_* in scgl.h): five ints
+// per event. Programs that only use glwGetKey never read it; it then just stays full.
+const int EVQ = 256;
+int glw_evq[EVQ][5];
+int glw_ev_head = 0;
+int glw_ev_tail = 0;
+
+void PushEvent(int type, int a, int b, int c, int d)
+{
+	int next = (glw_ev_tail + 1) % EVQ;
+	if(next == glw_ev_head)
+		return;
+	int* e = glw_evq[glw_ev_tail];
+	e[0] = type;
+	e[1] = a;
+	e[2] = b;
+	e[3] = c;
+	e[4] = d;
+	glw_ev_tail = next;
+}
+
+int Mods(Uint16 mod)
+{
+	return ((mod & KMOD_SHIFT) ? 1 : 0) | ((mod & KMOD_CTRL) ? 2 : 0) | ((mod & KMOD_ALT) ? 4 : 0);
+}
+
+// The Latin letter or digit on a key by its position, so that Ctrl and Alt
+// combinations work under any keyboard layout; 0 for other keys.
+int ScanLetter(SDL_Scancode sc)
+{
+	if(sc >= SDL_SCANCODE_A && sc <= SDL_SCANCODE_Z)
+		return 'a' + sc - SDL_SCANCODE_A;
+	if(sc >= SDL_SCANCODE_1 && sc <= SDL_SCANCODE_9)
+		return '1' + sc - SDL_SCANCODE_1;
+	if(sc == SDL_SCANCODE_0)
+		return '0';
+	return 0;
+}
+
+// Window coordinates to drawable pixels (they differ on HiDPI screens).
+void ToPixels(int& x, int& y)
+{
+	int ww = 0, wh = 0, dw = 0, dh = 0;
+	SDL_GetWindowSize(glw_window, &ww, &wh);
+	SDL_GL_GetDrawableSize(glw_window, &dw, &dh);
+	if(ww > 0 && wh > 0)
+	{
+		x = x * dw / ww;
+		y = y * dh / wh;
+	}
+}
+
+// Pushes each character of a UTF-8 string as one GLW_EV_TEXT event.
+void PushText(const char* t, int mods)
+{
+	const unsigned char* p = (const unsigned char*)t;
+	while(*p)
+	{
+		int c = *p++;
+		int more = 0;
+		if(c >= 0xF0) { c &= 7; more = 3; }
+		else if(c >= 0xE0) { c &= 15; more = 2; }
+		else if(c >= 0xC0) { c &= 31; more = 1; }
+		while(more-- > 0 && (*p & 0xC0) == 0x80)
+			c = (c << 6) | (*p++ & 63);
+		PushEvent(5, c, mods, 0, 0);
+	}
+}
+
+int MouseButton(int b)
+{
+	if(b == SDL_BUTTON_MIDDLE)
+		return 1;
+	if(b == SDL_BUTTON_RIGHT)
+		return 2;
+	return 0;
+}
+
 // ---- GL 2.0 shader entry points, resolved at runtime after context creation
 PFNGLCREATESHADERPROC        p_glCreateShader;
 PFNGLSHADERSOURCEPROC        p_glShaderSource;
@@ -101,6 +180,7 @@ PFNGLUNIFORM3FVPROC          p_glUniform3fv;
 PFNGLUNIFORM4FVPROC          p_glUniform4fv;
 PFNGLUNIFORMMATRIX4FVPROC    p_glUniformMatrix4fv;
 PFNGLBLENDEQUATIONPROC       p_glBlendEquation;
+PFNGLACTIVETEXTUREPROC       p_glActiveTexture;
 bool glw_shaders_ok = false;
 
 template<typename T> bool LoadProc(T& fn, const char* name)
@@ -136,6 +216,7 @@ bool LoadShaderProcs()
 	ok &= LoadProc(p_glUniform4fv, "glUniform4fv");
 	ok &= LoadProc(p_glUniformMatrix4fv, "glUniformMatrix4fv");
 	ok &= LoadProc(p_glBlendEquation, "glBlendEquation");
+	ok &= LoadProc(p_glActiveTexture, "glActiveTexture");
 	return ok;
 }
 
@@ -202,16 +283,44 @@ int glw_poll()
 			glw_quit = true;
 			break;
 		case SDL_WINDOWEVENT:
-			if(e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
+			if(e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED || e.window.event == SDL_WINDOWEVENT_EXPOSED)
 				glw_size_changed = true;
 			else if(e.window.event == SDL_WINDOWEVENT_CLOSE)
 				glw_quit = true;
 			break;
 		case SDL_KEYDOWN:
+		{
 			PushKey(ToGlwKey(e.key.keysym.sym, e.key.keysym.mod));
+			int k = ToGlwKey(e.key.keysym.sym, 0);
+			int letter = ScanLetter(e.key.keysym.scancode);
+			if(k == 0)
+				k = letter;
+			if(k != 0)
+				PushEvent(1, k, Mods(e.key.keysym.mod), letter, 0);
 			break;
+		}
+		case SDL_TEXTINPUT:
+			PushText(e.text.text, Mods(SDL_GetModState()));
+			break;
+		case SDL_MOUSEBUTTONDOWN:
+		case SDL_MOUSEBUTTONUP:
+		{
+			int x = e.button.x, y = e.button.y;
+			ToPixels(x, y);
+			PushEvent(e.type == SDL_MOUSEBUTTONDOWN ? 2 : 3, x, y, MouseButton(e.button.button), Mods(SDL_GetModState()));
+			break;
+		}
+		case SDL_MOUSEMOTION:
+		{
+			int x = e.motion.x, y = e.motion.y;
+			ToPixels(x, y);
+			PushEvent(4, x, y, 0, 0);
+			break;
+		}
 		case SDL_MOUSEWHEEL:
 			glw_mouse_wheel += e.wheel.y;
+			if(e.wheel.y != 0)
+				PushEvent(6, e.wheel.y, 0, 0, 0);
 			break;
 		}
 	}
@@ -274,6 +383,16 @@ int glw_resized()
 	int r = glw_size_changed ? 1 : 0;
 	glw_size_changed = false;
 	return r;
+}
+
+int glw_next_event(int* out)
+{
+	if(glw_ev_head == glw_ev_tail)
+		return 0;
+	for(int i = 0; i < 5; ++i)
+		out[i] = glw_evq[glw_ev_head][i];
+	glw_ev_head = (glw_ev_head + 1) % EVQ;
+	return 1;
 }
 
 int glw_get_key()
