@@ -1,7 +1,8 @@
 // The Turbo Vision style desktop of tvdemo.cpp in an OpenGL window (tvgl.h): every
 // glyph of the interpreter's 9x16 font sits in one texture atlas, and the screen is
 // one quad drawn by a shader from a small texture of glyph slots and colours.
-// The window resizes freely; Ctrl+= and Ctrl+- zoom, Ctrl+0 resets.
+// The window resizes freely; Ctrl+= and Ctrl+- zoom, Ctrl+0 resets. Ctrl+F11 and
+// Ctrl+F12 toggle vsync and glFinish after swaps, to compare drag latency.
 //
 //   ./build_so.sh                        once, builds the file and clock library
 //   (cd ../opengl && ./build_so.sh)      once, builds the OpenGL wrapper

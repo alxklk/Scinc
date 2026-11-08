@@ -15,8 +15,9 @@
 //
 // After each swap glFinish waits until the frame is really done, so the driver
 // cannot queue frames ahead and add their delay to mouse drags. Ctrl+F12 turns
-// that off and on to compare (the window title says which); TV_GL_NOFINISH
-// starts with it off.
+// that off and on to compare, Ctrl+F11 does the same for vsync (without it a
+// frame shows at once, but may tear); the window title says which are on.
+// TV_GL_NOFINISH and TV_GL_NOVSYNC start with them off.
 //
 // tv.h includes this instead of tvgfx.h when the program defines both TV_GFX and
 // TV_GL. TV_GFX_COLS and TV_GFX_ROWS set the starting size in cells, TV_GL_SCALE
@@ -94,6 +95,7 @@ float glPresented=0.0;  // glwTime() of the last frame
 int tvCloseCmd=0;       // the command the close button sends; 0 quits at once
 int glOk=0;             // the window and the shader are there
 int glFinishOn=1;       // glFinish after every swap
+int glVsyncOn=1;        // swaps wait for the display's vertical blank
 
 // ---------------------------------------------------------------- the atlas
 
@@ -356,8 +358,16 @@ int GlTexture()
 
 void GlTitle()
 {
-	if(glFinishOn)glwSetTitle(TV_GL_TITLE " - glFinish on (Ctrl+F12)");
-	else glwSetTitle(TV_GL_TITLE " - glFinish off (Ctrl+F12)");
+	if(glVsyncOn)
+	{
+		if(glFinishOn)glwSetTitle(TV_GL_TITLE " - vsync on (Ctrl+F11), glFinish on (Ctrl+F12)");
+		else glwSetTitle(TV_GL_TITLE " - vsync on (Ctrl+F11), glFinish off (Ctrl+F12)");
+	}
+	else
+	{
+		if(glFinishOn)glwSetTitle(TV_GL_TITLE " - vsync off (Ctrl+F11), glFinish on (Ctrl+F12)");
+		else glwSetTitle(TV_GL_TITLE " - vsync off (Ctrl+F11), glFinish off (Ctrl+F12)");
+	}
 }
 
 void GfxInit()
@@ -393,6 +403,10 @@ void GfxInit()
 #ifdef TV_GL_NOFINISH
 	glFinishOn=0;
 #endif
+#ifdef TV_GL_NOVSYNC
+	glVsyncOn=0;
+#endif
+	glwSwapInterval(glVsyncOn);
 	GlTitle();
 }
 
@@ -557,6 +571,13 @@ void GlEvent()
 		if((mods&2)&&(k==GLW_KEY_F1+11))
 		{
 			glFinishOn=1-glFinishOn;
+			GlTitle();
+			return;
+		}
+		if((mods&2)&&(k==GLW_KEY_F1+10))
+		{
+			glVsyncOn=1-glVsyncOn;
+			glwSwapInterval(glVsyncOn);
 			GlTitle();
 			return;
 		}
