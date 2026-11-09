@@ -53,6 +53,7 @@ typedef char* pchar;
 #define CM_THEMEPICK 505
 #define CM_LINENUMS 506
 #define CM_WRAP 507
+#define CM_LYNX 508
 
 // the panels' commands, FC_CMD0 to FC_CMD1
 #define FC_CMD0 600
@@ -79,6 +80,10 @@ typedef char* pchar;
 #define CM_PANEL 620    // + panel*10 + one of the PN_ actions below
 #define CM_RUN 640
 #define CM_OPENSYS 641
+#define CM_OTHERPANEL 642
+#define CM_QUICKOTHER 643
+#define CM_PARENT 644
+#define CM_MARK 645
 #define FC_CMD1 649
 
 #define PN_FULL 0
@@ -92,6 +97,7 @@ typedef char* pchar;
 
 #define FC_PATH 1024
 #define CFG_FILE "t2fc.cfg"
+#define KEYS_FILE "t2fc.keys"
 
 // the panel colours, VGA attributes as Midnight Commander draws them; the themes
 // recolour these through their 16-colour palette
@@ -127,6 +133,7 @@ int fcWin=-1;
 int fcBase=0;
 int fcActive=0;
 int fcHidden=0;
+int fcLynx=0;              // Left and Right leave and enter directories, as in lynx
 char fcDir[12288];          // FC_MAXP paths of FC_PATH
 int fcCount[FC_MAXP];
 int fcCur[FC_MAXP];
@@ -203,10 +210,196 @@ int FcTopC()
 	return -1;
 }
 
+// ---------------------------------------------------------------- archives
+
+// arc_dl.so (./build_so.sh) shows archives as read-only folders: a path running
+// through an archive file, as "/home/me/a.zip/docs", names something in it. Its
+// listing calls mirror term_dl's, so the panel calls below go to one or the other:
+// LsName and the rest to the listing of the panel FcUse picked.
+#define ARC_DL "arc_dl"
+[[scinc::dynlink(ARC_DL,"arc_where_wrapper")]]int arc_where(char* path, char* file, int fmax, char* inner, int imax);
+[[scinc::dynlink(ARC_DL,"arc_is_wrapper")]]int arc_is(char* path);
+[[scinc::dynlink(ARC_DL,"arc_isdir_wrapper")]]int arc_isdir(char* path);
+[[scinc::dynlink(ARC_DL,"arc_size_wrapper")]]int arc_size(char* path);
+[[scinc::dynlink(ARC_DL,"arc_load_wrapper")]]int arc_load(char* path, char* buf, int max);
+[[scinc::dynlink(ARC_DL,"arc_stamp_wrapper")]]int arc_stamp(char* path);
+[[scinc::dynlink(ARC_DL,"arc_error_wrapper")]]void arc_error(char* out, int max);
+[[scinc::dynlink(ARC_DL,"arc_temp_wrapper")]]int arc_temp(char* path, char* out, int max);
+[[scinc::dynlink(ARC_DL,"arc_tempdir_wrapper")]]void arc_tempdir(char* out, int max);
+[[scinc::dynlink(ARC_DL,"arc_slot_wrapper")]]int arc_slot(int k);
+[[scinc::dynlink(ARC_DL,"arc_sort_wrapper")]]void arc_sort(int mode);
+[[scinc::dynlink(ARC_DL,"arc_list_wrapper")]]int arc_list(char* path, char* resolved, int max, int showHidden);
+[[scinc::dynlink(ARC_DL,"arc_name_wrapper")]]int arc_name(int i, char* out, int max);
+[[scinc::dynlink(ARC_DL,"arc_index_wrapper")]]int arc_index(char* name);
+[[scinc::dynlink(ARC_DL,"arc_find_wrapper")]]int arc_find(int letter, int start);
+[[scinc::dynlink(ARC_DL,"arc_field_wrapper")]]void arc_field(int i, int k, char* out, int max);
+[[scinc::dynlink(ARC_DL,"arc_mark_wrapper")]]int arc_mark(int i, int v);
+[[scinc::dynlink(ARC_DL,"arc_marked_wrapper")]]int arc_marked(int i);
+[[scinc::dynlink(ARC_DL,"arc_mark_match_wrapper")]]int arc_mark_match(int v, char* pattern, int dirsToo);
+[[scinc::dynlink(ARC_DL,"arc_mark_info_wrapper")]]int arc_mark_info(char* out, int max);
+[[scinc::dynlink(ARC_DL,"arc_tree_wrapper")]]int arc_tree(int id, char* path);
+[[scinc::dynlink(ARC_DL,"arc_row_wrapper")]]int arc_row(int id, int i, int k, char* out, int max);
+[[scinc::dynlink(ARC_DL,"arc_summary_wrapper")]]void arc_summary(int id, char* out, int max);
+[[scinc::dynlink(ARC_DL,"arc_job_clear_wrapper")]]void arc_job_clear();
+[[scinc::dynlink(ARC_DL,"arc_job_add_wrapper")]]void arc_job_add(char* path);
+[[scinc::dynlink(ARC_DL,"arc_job_start_wrapper")]]int arc_job_start(char* dst);
+[[scinc::dynlink(ARC_DL,"arc_job_step_wrapper")]]int arc_job_step(int ms);
+[[scinc::dynlink(ARC_DL,"arc_job_answer_wrapper")]]void arc_job_answer(int k);
+[[scinc::dynlink(ARC_DL,"arc_job_info_wrapper")]]int arc_job_info(int k);
+[[scinc::dynlink(ARC_DL,"arc_job_name_wrapper")]]void arc_job_name(int k, char* out, int max);
+
+int fcInArc[FC_MAXP];       // the panel shows a directory in an archive
+int fcArcNow=0;             // the listing FcUse picked is an archive's
+int fcJobArc=0;             // the job is a copy out of an archive
+char fcArcFile[FC_PATH];    // arc_where's answers
+char fcArcInner[FC_PATH];
+
 // Every listing call works on the slot of a panel, panel+1 (0 is the file dialog's).
 void FcUse(int p)
 {
 	fs_slot(p+1);
+	arc_slot(p+1);
+	fcArcNow=fcInArc[p];
+}
+
+int LsName(int i, char* out, int max)
+{
+	if(fcArcNow)return arc_name(i,out,max);
+	return fs_name(i,out,max);
+}
+
+void LsField(int i, int k, char* out, int max)
+{
+	if(fcArcNow)arc_field(i,k,out,max);
+	else fs_field(i,k,out,max);
+}
+
+int LsMark(int i, int v)
+{
+	if(fcArcNow)return arc_mark(i,v);
+	return fs_mark(i,v);
+}
+
+int LsMarked(int i)
+{
+	if(fcArcNow)return arc_marked(i);
+	return fs_marked(i);
+}
+
+int LsMarkMatch(int v, char* pattern, int dirsToo)
+{
+	if(fcArcNow)return arc_mark_match(v,pattern,dirsToo);
+	return fs_mark_match(v,pattern,dirsToo);
+}
+
+int LsMarkInfo(char* out, int max)
+{
+	if(fcArcNow)return arc_mark_info(out,max);
+	return fs_mark_info(out,max);
+}
+
+int LsIndex(char* name)
+{
+	if(fcArcNow)return arc_index(name);
+	return fs_index(name);
+}
+
+int LsFind(int letter, int start)
+{
+	if(fcArcNow)return arc_find(letter,start);
+	return fs_find(letter,start);
+}
+
+// 0 an ordinary path, 1 an archive file's top, 2 something in an archive.
+int FcArcWhere(char* path)
+{
+	return arc_where(path,&fcArcFile[0],FC_PATH,&fcArcInner[0],FC_PATH);
+}
+
+// A directory, or one in an archive; an archive file itself is a file here.
+int FcIsDir(char* path)
+{
+	if(FcArcWhere(path)==2)return arc_isdir(path);
+	return fs_isdir(path);
+}
+
+int FcLoadFile(char* path, char* buf, int max)
+{
+	if(FcArcWhere(path)==2)return arc_load(path,buf,max);
+	return fs_load(path,buf,max);
+}
+
+int FcStampOf(char* path)
+{
+	if(FcArcWhere(path)!=0)return arc_stamp(path);
+	return fs_stamp(path);
+}
+
+void FcError(char* out, int max)
+{
+	if(fcJobArc)arc_error(out,max);
+	else fs_error(out,max);
+}
+
+// The free space of the disk under a directory, or under the archive it is in.
+int FcDisk(char* path, char* out, int max)
+{
+	if(FcArcWhere(path)==0)return fs_disk(path,out,max);
+	int base=0;
+	int k=0;
+	while(fcArcFile[k]!=0)
+	{
+		if(fcArcFile[k]=='/')base=k;
+		k++;
+	}
+	fcArcFile[base]=0;
+	if(base==0)StrCpy(&fcArcFile[0],"/",FC_PATH);
+	return fs_disk(&fcArcFile[0],out,max);
+}
+
+// A copy out of an archive runs in arc_dl, the other jobs in term_dl.
+void JobClear()
+{
+	fs_job_clear();
+	arc_job_clear();
+}
+
+void JobAdd(char* path)
+{
+	if(fcJobArc)arc_job_add(path);
+	else fs_job_add(path);
+}
+
+int JobStep(int ms)
+{
+	if(fcJobArc)return arc_job_step(ms);
+	return fs_job_step(ms);
+}
+
+void JobAnswer(int k)
+{
+	if(fcJobArc)arc_job_answer(k);
+	else fs_job_answer(k);
+}
+
+int JobInfo(int k)
+{
+	if(fcJobArc)return arc_job_info(k);
+	return fs_job_info(k);
+}
+
+void JobName(int k, char* out, int max)
+{
+	if(fcJobArc)arc_job_name(k,out,max);
+	else fs_job_name(k,out,max);
+}
+
+// Says so and returns 1 if the active panel is in an archive, which is read-only.
+int FcReadOnly(char* title)
+{
+	if(!fcInArc[fcActive])return 0;
+	TvMessage(title,"This is inside an archive, which t2fc opens read-only.\nF5 copies files out of it.",0);
+	return 1;
 }
 
 char* FcDirOf(int p)
@@ -232,7 +425,7 @@ int FcIsUp(char* s)
 int FcName(int p, int i, char* out)
 {
 	FcUse(p);
-	return fs_name(i,out,256);
+	return LsName(i,out,256);
 }
 
 void FcPathOf(int p, int i, char* out)
@@ -276,8 +469,22 @@ int FcLoad(int p, char* path, char* selectName)
 	char resolved[FC_PATH];
 	FcUse(p);
 	fs_sort(fcSort[p]);
-	int n=fs_list(path,&resolved[0],FC_PATH,fcHidden);
-	if(n<0)return 0;
+	arc_sort(fcSort[p]);
+	// arc_list takes a path in an archive; for any other it gives the path with . and
+	// .. taken out, which may have left an archive
+	int n=arc_list(path,&resolved[0],FC_PATH,fcHidden);
+	if(n==-1)return 0;
+	int inArc=1;
+	if(n==-2)
+	{
+		char plain[FC_PATH];
+		StrCpy(&plain[0],&resolved[0],FC_PATH);
+		n=fs_list(&plain[0],&resolved[0],FC_PATH,fcHidden);
+		if(n<0)return 0;
+		inArc=0;
+	}
+	fcInArc[p]=inArc;
+	fcArcNow=inArc;
 	int same=1;
 	int k=0;
 	while(same)
@@ -288,8 +495,8 @@ int FcLoad(int p, char* path, char* selectName)
 	}
 	StrCpy(FcDirOf(p),&resolved[0],FC_PATH);
 	fcCount[p]=n;
-	fcStamp[p]=fs_stamp(&resolved[0]);
-	int at=fs_index(selectName);
+	fcStamp[p]=FcStampOf(&resolved[0]);
+	int at=LsIndex(selectName);
 	if(at>=0)fcCur[p]=at;
 	else if(!same)
 	{
@@ -465,6 +672,7 @@ void FcRight(int x, int y, char* s, int at, int w)
 #define IMG_DL "img_dl"
 int StrCmp(char* a, char* b);
 [[scinc::dynlink(IMG_DL,"img_is_wrapper")]]int img_is(char* path);
+[[scinc::dynlink(IMG_DL,"img_sniff_wrapper")]]int img_sniff(char* head, int n, char* name);
 [[scinc::dynlink(IMG_DL,"img_open_wrapper")]]int img_open(int s, char* path);
 [[scinc::dynlink(IMG_DL,"img_free_wrapper")]]void img_free(int s);
 [[scinc::dynlink(IMG_DL,"img_state_wrapper")]]int img_state(int s);
@@ -513,10 +721,46 @@ char* PvPathOf(int s)
 
 void FcTickRate();
 
+// 1 if the file is a picture img_dl decodes, in an archive or not.
+int FcIsPicture(char* path)
+{
+	if(FcArcWhere(path)!=2)return img_is(path);
+	char head[16];
+	int n=arc_load(path,&head[0],16);
+	if(n<=0)return 0;
+	return img_sniff(&head[0],n,path);
+}
+
+// A file img_dl and the editor can open: the path itself, or for a file in an archive
+// a temporary copy (arc_dl removes them at the end). Returns 0 if it cannot.
+int FcLocal(char* path, char* out)
+{
+	StrCpy(out,path,FC_PATH);
+	if(FcArcWhere(path)!=2)return 1;
+	return arc_temp(path,out,FC_PATH);
+}
+
+// 1 for a temporary copy from an archive, which is not to be edited.
+int FcIsArcCopy(char* path)
+{
+	char dir[FC_PATH];
+	arc_tempdir(&dir[0],FC_PATH);
+	if(dir[0]==0)return 0;
+	int k=0;
+	while(dir[k]!=0)
+	{
+		if(path[k]!=dir[k])return 0;
+		k++;
+	}
+	return path[k]=='/';
+}
+
 void PvOpen(int s, char* path)
 {
 	StrCpy(PvPathOf(s),path,FC_PATH);
-	img_open(s,path);
+	char local[FC_PATH];
+	FcLocal(path,&local[0]);
+	img_open(s,&local[0]);
 	pvUsed[s]=1;
 	pvSeen[s]=-2;
 	pvScale[s]=0.;
@@ -725,12 +969,14 @@ int fcQKind[FC_MAXP];       // 1 picture, 2 text, 3 binary, 4 directory, 5 unrea
 char fcQText[16384];        // the start of the last text or binary file shown
 int fcQTextN=0;
 char fcQTextPath[FC_PATH];
+char fcQArcPath[FC_PATH];   // the archive whose tree quick view shows
+int fcQArcN=0;
 
 // Reads the start of a file into fcQText, unless it is there already.
 void FcQLoad(char* path)
 {
 	if(StrCmp(&fcQTextPath[0],path)==0)return;
-	fcQTextN=fs_load(path,&fcQText[0],16384);
+	fcQTextN=FcLoadFile(path,&fcQText[0],16384);
 	StrCpy(&fcQTextPath[0],path,FC_PATH);
 }
 
@@ -814,7 +1060,8 @@ void FcQUpdate(int p, char* path, int isDir)
 	int kind=4;
 	if(!isDir)
 	{
-		if(img_is(path))kind=1;
+		if(FcArcWhere(path)==1)kind=6;
+		else if(FcIsPicture(path))kind=1;
 		else
 		{
 			fcQTextPath[0]=0;
@@ -829,6 +1076,8 @@ void FcQUpdate(int p, char* path, int isDir)
 	if(kind==1)PvOpen(PV_QUICK+p,path);
 	else PvFree(PV_QUICK+p);
 }
+
+void FcQArc(char* path, int x, int y, int w, int h, char* info);
 
 void FcDrawQuick(int p, int x, int y, int w, int h)
 {
@@ -867,10 +1116,12 @@ void FcDrawQuick(int p, int x, int y, int w, int h)
 		FcQHex(x,cy,w,chh);
 		StrCpy(&info[0],"binary",120);
 	}
+	else if(kind==6)FcQArc(&path[0],x,cy,w,chh,&info[0]);
 	else if(kind==5)
 	{
 		char err[300];
-		fs_error(&err[0],300);
+		if(fcInArc[q])arc_error(&err[0],300);
+		else fs_error(&err[0],300);
 		FcCut(x+1,cy+1,&err[0],FC_FILE,w-2);
 	}
 	else
@@ -889,6 +1140,7 @@ void FcDrawQuick(int p, int x, int y, int w, int h)
 
 void FcQInit()
 {
+	fcQArcPath[0]=0;
 	for(int p=0;p<FC_MAXP;p++)
 	{
 		fcQuick[p]=0;
@@ -932,9 +1184,9 @@ void FcCell(int p, int i, int x, int y, int w, int sizeX, int timeX, int cursor)
 	char mark[4];
 	char text[260];
 	int isDir=FcName(p,i,&name[0]);
-	fs_field(i,3,&mark[0],4);
+	LsField(i,3,&mark[0],4);
 	int m=mark[0];
-	int marked=fs_marked(i);
+	int marked=LsMarked(i);
 	int at=FcAttrOf(isDir,m,&name[0]);
 	if(marked)at=FC_MARK;
 	if(cursor)
@@ -953,14 +1205,14 @@ void FcCell(int p, int i, int x, int y, int w, int sizeX, int timeX, int cursor)
 	if(sizeX>0)
 	{
 		char size[16];
-		fs_field(i,0,&size[0],16);
+		LsField(i,0,&size[0],16);
 		TvPut(sizeX,y,G_VERT,sepAt);
 		FcRight(sizeX+1,y,&size[0],at,7);
 	}
 	if(timeX>0)
 	{
 		char when[24];
-		fs_field(i,1,&when[0],24);
+		LsField(i,1,&when[0],24);
 		TvPut(timeX,y,G_VERT,sepAt);
 		TvTextN(timeX+1,y,&when[0],at,12);
 	}
@@ -1097,7 +1349,7 @@ void FcDrawPanel(int p, int x, int y, int w, int h)
 	if(fcBrief[p])TvPut(x+(w-1)/2,ly,0x2534,FC_FRAME);
 	char disk[64];
 	char shown[72];
-	if(fs_disk(dir,&disk[0],64))
+	if(FcDisk(dir,&disk[0],64))
 	{
 		snprintf(&shown[0],72," %s ",&disk[0]);
 		int n=StrLen(&shown[0]);
@@ -1107,7 +1359,7 @@ void FcDrawPanel(int p, int x, int y, int w, int h)
 	int iy=y+h-1;
 	char info[80];
 	FcUse(p);
-	int marked=fs_mark_info(&info[0],80);
+	int marked=LsMarkInfo(&info[0],80);
 	if(marked>0)
 	{
 		int n=TvCols(&info[0]);
@@ -1122,8 +1374,8 @@ void FcDrawPanel(int p, int x, int y, int w, int h)
 		char right[40];
 		int k=fcCur[p];
 		FcName(p,k,&name[0]);
-		fs_field(k,2,&perm[0],16);
-		fs_field(k,0,&size[0],16);
+		LsField(k,2,&perm[0],16);
+		LsField(k,0,&size[0],16);
 		snprintf(&right[0],40,"%s %s",&size[0],&perm[0]);
 		int rn=StrLen(&right[0]);
 		if(rn>w-4)rn=0;
@@ -1259,7 +1511,7 @@ void DrawJob(int win)
 	if(fcJobOp==1)verb="Moving";
 	if(fcJobOp==2)verb="Deleting";
 	TvText(t.x+3,t.y+2,verb,A_DLG);
-	fs_job_name(0,&name[0],FC_PATH);
+	JobName(0,&name[0],FC_PATH);
 	int w=t.w-6;
 	// the end of a long path is the part worth showing
 	int cols=TvCols(&name[0]);
@@ -1271,7 +1523,7 @@ void DrawJob(int win)
 	if(fcJobOp!=2)
 	{
 		TvText(t.x+3,t.y+4,"to",A_DLG);
-		fs_job_name(1,&name[0],FC_PATH);
+		JobName(1,&name[0],FC_PATH);
 		cols=TvCols(&name[0]);
 		i=0;
 		if(cols>w)
@@ -1279,10 +1531,10 @@ void DrawJob(int win)
 				TvUtf8(&name[0],i);
 		TvTextN(t.x+3,t.y+5,&name[i],A_DLG,w);
 	}
-	snprintf(&line[0],80,"%i of %i",fs_job_info(1),fs_job_info(2));
+	snprintf(&line[0],80,"%i of %i",JobInfo(1),JobInfo(2));
 	TvText(t.x+3,t.y+8,&line[0],A_DLG);
-	tvCtl[fcJobFile].val=fs_job_info(3);
-	tvCtl[fcJobTotal].val=fs_job_info(0);
+	tvCtl[fcJobFile].val=JobInfo(3);
+	tvCtl[fcJobTotal].val=JobInfo(0);
 }
 
 // Asks what to do about a failed action or an existing target, for fs_job_answer.
@@ -1294,15 +1546,15 @@ void FcJobQuestion(int r)
 	int k=-1;
 	if(r==-2)
 	{
-		fs_job_name(1,&name[0],FC_PATH);
+		JobName(1,&name[0],FC_PATH);
 		snprintf(&msg[0],600,"\"%s\"\nalready exists. Overwrite it?",&name[EdBase(&name[0])]);
 		k=TvChoose("Target exists",&msg[0],"~Y~es|~N~o|~A~ll|No~n~e|A~b~ort");
 		if(k<0)k=4;
 	}
 	else
 	{
-		fs_error(&err[0],300);
-		fs_job_name(0,&name[0],FC_PATH);
+		FcError(&err[0],300);
+		JobName(0,&name[0],FC_PATH);
 		snprintf(&msg[0],600,"%s\n\"%s\"",&err[0],&name[EdBase(&name[0])]);
 		int c=TvChoose("Error",&msg[0],"~S~kip|Skip ~a~ll|~R~etry|A~b~ort");
 		k=4;
@@ -1310,7 +1562,7 @@ void FcJobQuestion(int r)
 		if(c==1)k=2;
 		if(c==2)k=0;
 	}
-	fs_job_answer(k);
+	JobAnswer(k);
 	if(k==4)fcJobDone=2;
 }
 
@@ -1319,7 +1571,7 @@ void FcJobTick()
 	if(fcJobWin<0)return;
 	if(fcJobAsking)return;     // a question's dialog runs the loop meanwhile
 	if(fcJobDone)return;
-	int r=fs_job_step(40);
+	int r=JobStep(40);
 	tvDirty=1;
 	if(r<0)
 	{
@@ -1358,7 +1610,7 @@ int FcRunJob(int op, char* title)
 	int res=TvExec(win);
 	if(res!=CM_OK)
 	{
-		fs_job_answer(4);
+		JobAnswer(4);
 		fcJobDone=2;
 	}
 	fcJobWin=-1;
@@ -1374,16 +1626,17 @@ int FcSources(char* what)
 {
 	int p=fcActive;
 	FcUse(p);
-	fs_job_clear();
+	JobClear();
+	fcJobArc=fcInArc[p];
 	int n=0;
 	char path[FC_PATH];
 	char name[256];
 	for(int i=0;i<fcCount[p];i++)
-		if(fs_marked(i))
+		if(LsMarked(i))
 		{
 			FcPathOf(p,i,&path[0]);
 			FcUse(p);
-			fs_job_add(&path[0]);
+			JobAdd(&path[0]);
 			n++;
 		}
 	if(n>0)
@@ -1396,7 +1649,7 @@ int FcSources(char* what)
 	FcName(p,fcCur[p],&name[0]);
 	if(FcIsUp(&name[0]))return 0;
 	FcPathOf(p,fcCur[p],&path[0]);
-	fs_job_add(&path[0]);
+	JobAdd(&path[0]);
 	snprintf(what,300,"\"%s\"",&name[0]);
 	return 1;
 }
@@ -1404,13 +1657,15 @@ int FcSources(char* what)
 void FcUnmark(int p)
 {
 	FcUse(p);
-	fs_mark_match(0,"",1);
+	LsMarkMatch(0,"",1);
 }
 
 // F5 and F6: copy or move to the other panel's directory, or to a typed name.
 // inPlace (Shift+F6) offers the entry's own name, to rename it.
 void FcCopyMove(int op, int inPlace)
 {
+	if(op==1)
+		if(FcReadOnly("Rename or move"))return;
 	char what[300];
 	int n=FcSources(&what[0]);
 	if(n==0)return;
@@ -1435,11 +1690,19 @@ void FcCopyMove(int op, int inPlace)
 	if(op==1)title="Rename or move";
 	if(!FcAsk(title,&prompt[0],&target[0],&typed[0]))return;
 	FcResolve(&typed[0],&target[0]);
+	if(FcArcWhere(&target[0])!=0)
+	{
+		TvMessage(title,"Archives are read-only: nothing can be copied into one.",0);
+		return;
+	}
 	// FcSources cleared the job and added the sources; the dialog did not touch them
-	if(!fs_job_start(op,&target[0]))
+	int started=0;
+	if(fcJobArc)started=arc_job_start(&target[0]);
+	else started=fs_job_start(op,&target[0]);
+	if(!started)
 	{
 		char err[300];
-		fs_error(&err[0],300);
+		FcError(&err[0],300);
 		TvMessage(title,&err[0],0);
 		return;
 	}
@@ -1453,6 +1716,7 @@ void FcCopyMove(int op, int inPlace)
 
 void FcDelete()
 {
+	if(FcReadOnly("Delete"))return;
 	char what[300];
 	int n=FcSources(&what[0]);
 	if(n==0)return;
@@ -1460,7 +1724,7 @@ void FcDelete()
 	char info[80];
 	snprintf(&msg[0],400,"Delete %s?",&what[0]);
 	FcUse(fcActive);
-	if(fs_mark_info(&info[0],80)==0)
+	if(LsMarkInfo(&info[0],80)==0)
 	{
 		char name[256];
 		if(FcName(fcActive,fcCur[fcActive],&name[0]))
@@ -1477,6 +1741,7 @@ void FcMkdir()
 {
 	char typed[FC_PATH];
 	char path[FC_PATH];
+	if(FcReadOnly("Make directory"))return;
 	if(!FcAsk("Make directory","Name of the new directory:","",&typed[0]))return;
 	FcResolve(&typed[0],&path[0]);
 	if(!fs_mkdir(&path[0]))
@@ -1518,7 +1783,19 @@ void FcEditorTitle(int win)
 // ---------------------------------------------------------------- picture windows
 
 #define W_PIC 64
-#define ST_VIEWER 1000 // the status line context of view windows
+#define ST_VIEWER 900  // the status line and keyboard context of view windows
+// picture window commands, CM_PIC0 to CM_PIC1
+#define CM_PIC0 660
+#define CM_PICIN 660
+#define CM_PICOUT 661
+#define CM_PICFIT 662
+#define CM_PIC1X 663
+#define CM_PIC2X 664
+#define CM_PICNEXT 665
+#define CM_PICPREV 666
+#define CM_PICTURN 667
+#define CM_PIC1 667
+#define CM_VIEWEDIT 670
 
 int pvPanel[TV_MAXWIN];      // the panel a picture window came from
 int pvDragX=0;
@@ -1596,7 +1873,7 @@ void PicStep(int win, int dir)
 		if(!FcName(p,k,&name[0]))
 		{
 			FcJoin(&path[0],FcDirOf(p),&name[0]);
-			if(img_is(&path[0]))found=k;
+			if(FcIsPicture(&path[0]))found=k;
 		}
 	}
 	if(found>=0)
@@ -1616,30 +1893,38 @@ int PicKey(int win, int key)
 	int ph=(t.h-2)*TvCellPxH();
 	int step=pw/8;
 	if(step<2)step=2;
-	if((key=='+')||(key=='='))PvZoom(win,1.5,pw/2,ph/2,pw,ph);
-	else if(key=='-')PvZoom(win,1./1.5,pw/2,ph/2,pw,ph);
-	else if((key=='0')||(key=='*')||(key=='f'))
+	// the other keys are commands of the keyboard map (PicCommand)
+	if(key==K_LEFT)PvPan(win,-step,0,pw,ph);
+	else if(key==K_RIGHT)PvPan(win,step,0,pw,ph);
+	else if(key==K_UP)PvPan(win,0,-step,pw,ph);
+	else if(key==K_DOWN)PvPan(win,0,step,pw,ph);
+	else return 0;
+	return 1;
+}
+
+void PicCommand(int win, int cmd)
+{
+	TWin& t=tvWin[win];
+	int pw=(t.w-2)*TvCellPxW();
+	int ph=(t.h-2)*TvCellPxH();
+	if(cmd==CM_PICIN)PvZoom(win,1.5,pw/2,ph/2,pw,ph);
+	else if(cmd==CM_PICOUT)PvZoom(win,1./1.5,pw/2,ph/2,pw,ph);
+	else if(cmd==CM_PICFIT)
 	{
 		pvScale[win]=0.;
 		tvDirty=1;
 	}
-	else if(key=='1')PvSetScale(win,1.,pw/2,ph/2,pw,ph);
-	else if(key=='2')PvSetScale(win,0.5,pw/2,ph/2,pw,ph);
-	else if(key==K_LEFT)PvPan(win,-step,0,pw,ph);
-	else if(key==K_RIGHT)PvPan(win,step,0,pw,ph);
-	else if(key==K_UP)PvPan(win,0,-step,pw,ph);
-	else if(key==K_DOWN)PvPan(win,0,step,pw,ph);
-	else if(key=='r')
+	else if(cmd==CM_PIC1X)PvSetScale(win,1.,pw/2,ph/2,pw,ph);
+	else if(cmd==CM_PIC2X)PvSetScale(win,0.5,pw/2,ph/2,pw,ph);
+	else if(cmd==CM_PICTURN)
 	{
 		img_rotate(win);
 		pvGen[win]++;
 		pvScale[win]=0.;
 		tvDirty=1;
 	}
-	else if((key==' ')||(key==K_PGDN))PicStep(win,1);
-	else if((key==K_BACKSPACE)||(key==K_PGUP))PicStep(win,-1);
-	else return 0;
-	return 1;
+	else if(cmd==CM_PICNEXT)PicStep(win,1);
+	else if(cmd==CM_PICPREV)PicStep(win,-1);
 }
 
 int PicMouse(int win, int ev, int x, int y)
@@ -1692,23 +1977,47 @@ int PicMouse(int win, int ev, int x, int y)
 
 // F3: directories are entered, binary files go to the hex viewer, and text opens in a
 // read-only editor window.
+int ArcOpen(char* path);
+
 void FcViewPath(char* path)
 {
-	if(fs_isdir(path))return;
+	if(FcIsDir(path))return;
+	// an archive opens in an archive window, its tree
+	if(FcArcWhere(path)==1)
+	{
+		ArcOpen(path);
+		return;
+	}
 	char head[4096];
-	int n=fs_load(path,&head[0],4096);
+	int n=FcLoadFile(path,&head[0],4096);
 	if(n<0)
 	{
 		char err[300];
-		fs_error(&err[0],300);
+		if(FcArcWhere(path)==2)arc_error(&err[0],300);
+		else fs_error(&err[0],300);
 		TvMessage("View",&err[0],0);
 		return;
 	}
-	if(img_is(path))
+	if(FcIsPicture(path))
 	{
 		PicOpen(path,fcActive);
 		return;
 	}
+	// a file in an archive is viewed from a temporary copy
+	char local[FC_PATH];
+	if(!FcLocal(path,&local[0]))
+	{
+		char err[300];
+		arc_error(&err[0],300);
+		TvMessage("View",&err[0],0);
+		return;
+	}
+	if(arc_is(&local[0]))
+	{
+		ArcOpen(&local[0]);
+		return;
+	}
+	path=&local[0];
 	int binary=0;
 	for(int i=0;i<n;i++)
 		if(head[i]==0)binary=1;
@@ -1732,7 +2041,12 @@ void FcViewPath(char* path)
 // F4, or F4 in a view window: an editor window for the file.
 void FcEditPath(char* path)
 {
-	if(fs_isdir(path))return;
+	if(FcIsDir(path))return;
+	if((FcArcWhere(path)==2)||FcIsArcCopy(path))
+	{
+		TvMessage("Edit","This file is in an archive, which t2fc opens read-only.",0);
+		return;
+	}
 	char full[ED_PATH];
 	int was=-1;
 	if(EdAbsPath(path,&full[0])==1)was=EdFindPath(&full[0]);
@@ -1767,7 +2081,7 @@ void FcEdit()
 	if(fcCount[p]==0)return;
 	char path[FC_PATH];
 	FcPathOf(p,fcCur[p],&path[0]);
-	if(fs_isdir(&path[0]))
+	if(FcIsDir(&path[0]))
 	{
 		TvMessage("Edit","That is a directory.",0);
 		return;
@@ -1779,6 +2093,7 @@ void FcNewFile()
 {
 	char typed[FC_PATH];
 	char path[FC_PATH];
+	if(FcReadOnly("New file"))return;
 	if(!FcAsk("New file","Name of the file to edit:","",&typed[0]))return;
 	FcResolve(&typed[0],&path[0]);
 	FcEditPath(&path[0]);
@@ -1790,7 +2105,275 @@ void FcHex()
 	if(fcCount[p]==0)return;
 	char path[FC_PATH];
 	FcPathOf(p,fcCur[p],&path[0]);
-	if(!fs_isdir(&path[0]))HxOpen(&path[0]);
+	if(FcIsDir(&path[0]))return;
+	char local[FC_PATH];
+	if(FcLocal(&path[0],&local[0]))HxOpen(&local[0]);
+}
+
+// ---------------------------------------------------------------- archive windows
+
+// F3 on an archive: its whole tree in a window, with sizes and times. Enter views a
+// file or shows a directory in the panel, F5 copies the entry out to the panel's
+// directory. arc_dl keeps the trees, six for windows (0-5) and one for quick view (7).
+#define W_ARC 65
+#define CM_ARCOPEN 671
+#define CM_ARCCOPY 672
+#define ARC_WINS 6
+
+int arTree[TV_MAXWIN];
+int arCur[TV_MAXWIN];
+int arTop[TV_MAXWIN];
+int arN[TV_MAXWIN];
+char arPath[16384];          // TV_MAXWIN paths of FC_PATH
+int arClickWin=-1;
+int arClickMs=0;
+int arClickRow=-1;
+
+int ArcFind(char* path)
+{
+	for(int i=0;i<TV_MAXWIN;i++)
+		if(tvWin[i].used&&(tvWin[i].type==W_ARC))
+			if(StrCmp(&arPath[i*FC_PATH],path)==0)return i;
+	return -1;
+}
+
+int ArcOpen(char* path)
+{
+	int win=ArcFind(path);
+	if(win>=0)
+	{
+		TvToFront(win);
+		return win;
+	}
+	int id=-1;
+	for(int k=ARC_WINS-1;k>=0;k--)
+	{
+		int used=0;
+		for(int i=0;i<TV_MAXWIN;i++)
+			if(tvWin[i].used&&(tvWin[i].type==W_ARC)&&(arTree[i]==k))used=1;
+		if(!used)id=k;
+	}
+	if(id<0)
+	{
+		TvMessage("Archive","Six archive windows are open already.",0);
+		return -1;
+	}
+	int n=arc_tree(id,path);
+	if(n<0)
+	{
+		char err[300];
+		arc_error(&err[0],300);
+		TvMessage("Archive",&err[0],0);
+		return -1;
+	}
+	int w=tvW-8;
+	if(w>100)w=100;
+	if(w<30)w=tvW;
+	int h=tvH-4;
+	win=TvNew(W_ARC,"Archive",(tvW-w)/2,2,w,h,WF_RESIZE);
+	if(win<0)
+	{
+		TvMessage("Archive","Too many windows are open.",0);
+		return -1;
+	}
+	arTree[win]=id;
+	arN[win]=n;
+	arCur[win]=0;
+	arTop[win]=0;
+	StrCpy(&arPath[win*FC_PATH],path,FC_PATH);
+	FcSetTitle(win,"Archive: ",path);
+	return win;
+}
+
+int ArcRows(int win)
+{
+	return tvWin[win].h-4;
+}
+
+void ArcClamp(int win)
+{
+	int n=arN[win];
+	int rows=ArcRows(win);
+	if(arCur[win]>=n)arCur[win]=n-1;
+	if(arCur[win]<0)arCur[win]=0;
+	if(arCur[win]<arTop[win])arTop[win]=arCur[win];
+	if(arCur[win]>=arTop[win]+rows)arTop[win]=arCur[win]-rows+1;
+	if(arTop[win]>n-rows)arTop[win]=n-rows;
+	if(arTop[win]<0)arTop[win]=0;
+}
+
+// Rows of tree id from top, in a box: the tree and names, sizes and times.
+void ArcRowsDraw(int id, int top, int cur, int n, int x, int y, int w, int h, int withTime)
+{
+	char name[600];
+	char size[32];
+	char when[32];
+	int tw=0;
+	if(withTime)tw=13;
+	int nw=w-9-tw;
+	for(int r=0;r<h;r++)
+	{
+		int i=top+r;
+		if(i>=n)return;
+		int isDir=arc_row(id,i,0,&name[0],600);
+		if(isDir<0)return;
+		arc_row(id,i,1,&size[0],32);
+		int at=FC_FILE;
+		if(isDir)at=FC_DIR;
+		else if(FcIsArchive(&name[0]))at=FC_ARCH;
+		if(i==cur)
+		{
+			at=FC_CUR;
+			TvFill(x,y+r,w,1,' ',at);
+		}
+		FcCut(x+1,y+r,&name[0],at,nw);
+		TvText(x+1+nw+7-StrLen(&size[0]),y+r,&size[0],at);
+		if(withTime)
+		{
+			arc_row(id,i,2,&when[0],32);
+			TvText(x+w-13,y+r,&when[0],at);
+		}
+	}
+}
+
+void ArcDraw(int win)
+{
+	TWin& t=tvWin[win];
+	ArcClamp(win);
+	TvFill(t.x+1,t.y+1,t.w-2,t.h-2,' ',FC_BG);
+	char sum[200];
+	arc_summary(arTree[win],&sum[0],200);
+	FcCut(t.x+2,t.y+1,&sum[0],FC_HEAD,t.w-4);
+	for(int k=1;k<t.w-1;k++)
+		TvPut(t.x+k,t.y+2,G_HORZ,FC_FRAME);
+	ArcRowsDraw(arTree[win],arTop[win],arCur[win],arN[win],t.x+1,t.y+3,t.w-2,ArcRows(win),t.w>50);
+}
+
+// The path of the row under the cursor, and 1 if it is a directory, or -1 if none.
+int ArcCurPath(int win, char* out)
+{
+	out[0]=0;
+	if(arN[win]==0)return -1;
+	return arc_row(arTree[win],arCur[win],3,out,FC_PATH);
+}
+
+void ArcCommand(int win, int cmd)
+{
+	char path[FC_PATH];
+	int isDir=ArcCurPath(win,&path[0]);
+	if(isDir<0)return;
+	int c=FcTopC();
+	if(c<0)c=fcC;
+	if(fcWinOf[c]<0)
+	{
+		TvMessage("Archive","There is no panel window open.",0);
+		return;
+	}
+	FcSelect(c);
+	if(cmd==CM_ARCOPEN)
+	{
+		if(isDir)
+		{
+			// the active panel goes to the directory in the archive
+			FcChangeDir(fcActive,&path[0]);
+			TvToFront(fcWin);
+		}
+		else FcViewPath(&path[0]);
+		return;
+	}
+	if(cmd==CM_ARCCOPY)
+	{
+		int p=fcActive;
+		if(fcInArc[p])
+		{
+			TvMessage("Copy","The active panel is inside an archive, which is read-only.",0);
+			return;
+		}
+		char prompt[340];
+		char typed[FC_PATH];
+		char target[FC_PATH];
+		snprintf(&prompt[0],340,"Copy \"%s\" to:",&path[EdBase(&path[0])]);
+		if(!FcAsk("Copy",&prompt[0],FcDirOf(p),&typed[0]))return;
+		FcResolve(&typed[0],&target[0]);
+		JobClear();
+		fcJobArc=1;
+		arc_job_add(&path[0]);
+		if(!arc_job_start(&target[0]))
+		{
+			char err[300];
+			arc_error(&err[0],300);
+			TvMessage("Copy",&err[0],0);
+			return;
+		}
+		FcRunJob(0,"Copy");
+		FcReloadBoth();
+	}
+}
+
+int ArcKey(int win, int key)
+{
+	int rows=ArcRows(win);
+	if(key==K_UP)arCur[win]--;
+	else if(key==K_DOWN)arCur[win]++;
+	else if(key==K_PGUP)arCur[win]=arCur[win]-rows+1;
+	else if(key==K_PGDN)arCur[win]=arCur[win]+rows-1;
+	else if(key==K_HOME)arCur[win]=0;
+	else if(key==K_END)arCur[win]=arN[win]-1;
+	else return 0;
+	ArcClamp(win);
+	return 1;
+}
+
+int ArcMouse(int win, int ev, int x, int y)
+{
+	if(ev==EV_WHEEL)
+	{
+		arTop[win]=arTop[win]-evWheel*3;
+		int n=arN[win];
+		int rows=ArcRows(win);
+		if(arTop[win]>n-rows)arTop[win]=n-rows;
+		if(arTop[win]<0)arTop[win]=0;
+		if(arCur[win]<arTop[win])arCur[win]=arTop[win];
+		if(arCur[win]>=arTop[win]+rows)arCur[win]=arTop[win]+rows-1;
+		return 1;
+	}
+	if(ev!=EV_MDOWN)return 0;
+	int r=y-3;
+	if((r<0)||(r>=ArcRows(win)))return 0;
+	int i=arTop[win]+r;
+	if(i>=arN[win])return 1;
+	arCur[win]=i;
+	int now=term_ms();
+	if((arClickWin==win)&&(arClickRow==i)&&(now-arClickMs<400))
+	{
+		arClickWin=-1;
+		ArcCommand(win,CM_ARCOPEN);
+		return 1;
+	}
+	arClickWin=win;
+	arClickRow=i;
+	arClickMs=now;
+	return 1;
+}
+
+// The quick view of an archive: its tree, from tree 7.
+
+void FcQArc(char* path, int x, int y, int w, int h, char* info)
+{
+	if(StrCmp(&fcQArcPath[0],path)!=0)
+	{
+		fcQArcN=arc_tree(7,path);
+		StrCpy(&fcQArcPath[0],path,FC_PATH);
+	}
+	if(fcQArcN<0)
+	{
+		char err[300];
+		arc_error(&err[0],300);
+		FcCut(x+1,y+1,&err[0],FC_FILE,w-2);
+		return;
+	}
+	ArcRowsDraw(7,0,-1,fcQArcN,x,y,w,h,0);
+	arc_summary(7,info,120);
 }
 
 // The editor's Save as: a name typed in a dialog, in the commander's directory if it
@@ -1817,7 +2400,7 @@ int RunSaveAs(int ew)
 		TvMessage("Save as","There is no such directory.",0);
 		return 0;
 	}
-	if(fs_isdir(&full[0]))
+	if(FcIsDir(&full[0]))
 	{
 		TvMessage("Save as","That is a directory.",0);
 		return 0;
@@ -1892,7 +2475,7 @@ int FcIsExec(int p)
 	char name[256];
 	char mark[4];
 	if(FcName(p,fcCur[p],&name[0]))return 0;
-	fs_field(fcCur[p],3,&mark[0],4);
+	LsField(fcCur[p],3,&mark[0],4);
 	if(mark[0]=='*')return 1;
 	return 0;
 }
@@ -1916,6 +2499,11 @@ void FcRunCursor()
 void FcRunDialog()
 {
 	int p=fcActive;
+	if(fcInArc[p])
+	{
+		TvMessage("Run","Nothing runs inside an archive; F5 copies files out of it.",0);
+		return;
+	}
 	char init[FC_PATH];
 	char typed[FC_PATH];
 	char prompt[300];
@@ -1960,10 +2548,21 @@ void FcOpenSystem()
 	char path[FC_PATH];
 	char quoted[2100];
 	char cmd[2200];
-	FcPathOf(p,fcCur[p],&path[0]);
+	char where[FC_PATH];
+	FcPathOf(p,fcCur[p],&where[0]);
+	// a file in an archive goes to the desktop as a temporary copy
+	if(!FcLocal(&where[0],&path[0]))
+	{
+		char err[300];
+		arc_error(&err[0],300);
+		TvMessage("Open",&err[0],0);
+		return;
+	}
 	run_quote(&path[0],&quoted[0],2100);
 	snprintf(&cmd[0],2200,"xdg-open %s",&quoted[0]);
-	if(!run_detached(&cmd[0],FcDirOf(p)))
+	char* dir=FcDirOf(p);
+	if(fcInArc[p])dir="/";
+	if(!run_detached(&cmd[0],dir))
 	{
 		char err[300];
 		fs_error(&err[0],300);
@@ -1981,7 +2580,11 @@ void FcEnter()
 	int isDir=FcName(p,fcCur[p],&name[0]);
 	if(!isDir)
 	{
-		if(FcIsExec(p))FcRunCursor();
+		char file[FC_PATH];
+		FcPathOf(p,fcCur[p],&file[0]);
+		// an archive is entered as a directory; nothing in one runs
+		if(FcArcWhere(&file[0])==1)FcChangeDir(p,&file[0]);
+		else if(FcIsExec(p)&&!fcInArc[p])FcRunCursor();
 		else FcView();
 		return;
 	}
@@ -2009,7 +2612,7 @@ void FcMarkGroup(int v)
 	if(v==0)title="Unselect group";
 	if(!FcAsk(title,"Files whose names match (* and ? are wild):","*",&typed[0]))return;
 	FcUse(fcActive);
-	fs_mark_match(v,&typed[0],v==0);
+	LsMarkMatch(v,&typed[0],v==0);
 }
 
 void FcSwap()
@@ -2061,18 +2664,18 @@ void FcCompare()
 		for(int i=0;i<fcCount[p];i++)
 		{
 			FcUse(p);
-			int isDir=fs_name(i,&name[0],256);
+			int isDir=LsName(i,&name[0],256);
 			if(!isDir)
 			{
-				fs_field(i,0,&s1[0],24);
-				fs_field(i,1,&t1[0],24);
+				LsField(i,0,&s1[0],24);
+				LsField(i,1,&t1[0],24);
 				FcUse(q);
-				int k=fs_index(&name[0]);
+				int k=LsIndex(&name[0]);
 				int mark=1;
 				if(k>=0)
 				{
-					fs_field(k,0,&s2[0],24);
-					fs_field(k,1,&t2[0],24);
+					LsField(k,0,&s2[0],24);
+					LsField(k,1,&t2[0],24);
 					mark=0;
 					if(StrCmp(&s1[0],&s2[0])!=0)mark=1;
 					if(StrCmp(&t1[0],&t2[0])!=0)mark=1;
@@ -2080,7 +2683,7 @@ void FcCompare()
 				if(mark)
 				{
 					FcUse(p);
-					fs_mark(i,1);
+					LsMark(i,1);
 					differ++;
 				}
 			}
@@ -2089,21 +2692,36 @@ void FcCompare()
 	if(differ==0)TvMessage("Compare","The files of both directories are the same.",0);
 }
 
+// Right with lynx-like motion: into the directory or archive under the cursor.
+void FcLynxIn(int p)
+{
+	if(fcCount[p]==0)return;
+	char name[256];
+	char path[FC_PATH];
+	int isDir=FcName(p,fcCur[p],&name[0]);
+	if(FcIsUp(&name[0]))return;
+	FcPathOf(p,fcCur[p],&path[0]);
+	if(isDir||(FcArcWhere(&path[0])==1))FcChangeDir(p,&path[0]);
+}
+
 int FcKey(int win, int key)
 {
 	int p=fcActive;
 	int vis=FcVisible(p);
 	int rows=FcRows(p);
-	if(key==K_TAB)
+	// the other keys are commands of the keyboard map (FcKeys)
+	if(fcLynx)
 	{
-		if(!fcQuick[fcActive^1])FcSetActive(fcActive^1);
-		return 1;
-	}
-	if(key==K_ALT+'q')
-	{
-		FcSetQuick(fcActive^1,!fcQuick[fcActive^1]);
-		ShowToggles();
-		return 1;
+		if(key==K_LEFT)
+		{
+			FcGoUp(p);
+			return 1;
+		}
+		if(key==K_RIGHT)
+		{
+			FcLynxIn(p);
+			return 1;
+		}
 	}
 	if(key==K_UP)fcCur[p]--;
 	else if(key==K_DOWN)fcCur[p]++;
@@ -2114,45 +2732,13 @@ int FcKey(int win, int key)
 	else if((key==K_LEFT)&&fcBrief[p])fcCur[p]=fcCur[p]-rows;
 	else if((key==K_RIGHT)&&fcBrief[p])fcCur[p]=fcCur[p]+rows;
 	else if(key==K_ENTER)FcEnter();
-	else if(key==K_ALT+K_ENTER)FcRunDialog();
-	else if(key==K_BACKSPACE)FcGoUp(p);
-	else if(key==K_INS)
-	{
-		FcUse(p);
-		fs_mark(fcCur[p],-1);
-		fcCur[p]++;
-	}
-	else if(key==K_F3)FcView();
-	else if(key==K_F4)
-	{
-		if(evMod&MOD_SHIFT)FcNewFile();
-		else FcEdit();
-	}
-	else if(key==K_F5)FcCopyMove(0,0);
-	else if(key==K_F6)
-	{
-		if(evMod&MOD_SHIFT)FcCopyMove(1,1);
-		else FcCopyMove(1,0);
-	}
-	else if(key==K_F7)FcMkdir();
-	else if((key==K_F8)||(key==K_DEL))FcDelete();
-	else if(key=='+')FcMarkGroup(1);
-	else if(key=='-')FcMarkGroup(0);
-	else if(key=='*')
-	{
-		FcUse(p);
-		fs_mark_match(2,"",0);
-	}
-	else if(key==21)FcSwap();                  // Ctrl+U
-	else if(key==K_ALT+'i')TvAppCommand(CM_SAMEDIR);
-	else if(key==K_ALT+'.')TvAppCommand(CM_HIDDEN);
 	else if((key>' ')&&(key<127))
 	{
 		// letters jump to the next name that starts with them
 		FcUse(p);
 		if(fcCount[p]>0)
 		{
-			int k=fs_find(key,fcCur[p]);
+			int k=LsFind(key,fcCur[p]);
 			if(k>=0)fcCur[p]=k;
 		}
 	}
@@ -2215,7 +2801,7 @@ int FcMouse(int win, int ev, int x, int y)
 		if(k>=0)
 		{
 			FcUse(p);
-			fs_mark(k,-1);
+			LsMark(k,-1);
 			fcCur[p]=k;
 		}
 		return 1;
@@ -2268,10 +2854,10 @@ void PrefsLoad(char* left, char* right)
 	int n=fs_load(CFG_FILE,&buf[0],2199);
 	if(n<=0)return;
 	buf[n]=0;
-	int v[9];
+	int v[10];
 	int k=0;
 	int i=0;
-	while((k<9)&&(buf[i]!=0)&&(buf[i]!=10))
+	while((k<10)&&(buf[i]!=0)&&(buf[i]!=10))
 	{
 		if((buf[i]>='0')&&(buf[i]<='9'))
 		{
@@ -2296,6 +2882,8 @@ void PrefsLoad(char* left, char* right)
 	FcSetActive(v[6]!=0);
 	edLineNums=(v[7]!=0);
 	edWrap=(v[8]!=0);
+	fcLynx=0;
+	if(k>=10)fcLynx=(v[9]!=0);
 	// the directories, one a line, then the terminal command
 	for(int d=0;d<3;d++)
 	{
@@ -2324,8 +2912,8 @@ void PrefsLoad(char* left, char* right)
 void PrefsSave()
 {
 	char buf[2200];
-	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
-		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
+	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
+		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -2335,6 +2923,7 @@ void PrefsSave()
 
 int itemLineNums=-1;     // menu items whose hints show on or off
 int itemWrap=-1;
+int itemLynx=-1;
 int itemHidden=-1;
 int itemPanel[2];        // each panel's menu: Full and Brief, then the sort keys
 
@@ -2350,6 +2939,7 @@ void ShowToggles()
 {
 	SetHint(itemLineNums,edLineNums);
 	SetHint(itemWrap,edWrap);
+	SetHint(itemLynx,fcLynx);
 	SetHint(itemHidden,fcHidden);
 	// the menus speak of the panel window in front
 	int base=fcBase;
@@ -2372,7 +2962,7 @@ void ShowToggles()
 
 void RunPrefs()
 {
-	int win=TvNewCentered(W_PREFS,"Preferences",50,16,WF_DIALOG);
+	int win=TvNewCentered(W_PREFS,"Preferences",50,17,WF_DIALOG);
 	if(win<0)return;
 	TvAdd(win,C_LABEL,3,2,10,1,"~T~heme",0);
 	char names[200];
@@ -2385,13 +2975,15 @@ void RunPrefs()
 	tvCtl[ln].val=edLineNums;
 	int wr=TvAdd(win,C_CHECK,2,6,30,1,"Editor ~w~ord wrap",0);
 	tvCtl[wr].val=edWrap;
-	TvAdd(win,C_LABEL,3,8,40,1,"Te~r~minal for F2 in a graphic window",0);
-	int term=TvAdd(win,C_INPUT,3,9,44,1,"",0);
+	int ly=TvAdd(win,C_CHECK,2,7,46,1,"L~y~nx-like motion: Left goes up, Right in",0);
+	tvCtl[ly].val=fcLynx;
+	TvAdd(win,C_LABEL,3,9,40,1,"Te~r~minal for F2 in a graphic window",0);
+	int term=TvAdd(win,C_INPUT,3,10,44,1,"",0);
 	StrCpy(&tvCtl[term].text[0],&fcTermCmd[0],200);
 	tvCtl[term].val=StrLen(&fcTermCmd[0]);
-	int ok=TvAdd(win,C_BUTTON,11,12,12,2,"O~K~",CM_OK);
+	int ok=TvAdd(win,C_BUTTON,11,13,12,2,"O~K~",CM_OK);
 	tvCtl[ok].isDefault=1;
-	TvAdd(win,C_BUTTON,26,12,12,2,"Cancel",CM_CANCEL);
+	TvAdd(win,C_BUTTON,26,13,12,2,"Cancel",CM_CANCEL);
 	tvWin[win].focus=th;
 	int res=TvExec(win);
 	if(res==CM_OK)
@@ -2400,6 +2992,7 @@ void RunPrefs()
 		int h=tvCtl[hid].val;
 		edLineNums=tvCtl[ln].val;
 		edWrap=tvCtl[wr].val;
+		fcLynx=tvCtl[ly].val;
 		StrCpy(&fcTermCmd[0],&tvCtl[term].text[0],200);
 		if(h!=fcHidden)
 		{
@@ -2417,7 +3010,7 @@ void RunPrefs()
 void DrawPrefs(int win)
 {
 	TWin& t=tvWin[win];
-	TvText(t.x+3,t.y+10,"empty: the first one found, as \"xterm -e\"",A_DLG);
+	TvText(t.x+3,t.y+11,"empty: the first one found, as \"xterm -e\"",A_DLG);
 }
 
 // ---------------------------------------------------------------- help
@@ -2450,6 +3043,8 @@ void OpenHelp()
 		"  Ctrl+U               swap the panels\n"
 		"  Alt+I                the other panel shows this directory\n"
 		"  Alt+.                show or hide hidden files\n"
+		"  Left, Right          with Options > Lynx-like motion: the\n"
+		"                       parent, into a directory or archive\n"
 		"  Ctrl+N               another panel window (up to six)\n"
 		"  Alt+Q                quick view in the other panel: the\n"
 		"                       picture, text or hex dump of the file\n"
@@ -2465,6 +3060,15 @@ void OpenHelp()
 		"  F8, Delete           delete\n"
 		"  Copies and moves ask before they replace anything, and\n"
 		"  can be cancelled. A target name may start with ~ for home.\n"
+		"\n"
+		"Archives (zip, tar.gz and other tars, 7z, rar, iso, deb...)\n"
+		"  Enter                go in, as into a directory; .. leaves\n"
+		"  F3                   the archive window: the whole tree with\n"
+		"                       sizes and times; Enter views a file or\n"
+		"                       shows a directory in the panel, F5\n"
+		"                       copies it out\n"
+		"  In an archive, view, quick view, hex view and F5 copy work;\n"
+		"  nothing can be edited, moved, deleted or run there.\n"
 		"\n"
 		"Running programs\n"
 		"  F2, Alt+Enter        run a command in this directory; it\n"
@@ -2496,6 +3100,9 @@ void OpenHelp()
 		"  Ctrl+F, Ctrl+L       find, find next; Ctrl+R replace\n"
 		"  Ctrl+G               go to a line\n"
 		"  Ctrl+W               close\n"
+		"\n"
+		"These are the keys at first: Options > Keyboard changes\n"
+		"them, and t2fc.keys keeps the changes.\n"
 		"\n"
 		"Desktop\n"
 		"  F10, Alt+letter      the menus\n"
@@ -2547,6 +3154,7 @@ void TvAppDraw(int win)
 	}
 	else if(type==W_HEX)HxDraw(win);
 	else if(type==W_PIC)PicDraw(win);
+	else if(type==W_ARC)ArcDraw(win);
 	else if(type==W_THEME)TeDraw(win);
 	else if(type==W_JOB)DrawJob(win);
 	else if(type==W_ASK)DrawAsk(win);
@@ -2562,22 +3170,18 @@ int TvAppKey(int win, int key)
 		FcSelect(t.a);
 		return FcKey(win,key);
 	}
-	// view windows close with F3 or Esc as in MC, and F4 makes them editable
-	if((type==W_HEX)||(type==W_PIC)||((type==W_VIEW)&&fcView[win]))
+	// view windows close with Esc, and F3 as in MC (a command of the keyboard map)
+	if((type==W_HEX)||(type==W_PIC)||(type==W_ARC)||((type==W_VIEW)&&fcView[win]))
 	{
-		if((key==K_F3)||(key==K_ESC))
+		if(key==K_ESC)
 		{
 			TvClose(win);
 			return 1;
 		}
 	}
-	if((type==W_VIEW)&&fcView[win]&&(key==K_F4)&&(ed[win].path[0]!=0))
-	{
-		FcEditPath(&ed[win].path[0]);
-		return 1;
-	}
 	if(type==W_VIEW)return ViewerKey(win,key);
 	if(type==W_PIC)return PicKey(win,key);
+	if(type==W_ARC)return ArcKey(win,key);
 	if(type==W_HEX)return HxKey(win,key);
 	if(type==W_THEME)return TeKey(win,key);
 	return 0;
@@ -2612,6 +3216,7 @@ int TvAppMouse(int win, int ev, int x, int y)
 	}
 	if(type==W_VIEW)return ViewerMouse(win,ev,x,y);
 	if(type==W_PIC)return PicMouse(win,ev,x,y);
+	if(type==W_ARC)return ArcMouse(win,ev,x,y);
 	if(type==W_HEX)return HxMouse(win,ev,x,y);
 	return 0;
 }
@@ -2664,7 +3269,7 @@ void TvAppTick()
 		{
 			FcSelect(c);
 			for(int p=fcBase;p<fcBase+2;p++)
-				if(fs_stamp(FcDirOf(p))!=fcStamp[p])
+				if(FcStampOf(FcDirOf(p))!=fcStamp[p])
 				{
 					FcReload(p);
 					tvDirty=1;
@@ -2766,7 +3371,7 @@ int FcOpen(char* left, char* right, int from)
 			if(!FcLoad(p,".",""))FcLoad(p,"/","");
 		// a listing slot used before may still hold marks
 		FcUse(p);
-		fs_mark_match(0,"",1);
+		LsMarkMatch(0,"",1);
 	}
 	return c;
 }
@@ -2815,7 +3420,7 @@ int FcPanelCommand(int cmd)
 	else if(cmd==CM_INVERT)
 	{
 		FcUse(p);
-		fs_mark_match(2,"",0);
+		LsMarkMatch(2,"",0);
 	}
 	else if(cmd==CM_SWAP)FcSwap();
 	else if(cmd==CM_SAMEDIR)FcLoad(p^1,FcDirOf(p),"");
@@ -2828,6 +3433,18 @@ int FcPanelCommand(int cmd)
 	else if(cmd==CM_COMPARE)FcCompare();
 	else if(cmd==CM_RUN)FcRunDialog();
 	else if(cmd==CM_OPENSYS)FcOpenSystem();
+	else if(cmd==CM_OTHERPANEL)
+	{
+		if(!fcQuick[p^1])FcSetActive(p^1);
+	}
+	else if(cmd==CM_QUICKOTHER)FcSetQuick(p^1,!fcQuick[p^1]);
+	else if(cmd==CM_PARENT)FcGoUp(p);
+	else if(cmd==CM_MARK)
+	{
+		FcUse(p);
+		LsMark(fcCur[p],-1);
+		fcCur[p]++;
+	}
 	else if(cmd==CM_HOME)
 	{
 		char home[FC_PATH];
@@ -2870,16 +3487,24 @@ int FcPanelCommand(int cmd)
 void TvAppCommand(int cmd)
 {
 	int top=TvTop();
-	// in front of the panels, Ctrl+R reads the directories again rather than replacing
-	if((top>=0)&&(tvWin[top].type==W_FC)&&(cmd==CM_REPLACE))
+	if((cmd>=CM_PIC0)&&(cmd<=CM_PIC1))
 	{
-		FcReloadBoth();
+		if(top>=0)
+			if(tvWin[top].type==W_PIC)PicCommand(top,cmd);
 		return;
 	}
-	// and F2 runs a command, as MC's F2 offers commands
-	if((top>=0)&&(tvWin[top].type==W_FC)&&(cmd==CM_SAVE))
+	if((cmd==CM_ARCOPEN)||(cmd==CM_ARCCOPY))
 	{
-		FcPanelCommand(CM_RUN);
+		if(top>=0)
+			if(tvWin[top].type==W_ARC)ArcCommand(top,cmd);
+		return;
+	}
+	if(cmd==CM_VIEWEDIT)
+	{
+		// F4 makes a view window editable
+		if(top>=0)
+			if((tvWin[top].type==W_VIEW)&&fcView[top]&&(ed[top].path[0]!=0))
+				FcEditPath(&ed[top].path[0]);
 		return;
 	}
 	if((top>=0)&&(top==hxWin)&&(cmd==CM_GOTO))
@@ -2913,6 +3538,12 @@ void TvAppCommand(int cmd)
 		ShowToggles();
 		PrefsSave();
 	}
+	else if(cmd==CM_LYNX)
+	{
+		fcLynx=!fcLynx;
+		ShowToggles();
+		PrefsSave();
+	}
 	else if(cmd==CM_WRAP)
 	{
 		edWrap=!edWrap;
@@ -2924,6 +3555,93 @@ void TvAppCommand(int cmd)
 }
 
 // ---------------------------------------------------------------- main
+
+// The keyboard map: every command a key can give, by window, with its default keys.
+// Options > Keyboard changes them, and t2fc.keys keeps the changes.
+void FcKeys()
+{
+	TvKeyContext(TV_ST_ALL,TV_ST_ALL,"Everywhere");
+	TvKeyContext(W_FC,TV_ST_ALL,"Panels");
+	TvKeyContext(W_VIEW,TV_ST_ALL,"Edit and view windows");
+	TvKeyContext(ST_VIEWER,W_VIEW,"View windows");
+	TvKeyContext(W_PIC,TV_ST_ALL,"Picture windows");
+	TvKeyContext(W_HEX,TV_ST_ALL,"Hex view");
+	TvKeyContext(W_ARC,TV_ST_ALL,"Archive windows");
+
+	TvKeyCmd(TV_ST_ALL,CM_QUIT,"Quit",K_ALT+'x',17,0);
+	TvKeyCmd(TV_ST_ALL,CM_HELP,"Help",K_F1,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_NEWPANELS,"New panels",14,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_CLOSE,"Close the window",23,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_WINLIST,"Window list",K_ALT+'0',0,0);
+	TvKeyCmd(TV_ST_ALL,CM_NEXT,"Next window",0,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_PREV,"Previous window",0,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_ZOOM,"Zoom the window",0,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_PREFS,"Preferences",0,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_THEMEED,"Theme editor",0,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_KEYS,"Keyboard",0,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_LINENUMS,"Line numbers",0,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_WRAP,"Word wrap",0,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_LYNX,"Lynx-like motion",0,0,0);
+
+	TvKeyCmd(W_FC,CM_OTHERPANEL,"Other panel",K_TAB,0,0);
+	TvKeyCmd(W_FC,CM_RUN,"Run",K_F2,K_ALT+K_ENTER,0);
+	TvKeyCmd(W_FC,CM_VIEW,"View",K_F3,0,0);
+	TvKeyCmd(W_FC,CM_EDIT,"Edit",K_F4,0,0);
+	TvKeyCmd(W_FC,CM_NEWFILE,"New file",K_F4+TV_KSHIFT,0,0);
+	TvKeyCmd(W_FC,CM_FCOPY,"Copy",K_F5,0,0);
+	TvKeyCmd(W_FC,CM_MOVE,"Move",K_F6,0,0);
+	TvKeyCmd(W_FC,CM_RENAME,"Rename",K_F6+TV_KSHIFT,0,0);
+	TvKeyCmd(W_FC,CM_MKDIR,"Make directory",K_F7,0,0);
+	TvKeyCmd(W_FC,CM_DELETE,"Delete",K_F8,K_DEL,0);
+	TvKeyCmd(W_FC,CM_HEXVIEW,"Hex view",0,0,0);
+	TvKeyCmd(W_FC,CM_MARK,"Mark",K_INS,0,0);
+	TvKeyCmd(W_FC,CM_SELGROUP,"Select group",'+',0,0);
+	TvKeyCmd(W_FC,CM_UNSELGROUP,"Unselect group",'-',0,0);
+	TvKeyCmd(W_FC,CM_INVERT,"Invert selection",'*',0,0);
+	TvKeyCmd(W_FC,CM_PARENT,"Parent directory",K_BACKSPACE,0,0);
+	TvKeyCmd(W_FC,CM_SWAP,"Swap panels",21,0,0);
+	TvKeyCmd(W_FC,CM_SAMEDIR,"Other panel here",K_ALT+'i',0,0);
+	TvKeyCmd(W_FC,CM_QUICKOTHER,"Quick view",K_ALT+'q',0,0);
+	TvKeyCmd(W_FC,CM_HIDDEN,"Hidden files",K_ALT+'.',0,0);
+	TvKeyCmd(W_FC,CM_REREAD,"Reread",18,0,0);
+	TvKeyCmd(W_FC,CM_COMPARE,"Compare directories",0,0,0);
+	TvKeyCmd(W_FC,CM_HOME,"Home directory",0,0,0);
+	TvKeyCmd(W_FC,CM_GODIR,"Go to directory",0,0,0);
+	TvKeyCmd(W_FC,CM_OPENSYS,"Open with the desktop",0,0,0);
+
+	TvKeyCmd(W_VIEW,CM_SAVE,"Save",K_F2,19,0);
+	TvKeyCmd(W_VIEW,CM_SAVEAS,"Save as",0,0,0);
+	TvKeyCmd(W_VIEW,CM_UNDO,"Undo",26,0,0);
+	TvKeyCmd(W_VIEW,CM_REDO,"Redo",25,0,0);
+	TvKeyCmd(W_VIEW,CM_CUT,"Cut",24,0,0);
+	TvKeyCmd(W_VIEW,CM_COPY,"Copy",3,0,0);
+	TvKeyCmd(W_VIEW,CM_PASTE,"Paste",22,0,0);
+	TvKeyCmd(W_VIEW,CM_SELALL,"Select all",1,0,0);
+	TvKeyCmd(W_VIEW,CM_FIND,"Find",6,0,0);
+	TvKeyCmd(W_VIEW,CM_FINDNEXT,"Find next",12,0,0);
+	TvKeyCmd(W_VIEW,CM_REPLACE,"Replace",18,0,0);
+	TvKeyCmd(W_VIEW,CM_GOTO,"Go to line",7,0,0);
+	TvKeyCmd(W_VIEW,CM_MATCH,"Matching bracket",2,0,0);
+	TvKeyCmd(ST_VIEWER,CM_CLOSE,"Close",K_F3,0,0);
+	TvKeyCmd(ST_VIEWER,CM_VIEWEDIT,"Edit",K_F4,0,0);
+
+	TvKeyCmd(W_PIC,CM_PICIN,"Zoom in",'+','=',0);
+	TvKeyCmd(W_PIC,CM_PICOUT,"Zoom out",'-',0,0);
+	TvKeyCmd(W_PIC,CM_PICFIT,"Fit the window",'0','*','f');
+	TvKeyCmd(W_PIC,CM_PIC1X,"Pixels 1:1",'1',0,0);
+	TvKeyCmd(W_PIC,CM_PIC2X,"Pixels 2:1",'2',0,0);
+	TvKeyCmd(W_PIC,CM_PICNEXT,"Next picture",' ',K_PGDN,0);
+	TvKeyCmd(W_PIC,CM_PICPREV,"Previous picture",K_BACKSPACE,K_PGUP,0);
+	TvKeyCmd(W_PIC,CM_PICTURN,"Turn clockwise",'r',0,0);
+	TvKeyCmd(W_PIC,CM_CLOSE,"Close",K_F3,0,0);
+
+	TvKeyCmd(W_HEX,CM_GOTO,"Go to offset",'g',7,0);
+	TvKeyCmd(W_HEX,CM_CLOSE,"Close",K_F3,0,0);
+
+	TvKeyCmd(W_ARC,CM_ARCOPEN,"View, or show in the panel",K_ENTER,0,0);
+	TvKeyCmd(W_ARC,CM_ARCCOPY,"Copy out",K_F5,0,0);
+	TvKeyCmd(W_ARC,CM_CLOSE,"Close",K_F3,0,0);
+}
 
 // A panel's menu: listing mode, sort keys, reverse. Returns its first item.
 int PanelMenu(char* title, int p)
@@ -2960,54 +3678,57 @@ int main(int argc, pchar* argv)
 	if(prefTheme>=teThN)prefTheme=0;
 	TeUseTheme(prefTheme);
 
+	FcKeys();
+	TvKeysFile(KEYS_FILE);
 	itemPanel[0]=PanelMenu("~L~eft",0);
 	TvMenuAdd("~F~ile");
-	TvMenuItem("~V~iew","F3",CM_VIEW,0);
-	TvMenuItem("~E~dit","F4",CM_EDIT,0);
-	TvMenuItem("~N~ew file...","Shift+F4",CM_NEWFILE,0);
-	TvMenuItem("~C~opy...","F5",CM_FCOPY,0);
-	TvMenuItem("Rename or ~m~ove...","F6",CM_MOVE,0);
-	TvMenuItem("Rena~m~e...","Shift+F6",CM_RENAME,0);
-	TvMenuItem("Make ~d~irectory...","F7",CM_MKDIR,0);
-	TvMenuItem("De~l~ete...","F8",CM_DELETE,0);
+	TvMenuItem("~V~iew","",CM_VIEW,0);
+	TvMenuItem("~E~dit","",CM_EDIT,0);
+	TvMenuItem("~N~ew file...","",CM_NEWFILE,0);
+	TvMenuItem("~C~opy...","",CM_FCOPY,0);
+	TvMenuItem("Rename or ~m~ove...","",CM_MOVE,0);
+	TvMenuItem("Rena~m~e...","",CM_RENAME,0);
+	TvMenuItem("Make ~d~irectory...","",CM_MKDIR,0);
+	TvMenuItem("De~l~ete...","",CM_DELETE,0);
 	TvMenuItem("~H~ex view","",CM_HEXVIEW,0);
 	TvMenuLine();
-	TvMenuItem("~S~elect group...","+",CM_SELGROUP,0);
-	TvMenuItem("~U~nselect group...","-",CM_UNSELGROUP,0);
-	TvMenuItem("~I~nvert selection","*",CM_INVERT,0);
+	TvMenuItem("~S~elect group...","",CM_SELGROUP,0);
+	TvMenuItem("~U~nselect group...","",CM_UNSELGROUP,0);
+	TvMenuItem("~I~nvert selection","",CM_INVERT,0);
 	TvMenuLine();
-	TvMenuItem("~S~ave","F2",CM_SAVE,K_F2);
+	TvMenuItem("~S~ave","",CM_SAVE,0);
 	TvMenuItem("Save ~a~s...","",CM_SAVEAS,0);
 	TvMenuLine();
-	TvMenuItem("E~x~it","Alt+X",CM_QUIT,K_ALT+'x');
+	TvMenuItem("E~x~it","",CM_QUIT,0);
 	TvMenuAdd("~C~ommand");
-	TvMenuItem("~R~un...","F2",CM_RUN,0);
+	TvMenuItem("~R~un...","",CM_RUN,0);
 	TvMenuItem("Open ~w~ith the desktop","",CM_OPENSYS,0);
 	TvMenuLine();
-	TvMenuItem("~S~wap panels","Ctrl+U",CM_SWAP,0);
-	TvMenuItem("~O~ther panel here","Alt+I",CM_SAMEDIR,0);
+	TvMenuItem("~S~wap panels","",CM_SWAP,0);
+	TvMenuItem("~O~ther panel here","",CM_SAMEDIR,0);
 	TvMenuItem("~C~ompare directories","",CM_COMPARE,0);
-	TvMenuItem("R~e~read","Ctrl+R",CM_REREAD,0);
+	TvMenuItem("R~e~read","",CM_REREAD,0);
 	TvMenuLine();
 	TvMenuItem("~H~ome directory","",CM_HOME,0);
 	TvMenuItem("~G~o to directory...","",CM_GODIR,0);
 	TvMenuAdd("~E~dit");
-	TvMenuItem("~U~ndo","Ctrl+Z",CM_UNDO,26);
-	TvMenuItem("~R~edo","Ctrl+Y",CM_REDO,25);
+	TvMenuItem("~U~ndo","",CM_UNDO,0);
+	TvMenuItem("~R~edo","",CM_REDO,0);
 	TvMenuLine();
-	TvMenuItem("Cu~t~","Ctrl+X",CM_CUT,24);
-	TvMenuItem("~C~opy","Ctrl+C",CM_COPY,3);
-	TvMenuItem("~P~aste","Ctrl+V",CM_PASTE,22);
-	TvMenuItem("Select ~a~ll","Ctrl+A",CM_SELALL,1);
+	TvMenuItem("Cu~t~","",CM_CUT,0);
+	TvMenuItem("~C~opy","",CM_COPY,0);
+	TvMenuItem("~P~aste","",CM_PASTE,0);
+	TvMenuItem("Select ~a~ll","",CM_SELALL,0);
 	TvMenuLine();
-	TvMenuItem("~F~ind...","Ctrl+F",CM_FIND,6);
-	TvMenuItem("Find ~n~ext","Ctrl+L",CM_FINDNEXT,12);
-	TvMenuItem("R~e~place...","Ctrl+R",CM_REPLACE,18);
-	TvMenuItem("~G~o to line...","Ctrl+G",CM_GOTO,7);
-	TvMenuItem("~M~atching bracket","Ctrl+B",CM_MATCH,2);
+	TvMenuItem("~F~ind...","",CM_FIND,0);
+	TvMenuItem("Find ~n~ext","",CM_FINDNEXT,0);
+	TvMenuItem("R~e~place...","",CM_REPLACE,0);
+	TvMenuItem("~G~o to line...","",CM_GOTO,0);
+	TvMenuItem("~M~atching bracket","",CM_MATCH,0);
 	TvMenuAdd("~O~ptions");
 	TvMenuItem("~P~references...","",CM_PREFS,0);
 	TvMenuItem("~T~heme editor...","",CM_THEMEED,0);
+	TvMenuItem("~K~eyboard...","",CM_KEYS,0);
 	TvMenuLine();
 	TvMenuItem("~H~idden files","Alt+.",CM_HIDDEN,0);
 	itemHidden=tvNItem-1;
@@ -3015,94 +3736,100 @@ int main(int argc, pchar* argv)
 	itemLineNums=tvNItem-1;
 	TvMenuItem("~W~ord wrap","off",CM_WRAP,0);
 	itemWrap=tvNItem-1;
+	TvMenuItem("L~y~nx-like motion","off",CM_LYNX,0);
+	itemLynx=tvNItem-1;
 	itemPanel[1]=PanelMenu("~R~ight",1);
 	TvMenuAdd("~W~indow");
-	TvMenuItem("Ne~w~ panels","Ctrl+N",CM_NEWPANELS,14);
+	TvMenuItem("Ne~w~ panels","",CM_NEWPANELS,0);
 	TvMenuLine();
 	TvMenuItem("~Z~oom","",CM_ZOOM,0);
 	TvMenuItem("~N~ext","",CM_NEXT,0);
 	TvMenuItem("~P~revious","",CM_PREV,0);
-	TvMenuItem("~C~lose","Ctrl+W",CM_CLOSE,23);
+	TvMenuItem("~C~lose","",CM_CLOSE,0);
 	TvMenuLine();
 	TvMenuItem("C~a~scade","",CM_CASCADE,0);
 	TvMenuItem("~T~ile","",CM_TILE,0);
-	TvMenuItem("~L~ist...","Alt+0",CM_WINLIST,K_ALT+'0');
+	TvMenuItem("~L~ist...","",CM_WINLIST,0);
 	TvWindowsMenu("Wi~n~dows");
 	TvMenuAdd("~H~elp");
-	TvMenuItem("~K~eys and mouse","F1",CM_HELP,K_F1);
+	TvMenuItem("~K~eys and mouse","",CM_HELP,0);
 	TvMenuItem("~A~bout...","",CM_ABOUT,0);
 
 	popPanel=TvPopupAdd();
-	TvMenuItem("R~u~n...","F2",CM_RUN,0);
+	TvMenuItem("R~u~n...","",CM_RUN,0);
 	TvMenuItem("~O~pen with the desktop","",CM_OPENSYS,0);
-	TvMenuItem("~V~iew","F3",CM_VIEW,0);
-	TvMenuItem("~E~dit","F4",CM_EDIT,0);
-	TvMenuItem("~C~opy...","F5",CM_FCOPY,0);
-	TvMenuItem("~M~ove...","F6",CM_MOVE,0);
-	TvMenuItem("~R~ename...","Shift+F6",CM_RENAME,0);
-	TvMenuItem("~D~elete...","F8",CM_DELETE,0);
+	TvMenuItem("~V~iew","",CM_VIEW,0);
+	TvMenuItem("~E~dit","",CM_EDIT,0);
+	TvMenuItem("~C~opy...","",CM_FCOPY,0);
+	TvMenuItem("~M~ove...","",CM_MOVE,0);
+	TvMenuItem("~R~ename...","",CM_RENAME,0);
+	TvMenuItem("~D~elete...","",CM_DELETE,0);
 	TvMenuLine();
 	TvMenuItem("~H~ex view","",CM_HEXVIEW,0);
-	TvMenuItem("Make director~y~...","F7",CM_MKDIR,0);
+	TvMenuItem("Make director~y~...","",CM_MKDIR,0);
 	popEdit=TvPopupAdd();
-	TvMenuItem("~U~ndo","Ctrl+Z",CM_UNDO,0);
-	TvMenuItem("~R~edo","Ctrl+Y",CM_REDO,0);
+	TvMenuItem("~U~ndo","",CM_UNDO,0);
+	TvMenuItem("~R~edo","",CM_REDO,0);
 	TvMenuLine();
-	TvMenuItem("Cu~t~","Ctrl+X",CM_CUT,0);
-	TvMenuItem("~C~opy","Ctrl+C",CM_COPY,0);
-	TvMenuItem("~P~aste","Ctrl+V",CM_PASTE,0);
-	TvMenuItem("Select ~a~ll","Ctrl+A",CM_SELALL,0);
+	TvMenuItem("Cu~t~","",CM_CUT,0);
+	TvMenuItem("~C~opy","",CM_COPY,0);
+	TvMenuItem("~P~aste","",CM_PASTE,0);
+	TvMenuItem("Select ~a~ll","",CM_SELALL,0);
 	TvMenuLine();
-	TvMenuItem("~F~ind...","Ctrl+F",CM_FIND,0);
-	TvMenuItem("~G~o to line...","Ctrl+G",CM_GOTO,0);
+	TvMenuItem("~F~ind...","",CM_FIND,0);
+	TvMenuItem("~G~o to line...","",CM_GOTO,0);
 	TvMenuLine();
-	TvMenuItem("C~l~ose","Ctrl+W",CM_CLOSE,0);
+	TvMenuItem("C~l~ose","",CM_CLOSE,0);
 
 	// the status line shows the main keys of the front window (TvAppStatus). The F
 	// keys of the panels are read by the panel window, so that view and edit windows
 	// keep their own.
 	TvStatusFor(W_FC);
-	TvStatusAdd("~F2~ Run",CM_RUN,0);
-	TvStatusAdd("~F3~ View",CM_VIEW,0);
-	TvStatusAdd("~F4~ Edit",CM_EDIT,0);
-	TvStatusAdd("~F5~ Copy",CM_FCOPY,0);
-	TvStatusAdd("~F6~ Move",CM_MOVE,0);
-	TvStatusAdd("~F7~ Mkdir",CM_MKDIR,0);
-	TvStatusAdd("~F8~ Delete",CM_DELETE,0);
+	TvStatusCmd("Run",CM_RUN);
+	TvStatusCmd("View",CM_VIEW);
+	TvStatusCmd("Edit",CM_EDIT);
+	TvStatusCmd("Copy",CM_FCOPY);
+	TvStatusCmd("Move",CM_MOVE);
+	TvStatusCmd("Mkdir",CM_MKDIR);
+	TvStatusCmd("Delete",CM_DELETE);
 	TvStatusFor(ST_VIEWER);
-	TvStatusAdd("~F3~ Close",0,K_F3);
-	TvStatusAdd("~F4~ Edit",0,K_F4);
-	TvStatusAdd("~Ctrl+F~ Find",CM_FIND,0);
-	TvStatusAdd("~Ctrl+L~ Next",CM_FINDNEXT,0);
-	TvStatusAdd("~Ctrl+G~ Line",CM_GOTO,0);
+	TvStatusCmd("Close",CM_CLOSE);
+	TvStatusCmd("Edit",CM_VIEWEDIT);
+	TvStatusCmd("Find",CM_FIND);
+	TvStatusCmd("Next",CM_FINDNEXT);
+	TvStatusCmd("Line",CM_GOTO);
 	TvStatusFor(W_VIEW);
-	TvStatusAdd("~F2~ Save",CM_SAVE,0);
-	TvStatusAdd("~Ctrl+Z~ Undo",CM_UNDO,0);
-	TvStatusAdd("~Ctrl+F~ Find",CM_FIND,0);
-	TvStatusAdd("~Ctrl+R~ Replace",CM_REPLACE,0);
-	TvStatusAdd("~Ctrl+G~ Line",CM_GOTO,0);
+	TvStatusCmd("Save",CM_SAVE);
+	TvStatusCmd("Undo",CM_UNDO);
+	TvStatusCmd("Find",CM_FIND);
+	TvStatusCmd("Replace",CM_REPLACE);
+	TvStatusCmd("Line",CM_GOTO);
 	TvStatusFor(W_PIC);
-	TvStatusAdd("~+~ In",0,'+');
-	TvStatusAdd("~-~ Out",0,'-');
-	TvStatusAdd("~0~ Fit",0,'0');
-	TvStatusAdd("~1~ 1:1",0,'1');
-	TvStatusAdd("~Space~ Next",0,' ');
-	TvStatusAdd("~Bksp~ Prev",0,K_BACKSPACE);
-	TvStatusAdd("~R~ Turn",0,'r');
-	TvStatusAdd("~F3~ Close",0,K_F3);
+	TvStatusCmd("In",CM_PICIN);
+	TvStatusCmd("Out",CM_PICOUT);
+	TvStatusCmd("Fit",CM_PICFIT);
+	TvStatusCmd("1:1",CM_PIC1X);
+	TvStatusCmd("Next",CM_PICNEXT);
+	TvStatusCmd("Prev",CM_PICPREV);
+	TvStatusCmd("Turn",CM_PICTURN);
+	TvStatusCmd("Close",CM_CLOSE);
 	TvStatusFor(W_HEX);
-	TvStatusAdd("~G~ Go to",0,'g');
+	TvStatusCmd("Go to",CM_GOTO);
 	TvStatusAdd("~PgUp~ ~PgDn~ Page",0,0);
-	TvStatusAdd("~F3~ Close",0,K_F3);
+	TvStatusCmd("Close",CM_CLOSE);
+	TvStatusFor(W_ARC);
+	TvStatusCmd("View",CM_ARCOPEN);
+	TvStatusCmd("Copy out",CM_ARCCOPY);
+	TvStatusCmd("Close",CM_CLOSE);
 	TvStatusFor(TV_ST_DESK);
-	TvStatusAdd("~Ctrl+N~ Panels",CM_NEWPANELS,0);
+	TvStatusCmd("Panels",CM_NEWPANELS);
 	TvStatusFor(TV_ST_DIALOG);
 	TvStatusAdd("~Tab~ Next field",0,K_TAB);
 	TvStatusAdd("~Enter~ OK",0,K_ENTER);
 	TvStatusAdd("~Esc~ Cancel",0,K_ESC);
 	TvStatusFor(TV_ST_ALL);
 	TvStatusAdd("~F10~ Menu",CM_MENU,0);
-	TvStatusAdd("~Alt+X~ Quit",CM_QUIT,17); // Ctrl+Q quits too
+	TvStatusCmd("Quit",CM_QUIT);
 
 	int first=FcOpen(&left[0],&right[0],-1);
 	if(first>=0)TvZoom(fcWinOf[first]);

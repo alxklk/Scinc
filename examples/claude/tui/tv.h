@@ -1544,10 +1544,14 @@ void TvWinListItem(int i, char* out, int max)
 	snprintf(out,max,"%s  %s%s",&num[0],&tvWin[w].title[0],mark);
 }
 
+void TvKeysItem(int r, char* out, int max);
+void TvKeysDrawInfo(int win);
+
 void TvCtlItem(int id, int k, char* out, int max)
 {
 	TCtl& c=tvCtl[id];
 	if(tvWin[c.win].type==W_WINLIST)TvWinListItem(k,out,max);
+	else if(tvWin[c.win].type==1001)TvKeysItem(k,out,max);
 	else if(c.virt)TvAppListItem(c.win,id,k,out,max);
 	else TvItemAt(&c.text[0],k,out,max);
 }
@@ -1978,6 +1982,7 @@ void TvDrawWin(int id)
 	int cx1=clipX1;
 	int cy1=clipY1;
 	TvAppDraw(id);
+	if(t.type==1001)TvKeysDrawInfo(id);
 	for(int i=0;i<TV_MAXCTL;i++)
 	{
 		if(tvCtl[i].used)
@@ -2021,6 +2026,7 @@ struct TStatus
 	int cmd;
 	int key;
 	int ctx;   // where it shows: a window type, a TV_ST_* context, or what TvAppStatus names
+	int byMap; // the key comes from the keyboard map (TvStatusCmd), text is the label
 };
 
 // Status line contexts. Items added after TvStatusFor(ctx) show only while the front
@@ -2033,6 +2039,497 @@ struct TStatus
 int tvStatusFor=TV_ST_ALL;
 int tvStCtx=TV_ST_DESK; // the context the status line shows, from TvStatusUpdate
 int tvStOwn=0;          // that context has items of its own
+
+// ---------------------------------------------------------------- keyboard map
+// The keys of a program's commands, which the user can change in TvKeysDialog and
+// which are kept in a file (TvKeysFile). A command belongs to a context, as status
+// line items do: TV_ST_ALL for everywhere, or a window type, or a context that
+// TvAppStatus names. A key is looked for in the front window's context first, then
+// in its parent context (TvKeyContext) and so on up to TV_ST_ALL, so the same key
+// can do different things in different windows. Menu hints and TvStatusCmd items
+// show the keys as they are now. Keys the map does not hold (arrows, Enter, Esc,
+// typing) stay with the window.
+//
+// A key here is a chord: the key code of evKey, with TV_KSHIFT, TV_KALT, TV_KCTRL
+// added for cursor and function keys (Shift+F4 is K_F4+TV_KSHIFT). Letters are
+// taken as lower case, as Alt+letter (K_ALT+'x') already is; Ctrl+letter is its
+// control code (Ctrl+F is 6).
+
+#define TV_KSHIFT 65536
+#define TV_KALT 131072
+#define TV_KCTRL 262144
+#define TV_MAXKC 160
+#define TV_MAXKX 24
+#define CM_KEYS 40      // opens TvKeysDialog
+
+struct TKeyCmd
+{
+	char name[32];
+	int ctx;
+	int cmd;
+	int key[3];
+	int def[3];
+};
+
+struct TKeyCtx
+{
+	int ctx;
+	int parent;
+	char name[32];
+};
+
+TKeyCmd tvKc[TV_MAXKC];
+int tvNKc=0;
+TKeyCtx tvKx[TV_MAXKX];
+int tvNKx=0;
+char tvKeysPath[200];
+int tvKeysPathSet=0;
+int tvCapWin=-1;   // the window waiting for a key in TvKeysDialog, or -1
+int tvCapKey=0;    // the key it got
+int tvCapMsg=-1;   // its label for a key it cannot take
+
+int TvChordOf(int key, int mod)
+{
+	if(key==K_BTAB)return key;
+	if((key>=1000)&&(key<2000))return key+(mod&7)*TV_KSHIFT;
+	if((key>='A')&&(key<='Z'))return key+32;
+	return key;
+}
+
+int TvKxFind(int ctx)
+{
+	for(int i=0;i<tvNKx;i++)
+		if(tvKx[i].ctx==ctx)return i;
+	return -1;
+}
+
+// Names a context for the keys dialog; keys not found in it are looked for in
+// parent. TV_ST_ALL is "Everywhere" unless named otherwise.
+void TvKeyContext(int ctx, int parent, char* name)
+{
+	int i=TvKxFind(ctx);
+	if(i<0)
+	{
+		if(tvNKx>=TV_MAXKX)return;
+		i=tvNKx;
+		tvNKx++;
+	}
+	tvKx[i].ctx=ctx;
+	tvKx[i].parent=parent;
+	StrCpy(&tvKx[i].name[0],name,32);
+}
+
+void TvKeysStart()
+{
+	if(tvNKx==0)TvKeyContext(TV_ST_ALL,TV_ST_ALL,"Everywhere");
+}
+
+int TvKeyParent(int ctx)
+{
+	if(ctx==TV_ST_ALL)return TV_ST_ALL;
+	int i=TvKxFind(ctx);
+	if(i<0)return TV_ST_ALL;
+	return tvKx[i].parent;
+}
+
+// 1 if context a is b or one that b falls back to.
+int TvKeyUnder(int a, int b)
+{
+	int c=b;
+	for(int n=0;n<8;n++)
+	{
+		if(c==a)return 1;
+		if(c==TV_ST_ALL)return 0;
+		c=TvKeyParent(c);
+	}
+	return 0;
+}
+
+// Adds a command to the map with up to three default keys (0 for none) and returns
+// its number. name is what the keys dialog shows.
+int TvKeyCmd(int ctx, int cmd, char* name, int k1, int k2, int k3)
+{
+	TvKeysStart();
+	if(tvNKc>=TV_MAXKC)return -1;
+	TKeyCmd& c=tvKc[tvNKc];
+	StrCpy(&c.name[0],name,32);
+	c.ctx=ctx;
+	c.cmd=cmd;
+	c.def[0]=k1;
+	c.def[1]=k2;
+	c.def[2]=k3;
+	for(int k=0;k<3;k++)
+		c.key[k]=c.def[k];
+	tvNKc++;
+	return tvNKc-1;
+}
+
+// The command whose key chord is in context ctx or the ones it falls back to, or -1.
+int TvKeyFind(int ctx, int chord)
+{
+	if(chord==0)return -1;
+	int c=ctx;
+	for(int n=0;n<8;n++)
+	{
+		for(int i=0;i<tvNKc;i++)
+			if(tvKc[i].ctx==c)
+				for(int k=0;k<3;k++)
+					if(tvKc[i].key[k]==chord)return i;
+		if(c==TV_ST_ALL)return -1;
+		c=TvKeyParent(c);
+	}
+	return -1;
+}
+
+// The first key of command cmd as seen from context ctx, or else its first key
+// anywhere, or 0.
+int TvKeyFor(int cmd, int ctx)
+{
+	int c=ctx;
+	for(int n=0;n<8;n++)
+	{
+		for(int i=0;i<tvNKc;i++)
+			if((tvKc[i].ctx==c)&&(tvKc[i].cmd==cmd))
+				for(int k=0;k<3;k++)
+					if(tvKc[i].key[k]!=0)return tvKc[i].key[k];
+		if(c==TV_ST_ALL)break;
+		c=TvKeyParent(c);
+	}
+	for(int i=0;i<tvNKc;i++)
+		if(tvKc[i].cmd==cmd)
+			for(int k=0;k<3;k++)
+				if(tvKc[i].key[k]!=0)return tvKc[i].key[k];
+	return 0;
+}
+
+// 1 if command cmd is in the map at all.
+int TvKeyMapped(int cmd)
+{
+	for(int i=0;i<tvNKc;i++)
+		if(tvKc[i].cmd==cmd)return 1;
+	return 0;
+}
+
+// The context of the front window, for the map.
+int TvKeyCtxNow()
+{
+	int top=TvTop();
+	if(top<0)return TV_ST_DESK;
+	return TvAppStatus(top);
+}
+
+int TvKAdd(char* out, int o, int max, char* s)
+{
+	int i=0;
+	while((s[i]!=0)&&(o<max-1))
+	{
+		out[o]=s[i];
+		o++;
+		i++;
+	}
+	out[o]=0;
+	return o;
+}
+
+// The name of a key without modifiers, as "F5", "PgDn", "Ctrl+F" or "+".
+void TvKeyBase(int k, char* out, int max)
+{
+	out[0]=0;
+	char* s="";
+	if(k==K_TAB)s="Tab";
+	else if(k==K_ENTER)s="Enter";
+	else if(k==K_ESC)s="Esc";
+	else if(k==' ')s="Space";
+	else if(k==K_BACKSPACE)s="Bksp";
+	else if(k==K_UP)s="Up";
+	else if(k==K_DOWN)s="Down";
+	else if(k==K_LEFT)s="Left";
+	else if(k==K_RIGHT)s="Right";
+	else if(k==K_HOME)s="Home";
+	else if(k==K_END)s="End";
+	else if(k==K_PGUP)s="PgUp";
+	else if(k==K_PGDN)s="PgDn";
+	else if(k==K_INS)s="Ins";
+	else if(k==K_DEL)s="Del";
+	else if(k==K_BTAB)s="Shift+Tab";
+	else if(k==K_MENU)s="Menu";
+	else if((k>=K_F1)&&(k<=K_F12))
+	{
+		snprintf(out,max,"F%d",k-K_F1+1);
+		return;
+	}
+	else if((k>=1)&&(k<=26))
+	{
+		snprintf(out,max,"Ctrl+%c",'A'+k-1);
+		return;
+	}
+	else if((k>='a')&&(k<='z'))
+	{
+		snprintf(out,max,"%c",k-32);
+		return;
+	}
+	else if((k>32)&&(k<127))
+	{
+		snprintf(out,max,"%c",k);
+		return;
+	}
+	TvKAdd(out,0,max,s);
+}
+
+// The name of a key chord, as "Shift+F6" or "Alt+Q"; empty for 0.
+void TvKeyName(int chord, char* out, int max)
+{
+	out[0]=0;
+	if(chord<=0)return;
+	int mod=chord/TV_KSHIFT;
+	int k=chord%TV_KSHIFT;
+	int o=0;
+	if(mod&MOD_CTRL)o=TvKAdd(out,o,max,"Ctrl+");
+	if(mod&MOD_ALT)o=TvKAdd(out,o,max,"Alt+");
+	if(mod&MOD_SHIFT)o=TvKAdd(out,o,max,"Shift+");
+	if(k>=K_ALT)
+	{
+		o=TvKAdd(out,o,max,"Alt+");
+		k=k-K_ALT;
+	}
+	char b[24];
+	TvKeyBase(k,&b[0],24);
+	TvKAdd(out,o,max,&b[0]);
+}
+
+int TvKStarts(char* s, char* p)
+{
+	int i=0;
+	while(p[i]!=0)
+	{
+		if(s[i]!=p[i])return 0;
+		i++;
+	}
+	return 1;
+}
+
+int TvKSame(char* a, char* b)
+{
+	int i=0;
+	while((a[i]!=0)&&(a[i]==b[i]))i++;
+	return a[i]==b[i];
+}
+
+// The chord a name stands for, as TvKeyName writes it, or -1.
+int TvKeyParse(char* s)
+{
+	int mod=0;
+	int i=0;
+	for(int n=0;n<3;n++)
+	{
+		if(TvKStarts(&s[i],"Ctrl+")&&(s[i+5]!=0))
+		{
+			mod=mod|MOD_CTRL;
+			i=i+5;
+		}
+		else if(TvKStarts(&s[i],"Alt+")&&(s[i+4]!=0))
+		{
+			mod=mod|MOD_ALT;
+			i=i+4;
+		}
+		else if(TvKStarts(&s[i],"Shift+")&&(s[i+6]!=0))
+		{
+			if(!TvKSame(&s[i],"Shift+Tab"))
+			{
+				mod=mod|MOD_SHIFT;
+				i=i+6;
+			}
+		}
+	}
+	char b[24];
+	int base=-1;
+	for(int k=1;k<1200;k++)
+	{
+		if((k==128)&&(base<0))k=1000;
+		TvKeyBase(k,&b[0],24);
+		if(b[0]!=0)
+			if(TvKSame(&b[0],&s[i]))
+			{
+				base=k;
+				break;
+			}
+	}
+	if(base<0)return -1;
+	if((base>=1000)&&(base<2000))
+	{
+		if(base==K_BTAB)return base;
+		return base+mod*TV_KSHIFT;
+	}
+	if(base==K_TAB)
+		if(mod&MOD_SHIFT)return K_BTAB;
+	if(mod&MOD_CTRL)
+	{
+		if((base>='a')&&(base<='z'))base=base-'a'+1;
+		else return -1;
+	}
+	if(mod&MOD_ALT)return K_ALT+base;
+	return base;
+}
+
+// How key slot k of command i clashes with another command j: 1 the same key in
+// the same context, 2 the same key in a context one falls back to (the nearer one
+// wins there), 0 none.
+int TvKeyClash(int i, int k, int& j)
+{
+	int chord=tvKc[i].key[k];
+	j=-1;
+	if(chord==0)return 0;
+	int found=0;
+	for(int o=0;o<tvNKc;o++)
+	{
+		if(o==i)continue;
+		for(int q=0;q<3;q++)
+			if(tvKc[o].key[q]==chord)
+			{
+				if(tvKc[o].ctx==tvKc[i].ctx)
+				{
+					j=o;
+					return 1;
+				}
+				if(TvKeyUnder(tvKc[o].ctx,tvKc[i].ctx)||TvKeyUnder(tvKc[i].ctx,tvKc[o].ctx))
+					if(!found)
+					{
+						j=o;
+						found=2;
+					}
+			}
+	}
+	return found;
+}
+
+// Keys in a file, one changed command a line: "Context/Command = Key, Key"; an
+// empty right side takes the keys away. Only the commands whose keys differ from
+// the defaults are written.
+void TvKeysLoad()
+{
+	char* buf=malloc(16384);
+	int n=fs_load(&tvKeysPath[0],buf,16383);
+	if(n<=0)
+	{
+		free(buf);
+		return;
+	}
+	buf[n]=0;
+	int i=0;
+	while(buf[i]!=0)
+	{
+		char line[200];
+		int o=0;
+		while((buf[i]!=0)&&(buf[i]!=10))
+		{
+			if((o<199)&&(buf[i]!=13))
+			{
+				line[o]=buf[i];
+				o++;
+			}
+			i++;
+		}
+		line[o]=0;
+		if(buf[i]==10)i++;
+		// split at '/' and " = "
+		int sl=-1;
+		int eq=-1;
+		for(int p=0;p<o;p++)
+		{
+			if((sl<0)&&(line[p]=='/'))sl=p;
+			if((eq<0)&&(sl>=0)&&(line[p]=='=')&&(p>0)&&(line[p-1]==' '))eq=p;
+		}
+		if((sl<0)||(eq<0))continue;
+		line[sl]=0;
+		line[eq-1]=0;
+		int ci=-1;
+		for(int x=0;x<tvNKx;x++)
+			if(TvKSame(&tvKx[x].name[0],&line[0]))ci=x;
+		if(ci<0)continue;
+		int e=-1;
+		for(int x=0;x<tvNKc;x++)
+			if(tvKc[x].ctx==tvKx[ci].ctx)
+				if(TvKSame(&tvKc[x].name[0],&line[sl+1]))e=x;
+		if(e<0)continue;
+		for(int k=0;k<3;k++)
+			tvKc[e].key[k]=0;
+		int p=eq+1;
+		int k=0;
+		while((line[p]!=0)&&(k<3))
+		{
+			while(line[p]==' ')p++;
+			char name[32];
+			int q=0;
+			// a name ends at ", " so that "Alt+," and "," stay whole
+			while((line[p]!=0)&&(q<31))
+			{
+				if((line[p]==',')&&(line[p+1]==' '))break;
+				name[q]=line[p];
+				q++;
+				p++;
+			}
+			name[q]=0;
+			if(line[p]==',')p++;
+			if(q==0)break;
+			int c=TvKeyParse(&name[0]);
+			if(c>0)
+			{
+				tvKc[e].key[k]=c;
+				k++;
+			}
+		}
+	}
+	free(buf);
+}
+
+void TvKeysSave()
+{
+	if(!tvKeysPathSet)return;
+	char* buf=malloc(16384);
+	int o=0;
+	for(int i=0;i<tvNKc;i++)
+	{
+		int same=1;
+		for(int k=0;k<3;k++)
+			if(tvKc[i].key[k]!=tvKc[i].def[k])same=0;
+		if(same)continue;
+		int x=TvKxFind(tvKc[i].ctx);
+		if(x<0)continue;
+		if(o>16000)break;
+		o=TvKAdd(buf,o,16384,&tvKx[x].name[0]);
+		o=TvKAdd(buf,o,16384,"/");
+		o=TvKAdd(buf,o,16384,&tvKc[i].name[0]);
+		o=TvKAdd(buf,o,16384," =");
+		int first=1;
+		for(int k=0;k<3;k++)
+			if(tvKc[i].key[k]!=0)
+			{
+				char nm[32];
+				TvKeyName(tvKc[i].key[k],&nm[0],32);
+				if(first)o=TvKAdd(buf,o,16384," ");
+				else o=TvKAdd(buf,o,16384,", ");
+				o=TvKAdd(buf,o,16384,&nm[0]);
+				first=0;
+			}
+		o=TvKAdd(buf,o,16384,"\n");
+	}
+	if(fs_save_begin(&tvKeysPath[0]))
+	{
+		int ok=fs_save_write(buf,o);
+		fs_save_end(ok);
+	}
+	free(buf);
+}
+
+// Names the file that keeps the user's keys and reads it. Call it after the
+// commands are in the map.
+void TvKeysFile(char* path)
+{
+	StrCpy(&tvKeysPath[0],path,200);
+	tvKeysPathSet=1;
+	TvKeysLoad();
+}
+
 
 TMenu tvMenu[TV_MAXMENU];
 TItem tvItem[TV_MAXITEM];
@@ -2208,6 +2705,40 @@ void TvWinMenuFill()
 	m.count=k;
 }
 
+// 1, with why filled in, if the desktop keeps the key for itself.
+int TvKeyReserved(int chord, char* why, int max)
+{
+	why[0]=0;
+	if(chord==K_ESC)snprintf(why,max,"Esc closes dialogs and menus");
+	else if(chord==K_F10)snprintf(why,max,"F10 opens the menus");
+	else if((chord==K_F10+TV_KSHIFT)||(chord==K_MENU))snprintf(why,max,"it opens the context menu");
+	else if((chord>K_ALT+'0')&&(chord<=K_ALT+'9'))snprintf(why,max,"Alt+1..9 go to the windows");
+	else if((chord>K_ALT)&&(chord<K_ALT+128))
+	{
+		for(int i=0;i<tvNMenu;i++)
+			if(!tvMenu[i].popup)
+				if(HotChar(&tvMenu[i].title[0])==chord-K_ALT)
+				{
+					char t[24];
+					int o=0;
+					int j=0;
+					while((tvMenu[i].title[j]!=0)&&(o<23))
+					{
+						if(tvMenu[i].title[j]!='~')
+						{
+							t[o]=tvMenu[i].title[j];
+							o++;
+						}
+						j++;
+					}
+					t[o]=0;
+					snprintf(why,max,"it opens the %s menu",&t[0]);
+					return 1;
+				}
+	}
+	return why[0]!=0;
+}
+
 void TvStatusAdd(char* text, int cmd, int key)
 {
 	if(tvNStatus>=TV_MAXSTATUS)return;
@@ -2216,7 +2747,33 @@ void TvStatusAdd(char* text, int cmd, int key)
 	s.cmd=cmd;
 	s.key=key;
 	s.ctx=tvStatusFor;
+	s.byMap=0;
 	tvNStatus++;
+}
+
+// A status line item for a command of the keyboard map: its key as the map has it
+// now, then label. It does not show while the command has no key.
+void TvStatusCmd(char* label, int cmd)
+{
+	TvStatusAdd(label,cmd,0);
+	tvStatus[tvNStatus-1].byMap=1;
+}
+
+// The text status line item i shows now.
+void TvStatusText(int i, char* out, int max)
+{
+	TStatus& s=tvStatus[i];
+	if(!s.byMap)
+	{
+		StrCpy(out,&s.text[0],max);
+		return;
+	}
+	out[0]=0;
+	int k=TvKeyFor(s.cmd,tvStCtx);
+	if(k==0)return;
+	char nm[32];
+	TvKeyName(k,&nm[0],32);
+	snprintf(out,max,"~%s~ %s",&nm[0],&s.text[0]);
 }
 
 // The context of the status line items added from now on (TV_ST_ALL at the start).
@@ -2248,7 +2805,9 @@ int TvStatusGap()
 	for(int i=0;i<tvNStatus;i++)
 		if(TvStatusShown(i))
 		{
-			w=w+HotLen(&tvStatus[i].text[0]);
+			char t[64];
+			TvStatusText(i,&t[0],64);
+			w=w+HotLen(&t[0]);
 			n++;
 		}
 	if(w+2*(n-1)>tvW)return 1;
@@ -2258,6 +2817,8 @@ int TvStatusGap()
 // 1 if status line item i shows now (after TvStatusUpdate).
 int TvStatusShown(int i)
 {
+	if(tvStatus[i].byMap)
+		if(TvKeyFor(tvStatus[i].cmd,tvStCtx)==0)return 0;
 	int c=tvStatus[i].ctx;
 	if(c==tvStCtx)return 1;
 	if(tvStCtx==TV_ST_DIALOG)
@@ -2266,6 +2827,19 @@ int TvStatusShown(int i)
 	if(c==TV_ST_OTHER)
 		if(!tvStOwn)return 1;
 	return 0;
+}
+
+// The hint menu item i shows: its own, or the key of its command in the keyboard map
+// as seen from the front window.
+void TvItemHint(int i, char* out, int max)
+{
+	TItem& it=tvItem[i];
+	if((it.hint[0]!=0)||(it.cmd==0)||(it.sub>=0))
+	{
+		StrCpy(out,&it.hint[0],max);
+		return;
+	}
+	TvKeyName(TvKeyFor(it.cmd,TvKeyCtxNow()),out,max);
 }
 
 int TvMenuX(int n)
@@ -2283,7 +2857,9 @@ void TvMenuBox(int n, int& x, int& y, int& w, int& h)
 	for(int i=0;i<m.count;i++)
 	{
 		TItem& it=tvItem[m.first+i];
-		int l=HotLen(&it.text[0])+StrLen(&it.hint[0])+6;
+		char hint[32];
+		TvItemHint(m.first+i,&hint[0],32);
+		int l=HotLen(&it.text[0])+StrLen(&hint[0])+6;
 		if(l>wid)wid=l;
 	}
 	x=TvMenuX(n)-1;
@@ -2418,7 +2994,9 @@ void TvDrawMenuList(int n, int sel)
 				TvFill(x+1,ry,w-2,1,' ',at);
 			}
 			TvHotText(x+2,ry,&it.text[0],at,hot);
-			TvText(x+w-2-StrLen(&it.hint[0]),ry,&it.hint[0],at);
+			char hint[32];
+			TvItemHint(m.first+i,&hint[0],32);
+			TvText(x+w-2-StrLen(&hint[0]),ry,&hint[0],at);
 			if(it.sub>=0)TvPut(x+w-2,ry,0x25BA,at);
 		}
 	}
@@ -2448,7 +3026,9 @@ void TvDrawStatus()
 			at=A_STATUS_SEL;
 			hot=A_STATUS_SELHOT;
 		}
-		x=TvHotText(x,tvH-1,&tvStatus[i].text[0],at,hot);
+		char t[64];
+		TvStatusText(i,&t[0],64);
+		x=TvHotText(x,tvH-1,&t[0],at,hot);
 		x=x+gap;
 	}
 }
@@ -2803,6 +3383,7 @@ void TvTile()
 void TvOpenMenu(int n);
 
 void TvWinList();
+void TvKeysDialog();
 
 void TvCommand(int cmd)
 {
@@ -2831,6 +3412,12 @@ void TvCommand(int cmd)
 	else if(cmd==CM_CASCADE)TvCascade();
 	else if(cmd==CM_TILE)TvTile();
 	else if(cmd==CM_MENU)TvOpenMenu(0);
+	else if(cmd==CM_KEYS)
+	{
+		if(top>=0)
+			if(tvWin[top].modal)return;
+		TvKeysDialog();
+	}
 	else if(cmd==CM_WINLIST)
 	{
 		if(top>=0)
@@ -3547,7 +4134,9 @@ int TvStatusAt(int x)
 	for(int i=0;i<tvNStatus;i++)
 	{
 		if(!TvStatusShown(i))continue;
-		int l=HotLen(&tvStatus[i].text[0]);
+		char t[64];
+		TvStatusText(i,&t[0],64);
+		int l=HotLen(&t[0]);
 		if((x>=sx)&&(x<sx+l))return i;
 		sx=sx+l+gap;
 	}
@@ -3771,10 +4360,40 @@ void TvMouse()
 	TvAppMouse(win,EV_MDOWN,rx,ry);
 }
 
+// A key for the capture window of TvKeysDialog: it ends the window unless the
+// desktop keeps the key, which the window then says.
+void TvCaptureKey(int key)
+{
+	TWin& t=tvWin[tvCapWin];
+	if(key==K_ESC)
+	{
+		t.result=CM_CANCEL;
+		return;
+	}
+	int chord=TvChordOf(key,evMod);
+	if(chord<=0)return;
+	char why[60];
+	if(TvKeyReserved(chord,&why[0],60))
+	{
+		char nm[32];
+		TvKeyName(chord,&nm[0],32);
+		snprintf(&tvCtl[tvCapMsg].text[0],200,"Not %s: %s",&nm[0],&why[0]);
+		return;
+	}
+	tvCapKey=chord;
+	t.result=CM_OK;
+}
+
 void TvKey()
 {
 	int key=evKey;
 	tvDirty=1;
+	if(tvCapWin>=0)
+		if(TvTop()==tvCapWin)
+		{
+			TvCaptureKey(key);
+			return;
+		}
 	if(comboCtl>=0)
 	{
 		TvComboKey(key);
@@ -3820,6 +4439,12 @@ void TvKey()
 							return;
 						}
 			}
+		}
+		int kc=TvKeyFind(TvKeyCtxNow(),TvChordOf(key,evMod));
+		if(kc>=0)
+		{
+			TvCommand(tvKc[kc].cmd);
+			return;
 		}
 		for(int i=0;i<tvNStatus;i++)
 			if((tvStatus[i].cmd!=0)&&(tvStatus[i].key!=0)&&(tvStatus[i].key==key))
@@ -4049,6 +4674,239 @@ void TvWinList()
 			return;
 		}
 	}
+	TvClose(win);
+}
+
+// ---------------------------------------------------------------- keys dialog
+// Options > Keyboard: every command of the map by context, with its keys. Set
+// replaces a command's keys with one pressed, Add adds one, Remove takes the
+// selected command's keys away, Default puts its own back. ! marks a key another
+// command of the same context has too, ? one that a nearer context uses for
+// something else; the line below the list says which.
+
+#define W_KEYS 1001
+#define W_KEYCAP 1002
+#define CM_KSET 41
+#define CM_KADD 42
+#define CM_KDEL 43
+#define CM_KDEF 44
+#define CM_KALL 45
+
+int tvKrRow[TV_MAXKC+TV_MAXKX];  // the list's rows: a command, or -1-x for context x's title
+int tvKrN=0;
+int tvKrList=-1;                  // the list control
+
+void TvKeysRows()
+{
+	tvKrN=0;
+	for(int x=0;x<tvNKx;x++)
+	{
+		tvKrRow[tvKrN]=-1-x;
+		tvKrN++;
+		for(int i=0;i<tvNKc;i++)
+			if(tvKc[i].ctx==tvKx[x].ctx)
+			{
+				tvKrRow[tvKrN]=i;
+				tvKrN++;
+			}
+	}
+}
+
+// The keys of command i, as "F6, Shift+F6".
+void TvKeysOf(int i, char* out, int max)
+{
+	out[0]=0;
+	int o=0;
+	for(int k=0;k<3;k++)
+		if(tvKc[i].key[k]!=0)
+		{
+			char nm[32];
+			TvKeyName(tvKc[i].key[k],&nm[0],32);
+			if(o>0)o=TvKAdd(out,o,max,", ");
+			o=TvKAdd(out,o,max,&nm[0]);
+		}
+}
+
+void TvKeysItem(int r, char* out, int max)
+{
+	int i=tvKrRow[r];
+	if(i<0)
+	{
+		snprintf(out,max,"\xe2\x94\x80\xe2\x94\x80 %s",&tvKx[-1-i].name[0]);
+		return;
+	}
+	char mark=' ';
+	int j=0;
+	for(int k=0;k<3;k++)
+	{
+		int c=TvKeyClash(i,k,j);
+		if(c==1)mark='!';
+		if((c==2)&&(mark==' '))mark='?';
+	}
+	char keys[80];
+	TvKeysOf(i,&keys[0],80);
+	snprintf(out,max,"%c %-30s %s",mark,&tvKc[i].name[0],&keys[0]);
+}
+
+char* TvKxName(int ctx)
+{
+	int x=TvKxFind(ctx);
+	if(x<0)return "?";
+	return &tvKx[x].name[0];
+}
+
+// The line under the list, about the selected row.
+void TvKeysDrawInfo(int win)
+{
+	TWin& t=tvWin[win];
+	if((tvKrList<0)||(tvKrN==0))return;
+	int r=tvCtl[tvKrList].val;
+	if((r<0)||(r>=tvKrN))return;
+	char s[160];
+	int i=tvKrRow[r];
+	snprintf(&s[0],160,"Enter or Set: press a new key; Add: one more; Remove: none");
+	if(i<0)
+	{
+		TKeyCtx& x=tvKx[-1-i];
+		if(x.ctx!=TV_ST_ALL)
+			snprintf(&s[0],160,"Keys not found here are looked for in %s",TvKxName(x.parent));
+	}
+	else
+	{
+		for(int k=2;k>=0;k--)
+		{
+			int j=0;
+			int c=TvKeyClash(i,k,j);
+			if(c==0)continue;
+			char nm[32];
+			TvKeyName(tvKc[i].key[k],&nm[0],32);
+			if(c==1)snprintf(&s[0],160,"! %s is %s here too",&nm[0],&tvKc[j].name[0]);
+			else if(TvKeyUnder(tvKc[i].ctx,tvKc[j].ctx))
+				snprintf(&s[0],160,"? %s is %s in %s",&nm[0],&tvKc[j].name[0],TvKxName(tvKc[j].ctx));
+			else snprintf(&s[0],160,"? %s here hides %s of %s",&nm[0],&tvKc[j].name[0],TvKxName(tvKc[j].ctx));
+		}
+	}
+	TvFill(t.x+2,t.y+t.h-2,t.w-4,1,' ',A_DLG);
+	TvTextN(t.x+3,t.y+t.h-2,&s[0],A_DLG,t.w-6);
+}
+
+// Waits for a key for command i; returns it, or 0 if cancelled.
+int TvKeyCapture(int i)
+{
+	int win=TvNewCentered(W_KEYCAP,"Press a key",52,10,WF_DIALOG);
+	if(win<0)return 0;
+	char s[80];
+	snprintf(&s[0],80,"The new key for %s",&tvKc[i].name[0]);
+	TvAdd(win,C_LABEL,3,2,46,1,&s[0],0);
+	TvAdd(win,C_LABEL,3,3,46,1,"(Esc cancels)",0);
+	tvCapMsg=TvAdd(win,C_LABEL,3,5,46,1,"",0);
+	TvAdd(win,C_BUTTON,19,7,12,2,"Cancel",CM_CANCEL);
+	tvCapWin=win;
+	tvCapKey=0;
+	int res=TvExec(win);
+	tvCapWin=-1;
+	TvClose(win);
+	if(res!=CM_OK)return 0;
+	return tvCapKey;
+}
+
+void TvKeysDialog()
+{
+	if(tvNKc==0)return;
+	int w=78;
+	if(w>tvW)w=tvW;
+	int h=24;
+	if(h>tvH-2)h=tvH-2;
+	int win=TvNewCentered(W_KEYS,"Keyboard",w,h,WF_DIALOG);
+	if(win<0)return;
+	int bx=w-17;
+	TvAdd(win,C_LABEL,3,1,20,1,"~C~ommands",0);
+	tvKrList=TvAdd(win,C_LIST,3,2,bx-4,h-5,"",0);
+	tvCtl[tvKrList].virt=1;
+	int b=TvAdd(win,C_BUTTON,bx,2,14,2,"~S~et...",CM_KSET);
+	tvCtl[b].isDefault=1;
+	TvAdd(win,C_BUTTON,bx,4,14,2,"~A~dd...",CM_KADD);
+	TvAdd(win,C_BUTTON,bx,6,14,2,"~R~emove",CM_KDEL);
+	TvAdd(win,C_BUTTON,bx,8,14,2,"~D~efault",CM_KDEF);
+	TvAdd(win,C_BUTTON,bx,10,14,2,"All defa~u~lt",CM_KALL);
+	TvAdd(win,C_BUTTON,bx,h-7,14,2,"O~K~",CM_OK);
+	TvAdd(win,C_BUTTON,bx,h-5,14,2,"Cancel",CM_CANCEL);
+	tvWin[win].focus=tvKrList;
+	// for Cancel
+	int* keep=malloc(TV_MAXKC*3*4);
+	for(int i=0;i<tvNKc;i++)
+		for(int k=0;k<3;k++)
+			keep[i*3+k]=tvKc[i].key[k];
+	TvKeysRows();
+	tvCtl[tvKrList].count=tvKrN;
+	tvCtl[tvKrList].val=1;
+	while(tvRunning)
+	{
+		int res=TvExec(win);
+		tvWin[win].focus=tvKrList;
+		int r=tvCtl[tvKrList].val;
+		int i=-1;
+		if((r>=0)&&(r<tvKrN))i=tvKrRow[r];
+		if((res==CM_OK)||(res==CM_CANCEL)||(res==0))
+		{
+			if(res!=CM_OK)
+			{
+				for(int x=0;x<tvNKc;x++)
+					for(int k=0;k<3;k++)
+						tvKc[x].key[k]=keep[x*3+k];
+			}
+			else TvKeysSave();
+			break;
+		}
+		if(res==CM_KALL)
+		{
+			if(TvMessage("Keyboard","Put every key back as it was at first?",1)==CM_YES)
+				for(int x=0;x<tvNKc;x++)
+					for(int k=0;k<3;k++)
+						tvKc[x].key[k]=tvKc[x].def[k];
+			continue;
+		}
+		if(i<0)continue;
+		TKeyCmd& c=tvKc[i];
+		if(res==CM_KDEL)
+		{
+			for(int k=0;k<3;k++)
+				c.key[k]=0;
+		}
+		else if(res==CM_KDEF)
+		{
+			for(int k=0;k<3;k++)
+				c.key[k]=c.def[k];
+		}
+		else if((res==CM_KSET)||(res==CM_KADD))
+		{
+			int got=TvKeyCapture(i);
+			if(got!=0)
+			{
+				if(res==CM_KSET)
+				{
+					c.key[0]=got;
+					c.key[1]=0;
+					c.key[2]=0;
+				}
+				else
+				{
+					int have=0;
+					for(int k=0;k<3;k++)
+						if(c.key[k]==got)have=1;
+					if(!have)
+					{
+						// the new key goes last; with three already the last one gives way
+						int k=0;
+						while((k<2)&&(c.key[k]!=0))k++;
+						c.key[k]=got;
+					}
+				}
+			}
+		}
+	}
+	free(keep);
+	tvKrList=-1;
 	TvClose(win);
 }
 

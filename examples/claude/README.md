@@ -176,6 +176,16 @@ Clicking a column title sorts by it; the Left and Right menus choose full or
 brief listings, quick view and the sort order, and Command > Compare directories
 marks the files that differ.
 
+**Keyboard.** Options > Keyboard lists every command by window (Everywhere,
+Panels, Edit and view windows, View windows, Picture windows, Hex view) with its
+keys. Set and Add wait for a key to be pressed (keys the desktop keeps, as F10 and
+Alt+menu letters, are refused), Remove takes the keys away, Default puts them
+back. `!` marks a key two commands of one window share, `?` one a nearer window
+uses for something else (Ctrl+R is Reread in the panels and Replace in an editor),
+and the line under the list says which. Changes go to `t2fc.keys`; menus and the
+status line show the keys as they are. In tv.h this is `TvKeyContext`,
+`TvKeyCmd`, `TvKeysFile`, `TvStatusCmd` and the `CM_KEYS` command.
+
 The status line follows the front window: the panels' F keys, a view or edit
 window's, a picture window's, a dialog's. A click on a key there does what the key
 does (tv.h: `TvStatusFor(context)` before `TvStatusAdd`, where the context is a
@@ -198,6 +208,17 @@ and libwebp when it is installed. Shrinking averages all the pixels a cell
 covers; clear parts show a checkerboard. In the window, `+` `-` or the wheel
 zoom, `0` fits, `1` shows pixels 1:1, arrows or dragging move, Space and
 Backspace go to the next and previous picture of the panel, and `r` turns it.
+
+**Archives.** Enter goes into a zip, tar (plain, gz, bz2, xz, zstd), 7z, rar, iso,
+deb and other archives as into a directory, and `..` leaves it; inside, view, quick
+view, hex view and F5 copy work as anywhere, while editing, moving, deleting and
+running are refused. F3 on an archive opens an archive window with its whole tree,
+sizes and times: Enter views a file or shows a directory in the panel, F5 copies
+it out. `arc_dl.so` (`arc_dl.cpp`, built by `build_so.sh`) does this apart from
+term_dl, with libarchive opened at run time (`libarchive.so.13`); files the
+picture decoder or editor must open are taken out to a temporary directory that
+goes when t2fc ends. Options > Lynx-like motion makes Left and Right leave and
+enter directories and archives.
 
 **Colours over ssh.** tui uses 24-bit colour when `COLORTERM` says the terminal
 has it, but ssh does not pass `COLORTERM` on by default. So when it is missing,

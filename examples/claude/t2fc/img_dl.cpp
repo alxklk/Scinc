@@ -421,6 +421,18 @@ int img_is(char* path)
 	return 1;
 }
 
+// As img_is, for the first bytes of a file read some other way (from an archive);
+// name gives the extension TGA is known by.
+int img_sniff(char* head, int n, char* name)
+{
+	const char* fmt=sniff((const uint8_t*)head,n<0?0:(size_t)n,name);
+	if(!fmt)return 0;
+#ifndef HAVE_WEBP
+	if(!strcmp(fmt,"WebP"))return 0;
+#endif
+	return 1;
+}
+
 // Starts decoding a file into slot s; img_state tells when it is done.
 int img_open(int s, char* path)
 {
@@ -737,6 +749,7 @@ int img_pixels(int s, int f, double cx, double cy, double scale, int fullW, int 
 
 extern "C" int img_pixels_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_pixels);return 0;}
 extern "C" int img_is_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_is);return 0;}
+extern "C" int img_sniff_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_sniff);return 0;}
 extern "C" int img_open_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_open);return 0;}
 extern "C" int img_free_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_free);return 0;}
 extern "C" int img_state_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_state);return 0;}
