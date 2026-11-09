@@ -5,7 +5,8 @@
 // PC symbols and Windows-1251 (tvrmap.h says where each character is); tvrfont9.h
 // and tvrfont6.h hold the Latin-1 letters and the few signs they do not have.
 // Box lines, shades and blocks are filled rectangles on whole pixels instead of the
-// font's, so they join exactly from cell to cell.
+// font's, so they join exactly from cell to cell. Pictures of TvPixels are blitted
+// at the render target's pixels, and the cells over them drawn again on top.
 //
 // tv.h includes this when the program defines TV_GFX before including tv.h,
 // at the point where everything the backend uses from tv.h has been defined.
@@ -123,6 +124,66 @@ int GfxCols()
 int GfxRows()
 {
 	return TV_GFX_ROWS;
+}
+
+int GfxCellPxW()
+{
+	return GFX_CW;
+}
+
+int GfxCellPxH()
+{
+	return GFX_CH;
+}
+
+int* gfxPix=0;          // pixels from TvAppPixels on their way to the screen
+int gfxPixN=0;
+
+// Draws the pictures of TvPixels when they changed or any of their cells did, all
+// of them in order so that the front one wins where they overlap, and has the
+// cells over them (a window in front, a menu) drawn again on top.
+void GfxPixels()
+{
+	int need=TvPixChanged();
+	for(int k=0;(k<tvPixN)&&!need;k++)
+	{
+		int* r=&tvPixR[k*9];
+		for(int y=r[5];y<r[7];y++)
+			for(int x=r[4];x<r[6];x++)
+			{
+				int i=y*TV_MAXW+x;
+				if((tvCh[i]!=tvPrevCh[i])||(tvAt[i]!=tvPrevAt[i]))
+					if(TvIsPixCell(tvCh[i],tvAt[i]))need=1;
+			}
+	}
+	if(!need)return;
+	for(int k=0;k<tvPixN;k++)
+	{
+		int* r=&tvPixR[k*9];
+		int id=tvPixId[k];
+		int pw=(r[6]-r[4])*GFX_CW;
+		int ph=(r[7]-r[5])*GFX_CH;
+		if(pw*ph>gfxPixN)
+		{
+			if(gfxPix)free(gfxPix);
+			gfxPixN=pw*ph;
+			gfxPix=(int*)malloc(gfxPixN*sizeof(int));
+		}
+		TvAppPixels(id,gfxPix,r[2]*GFX_CW,r[3]*GFX_CH,(r[4]-r[0])*GFX_CW,(r[5]-r[1])*GFX_CH,pw,ph);
+		tvG.BitBlt(gfxPix,pw,ph,r[4]*GFX_CW,r[5]*GFX_CH);
+		for(int y=r[5];y<r[7];y++)
+			for(int x=r[4];x<r[6];x++)
+			{
+				int i=y*TV_MAXW+x;
+				if(TvIsPixCell(tvCh[i],tvAt[i])&&(tvAt[i]==(TV_PIXAT|id)))
+				{
+					tvPrevCh[i]=tvCh[i];
+					tvPrevAt[i]=tvAt[i];
+				}
+				else tvPrevCh[i]=-1;     // drawn again over the picture
+			}
+	}
+	TvPixCommit();
 }
 
 // a*(256-t)/256 + b*t/256 for each channel
@@ -433,6 +494,7 @@ void GfxFlush()
 		gfxCurX=tvCurX;
 		gfxCurY=tvCurY;
 	}
+	GfxPixels();
 	gfxN=0;
 	for(int y=0;y<tvH;y++)
 	{
@@ -446,6 +508,12 @@ void GfxFlush()
 			{
 				tvPrevCh[i]=ch;
 				tvPrevAt[i]=at;
+				if(ch==TV_PIXCH)
+				{
+					if(TvIsPixCell(ch,at))continue;   // GfxPixels drew it
+					ch=' ';                           // a shadow fell on it
+					tvCh[i]=' ';
+				}
 				int px=x*GFX_CW;
 				int py=y*GFX_CH;
 				int fg=TvAtFg(at);

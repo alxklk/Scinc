@@ -3,7 +3,10 @@
 //
 // Formats: PNG, JPEG (turned upright by its EXIF orientation), GIF (animated too),
 // BMP, TGA, PSD, HDR and PNM through stb_image (stb_image.h, public domain), and
-// WebP, animated too, through libwebp when build_so.sh finds it.
+// WebP, animated too, through libwebp. libwebp is opened only when a WebP file is,
+// so img_dl.so needs nothing beyond the C and C++ libraries and still loads on a
+// machine without libwebp (it then just cannot show WebP); build_so.sh needs the
+// libwebp headers for it, or leaves WebP out.
 //
 // Pictures live in numbered slots and are decoded on a thread of their own, so the
 // desktop never waits for a big file: img_open starts it, img_state says when it is
@@ -27,8 +30,38 @@
 #include "stb_image.h"
 
 #ifdef HAVE_WEBP
+#include <dlfcn.h>
 #include <webp/decode.h>
 #include <webp/demux.h>
+
+// libwebpdemux's functions, found at run time
+static int (*pOptionsInit)(WebPAnimDecoderOptions*,int)=nullptr;
+static WebPAnimDecoder* (*pNew)(const WebPData*,const WebPAnimDecoderOptions*,int)=nullptr;
+static int (*pGetInfo)(const WebPAnimDecoder*,WebPAnimInfo*)=nullptr;
+static int (*pHasMore)(const WebPAnimDecoder*)=nullptr;
+static int (*pGetNext)(WebPAnimDecoder*,uint8_t**,int*)=nullptr;
+static void (*pDelete)(WebPAnimDecoder*)=nullptr;
+static std::mutex webpLock;
+static int webpState=0;     // 0 not tried, 1 there, -1 missing
+
+static bool webpLoad()
+{
+	std::lock_guard<std::mutex> lk(webpLock);
+	if(webpState)return webpState>0;
+	webpState=-1;
+	void* h=dlopen("libwebpdemux.so.2",RTLD_NOW|RTLD_LOCAL);
+	if(!h)h=dlopen("libwebpdemux.so",RTLD_NOW|RTLD_LOCAL);
+	if(!h)return false;
+	pOptionsInit=(int(*)(WebPAnimDecoderOptions*,int))dlsym(h,"WebPAnimDecoderOptionsInitInternal");
+	pNew=(WebPAnimDecoder*(*)(const WebPData*,const WebPAnimDecoderOptions*,int))dlsym(h,"WebPAnimDecoderNewInternal");
+	pGetInfo=(int(*)(const WebPAnimDecoder*,WebPAnimInfo*))dlsym(h,"WebPAnimDecoderGetInfo");
+	pHasMore=(int(*)(const WebPAnimDecoder*))dlsym(h,"WebPAnimDecoderHasMoreFrames");
+	pGetNext=(int(*)(WebPAnimDecoder*,uint8_t**,int*))dlsym(h,"WebPAnimDecoderGetNext");
+	pDelete=(void(*)(WebPAnimDecoder*))dlsym(h,"WebPAnimDecoderDelete");
+	if(!pOptionsInit||!pNew||!pGetInfo||!pHasMore||!pGetNext||!pDelete)return false;
+	webpState=1;
+	return true;
+}
 #endif
 
 #include "../../../include/ScincVM.h"
@@ -63,6 +96,8 @@ struct Slot
 	std::string err;
 	// the last picture drawn, kept while nothing changes
 	std::vector<uint32_t> cache;
+	std::vector<uint32_t> pcache;  // the same for img_pixels
+	double pcacheKey[12]={-1,0,0,0,0,0,0,0,0,0,0,0};
 	int cacheKeyI[6]={-1,0,0,0,0,0};
 	double cacheKeyF[4]={0,0,0,0};
 	int version=0;             // bumped by every change to pic
@@ -219,33 +254,42 @@ static bool decodeWebp(const std::vector<uint8_t>& data, Picture& p, std::string
 	WebPData wd;
 	wd.bytes=data.data();
 	wd.size=data.size();
+	if(!webpLoad())
+	{
+		err="WebP needs libwebp (libwebpdemux.so.2), which this machine does not have.";
+		return false;
+	}
 	WebPAnimDecoderOptions opt;
-	WebPAnimDecoderOptionsInit(&opt);
+	if(!pOptionsInit(&opt,WEBP_DEMUX_ABI_VERSION))
+	{
+		err="This libwebp is too old.";
+		return false;
+	}
 	opt.color_mode=MODE_RGBA;
 	opt.use_threads=1;
-	WebPAnimDecoder* dec=WebPAnimDecoderNew(&wd,&opt);
+	WebPAnimDecoder* dec=pNew(&wd,&opt,WEBP_DEMUX_ABI_VERSION);
 	if(!dec)
 	{
 		err="This WebP file could not be decoded.";
 		return false;
 	}
 	WebPAnimInfo info;
-	WebPAnimDecoderGetInfo(dec,&info);
+	pGetInfo(dec,&info);
 	p.w=info.canvas_width;
 	p.h=info.canvas_height;
 	int prev=0;
-	while(WebPAnimDecoderHasMoreFrames(dec))
+	while(pHasMore(dec))
 	{
 		uint8_t* buf=nullptr;
 		int ts=0;
-		if(!WebPAnimDecoderGetNext(dec,&buf,&ts))break;
+		if(!pGetNext(dec,&buf,&ts))break;
 		Frame f;
 		f.rgba.assign(buf,buf+(size_t)p.w*p.h*4);
 		f.delay=ts-prev;
 		prev=ts;
 		p.frames.push_back(std::move(f));
 	}
-	WebPAnimDecoderDelete(dec);
+	pDelete(dec);
 	if(p.frames.empty())
 	{
 		err="This WebP file has no pictures.";
@@ -271,7 +315,7 @@ static bool decode(const std::string& path, Picture& p, std::string& err)
 #ifdef HAVE_WEBP
 		return decodeWebp(data,p,err);
 #else
-		err="WebP needs libwebp: build img_dl.so with libwebp-dev installed.";
+		err="WebP needs libwebp: build img_dl.so with the libwebp headers installed.";
 		return false;
 #endif
 	}
@@ -408,6 +452,8 @@ void img_free(int s)
 	sl.pic.reset();
 	sl.cache.clear();
 	sl.cache.shrink_to_fit();
+	sl.pcache.clear();
+	sl.pcache.shrink_to_fit();
 	sl.version++;
 	if(!sl.busy)sl.doneGen=sl.wantGen;
 }
@@ -495,7 +541,7 @@ static inline int to15(uint32_t c)
 // pixel a screen pixel covers; enlarging repeats them. Clear pixels show a
 // checkerboard, and around the picture is bg.
 static void render(const Picture& p, int frame, double cx, double cy, double sx, double sy,
-	int pw, int ph, uint32_t bg, std::vector<uint32_t>& out)
+	int pw, int ph, uint32_t bg, std::vector<uint32_t>& out, int cox=0, int coy=0, int csh=2)
 {
 	out.assign((size_t)pw*ph,bg);
 	const uint8_t* src=p.frames[frame].rgba.data();
@@ -559,7 +605,7 @@ static void render(const Picture& p, int frame, double cx, double cy, double sx,
 			uint64_t inside=(uint64_t)(ci1-ci0)*(cj1-cj0);
 			uint64_t all=(uint64_t)(i1-i0)*(j1-j0);
 			// what shows through: the checkerboard, as much as the pixels let through
-			uint32_t under=(((px>>2)+(py>>2))&1)?0x9A9A9A:0x666666;
+			uint32_t under=((((px+cox)>>csh)+((py+coy)>>csh))&1)?0x9A9A9A:0x666666;
 			double cover=(double)al/(255.0*inside);          // opacity of the picture part
 			double frac=(double)inside/(double)all;          // how much of it is picture
 			double cr=0;
@@ -652,6 +698,44 @@ int img_draw(int s, int f, double cx, double cy, double scale, double aspect, in
 	return 1;
 }
 
+// Real pixels for a graphic window: the view is fullW*fullH pixels with source point
+// cx,cy in the middle and scale source pixels per pixel; out gets the w*h of them
+// at ox,oy, as 0xFFRRGGBB.
+int img_pixels(int s, int f, double cx, double cy, double scale, int fullW, int fullH,
+	int ox, int oy, int w, int h, int bg, int* out)
+{
+	if(!validSlot(s)||(w<=0)||(h<=0)||!(scale>0))return 0;
+	Slot& sl=slots[s];
+	std::shared_ptr<Picture> p;
+	int version;
+	{
+		std::lock_guard<std::mutex> lk(sl.m);
+		p=sl.pic;
+		version=sl.version;
+	}
+	if(!p||p->frames.empty())return 0;
+	if((f<0)||(f>=(int)p->frames.size()))f=0;
+	double key[12]={(double)version,(double)f,cx,cy,scale,(double)fullW,(double)fullH,
+		(double)ox,(double)oy,(double)w,(double)h,(double)bg};
+	bool same=(sl.pcache.size()==(size_t)w*h);
+	for(int k=0;(k<12)&&same;k++)
+		if(sl.pcacheKey[k]!=key[k])same=false;
+	if(!same)
+	{
+		// the middle of the part asked for, in the source
+		double x0=cx-fullW*0.5*scale+ox*scale;
+		double y0=cy-fullH*0.5*scale+oy*scale;
+		render(*p,f,x0+w*0.5*scale,y0+h*0.5*scale,scale,scale,w,h,(uint32_t)bg,sl.pcache,ox,oy,3);
+		for(int k=0;k<12;k++)
+			sl.pcacheKey[k]=key[k];
+	}
+	const uint32_t* src=sl.pcache.data();
+	for(size_t i=0;i<(size_t)w*h;i++)
+		out[i]=(int)(0xFF000000u|src[i]);
+	return 1;
+}
+
+extern "C" int img_pixels_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_pixels);return 0;}
 extern "C" int img_is_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_is);return 0;}
 extern "C" int img_open_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_open);return 0;}
 extern "C" int img_free_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_free);return 0;}

@@ -177,9 +177,12 @@ brief listings, quick view and the sort order, and Command > Compare directories
 marks the files that differ.
 
 **Pictures.** F3 on a picture opens a picture window, and quick view shows the
-picture under the other panel's cursor. They are drawn as tvdemo's Mandelbrot is,
-two pixels a character cell with half blocks, in 24-bit colour where the terminal
-has it, in every backend. `img_dl.so` (`img_dl.cpp`) decodes them on threads of
+picture under the other panel's cursor. In a terminal they are drawn as tvdemo's
+Mandelbrot is, two pixels a character cell with half blocks, in 24-bit colour
+where the terminal has it; the graphic and OpenGL versions show them at their
+real pixels (tv.h's `TvPixels`: the cells of a picture are marked, and the backend
+asks the program for their pixels, which it blits, or keeps in a texture the cell
+shader reads, so windows and menus in front still cover them). `img_dl.so` (`img_dl.cpp`) decodes them on threads of
 its own, so the panels never wait for a big file: PNG, JPEG (turned upright by its
 EXIF orientation), GIF and WebP (both animated), BMP, TGA, PSD, HDR and PNM, with
 [stb_image](https://github.com/nothings/stb) (public domain, `stb_image.h` here)

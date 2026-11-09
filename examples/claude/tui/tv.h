@@ -26,6 +26,8 @@ void TvAppListItem(int win, int ctl, int i, char* out, int max); // items of a v
 int  TvAppCanClose(int win);                         // return 0 to keep the window open
 int  TvAppPaste(int win, char* s, int n);            // return 1 if the pasted text was used
 void TvAppTick();                                    // called every tvTickMs while that is above 0
+void TvAppPixels(int id, int* buf, int fullW, int fullH, int ox, int oy, int w, int h);
+                                                     // pixels for TvPixels, graphic backends only
 
 // ---------------------------------------------------------------- keys and events
 
@@ -802,6 +804,124 @@ void TvPixRgb(int x, int y, int top, int bottom)
 	int b=TvTo15(bottom);
 	if(t==b)TvPut(x,y,' ',TV_RGB|(b<<15)|b);
 	else TvPut(x,y,G_UPHALF,TV_RGB|(t<<15)|b);
+}
+
+// ---------------------------------------------------------------- pixel pictures
+
+// The graphic backends can show real pixels in place of cells: TvPixels marks a
+// rectangle of cells, and when the screen is flushed the backend asks the program
+// for the pixels there with TvAppPixels: fullW*fullH pixels for the whole rectangle,
+// of which it wants the w*h at ox,oy (the part inside the clip), as 0xAARRGGBB.
+// Whatever is drawn over those cells afterwards (a window in front, a menu) shows
+// instead, as any cell would. A terminal has no pixels: TvPixels does nothing there
+// and TvHasPixels says 0, so a program draws half blocks instead (TvPixRgb).
+// key tells whether the picture changed: the same id, place and key as in the
+// last flush means the pixels need not be asked for again.
+#define TV_PIXCH 0x10FFFE      // the character of a cell showing pixels
+#define TV_PIXAT 0x0F000000    // | id, its attribute
+#define TV_MAXPIX 8
+int tvPixN=0;
+int tvPixId[TV_MAXPIX];
+int tvPixR[TV_MAXPIX*9];       // x, y, w, h, the visible x0, y0, x1, y1, key
+int tvPixPrevN=-1;
+int tvPixPrev[TV_MAXPIX*10];
+int tvPixPrevCW=0;
+int tvPixPrevCH=0;
+
+int TvHasPixels()
+{
+#ifdef TV_GFX
+	return 1;
+#endif
+	return 0;
+}
+
+int GfxCellPxW();
+int GfxCellPxH();
+
+// The pixels in a cell: the backend's, or the two half blocks of a terminal.
+int TvCellPxW()
+{
+#ifdef TV_GFX
+	return GfxCellPxW();
+#endif
+	return 1;
+}
+
+int TvCellPxH()
+{
+#ifdef TV_GFX
+	return GfxCellPxH();
+#endif
+	return 2;
+}
+
+void TvPixels(int id, int x, int y, int w, int h, int key)
+{
+	if(!TvHasPixels())return;
+	if(tvPixN>=TV_MAXPIX)return;
+	int x0=x;
+	int y0=y;
+	int x1=x+w;
+	int y1=y+h;
+	if(x0<clipX0)x0=clipX0;
+	if(y0<clipY0)y0=clipY0;
+	if(x1>clipX1)x1=clipX1;
+	if(y1>clipY1)y1=clipY1;
+	if((x1<=x0)||(y1<=y0))return;
+	for(int j=y0;j<y1;j++)
+		for(int i=x0;i<x1;i++)
+		{
+			tvCh[j*TV_MAXW+i]=TV_PIXCH;
+			tvAt[j*TV_MAXW+i]=TV_PIXAT|id;
+		}
+	int* r=&tvPixR[tvPixN*9];
+	tvPixId[tvPixN]=id;
+	r[0]=x;
+	r[1]=y;
+	r[2]=w;
+	r[3]=h;
+	r[4]=x0;
+	r[5]=y0;
+	r[6]=x1;
+	r[7]=y1;
+	r[8]=key;
+	tvPixN++;
+}
+
+// 1 if a cell shows pixels (a shadow over it does not).
+int TvIsPixCell(int ch, int at)
+{
+	if(ch!=TV_PIXCH)return 0;
+	if((at&0x7F000000)!=TV_PIXAT)return 0;
+	return 1;
+}
+
+// Have the pictures changed since the last flush (TvPixCommit)?
+int TvPixChanged()
+{
+	if(tvPixN!=tvPixPrevN)return 1;
+	if((TvCellPxW()!=tvPixPrevCW)||(TvCellPxH()!=tvPixPrevCH))return 1;
+	for(int k=0;k<tvPixN;k++)
+	{
+		if(tvPixPrev[k*10]!=tvPixId[k])return 1;
+		for(int j=0;j<9;j++)
+			if(tvPixPrev[k*10+1+j]!=tvPixR[k*9+j])return 1;
+	}
+	return 0;
+}
+
+void TvPixCommit()
+{
+	tvPixPrevN=tvPixN;
+	tvPixPrevCW=TvCellPxW();
+	tvPixPrevCH=TvCellPxH();
+	for(int k=0;k<tvPixN;k++)
+	{
+		tvPixPrev[k*10]=tvPixId[k];
+		for(int j=0;j<9;j++)
+			tvPixPrev[k*10+1+j]=tvPixR[k*9+j];
+	}
 }
 
 int StrLen(char* s)
@@ -2268,6 +2388,7 @@ void TvDrawStatus()
 void TvRedraw()
 {
 	tvCurX=-1;
+	tvPixN=0;
 	TvClip(0,0,tvW,tvH);
 	TvFill(0,1,tvW,tvH-2,G_LIGHT,A_DESK);
 	for(int i=0;i<tvNZ;i++)

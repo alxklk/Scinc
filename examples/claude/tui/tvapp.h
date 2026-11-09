@@ -50,6 +50,9 @@ int TvAppPaste(int win, char* s, int n){return 0;}
 #ifndef TVAPP_TICK
 void TvAppTick(){}
 #endif
+#ifndef TVAPP_PIXELS
+void TvAppPixels(int id, int* buf, int fullW, int fullH, int ox, int oy, int w, int h){}
+#endif
 
 // Opens the terminal, or with TV_GFX the window, and the desktop. quitCmd is the
 // command the graphic window's close button sends (0 quits at once). Returns 0,

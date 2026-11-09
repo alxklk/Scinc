@@ -28,6 +28,7 @@
 #define TVAPP_CANCLOSE
 #define TVAPP_PASTE
 #define TVAPP_TICK
+#define TVAPP_PIXELS
 #include "../tui/tv.h"
 #include "../tui/tvapp.h"
 #include "../tui/tvedit.h"
@@ -453,10 +454,12 @@ void FcRight(int x, int y, char* s, int at, int w)
 
 // ---------------------------------------------------------------- pictures
 
-// img_dl.so (build_so.sh here) decodes pictures on threads of its own and draws them
-// straight into the screen arrays as half-block cells, two pixels a cell. A picture
-// lives in a slot: a picture window uses its window's number, the quick view of
-// panel p uses 16+p.
+// img_dl.so (build_so.sh here) decodes pictures on threads of its own. In a terminal
+// it draws them straight into the screen arrays as half-block cells, two pixels a
+// cell; in a graphic window it gives the backend real pixels (TvPixels). The view
+// works in those pixels either way: TvCellPxW by TvCellPxH of them a cell. A
+// picture lives in a slot: a picture window uses its window's number, the quick
+// view of panel p uses 16+p.
 #define IMG_DL "img_dl"
 int StrCmp(char* a, char* b);
 [[scinc::dynlink(IMG_DL,"img_is_wrapper")]]int img_is(char* path);
@@ -468,6 +471,7 @@ int StrCmp(char* a, char* b);
 [[scinc::dynlink(IMG_DL,"img_info_wrapper")]]int img_info(int s, int k);
 [[scinc::dynlink(IMG_DL,"img_delay_wrapper")]]int img_delay(int s, int f);
 [[scinc::dynlink(IMG_DL,"img_rotate_wrapper")]]void img_rotate(int s);
+[[scinc::dynlink(IMG_DL,"img_pixels_wrapper")]]int img_pixels(int s, int f, float cx, float cy, float scale, int fullW, int fullH, int ox, int oy, int w, int h, int bg, int* out);
 [[scinc::dynlink(IMG_DL,"img_draw_wrapper")]]int img_draw(int s, int f, float cx, float cy, float scale, float aspect, int x0, int y0, int cw, int ch, int* cells, int* attrs, int stride, int clx0, int cly0, int clx1, int cly1, int uphalf, int bg);
 
 #define PV_SLOTS 32
@@ -481,7 +485,8 @@ float pvScale[PV_SLOTS];     // picture pixels per screen pixel; 0 fits the view
 int pvFrame[PV_SLOTS];       // the animation frame shown
 int pvNext[PV_SLOTS];        // and when the next one is due
 char pvPath[32768];          // PV_SLOTS paths of FC_PATH
-float pvAspect=1.;           // a screen pixel's width over its height: half a cell
+float pvAspect=1.;           // a view pixel's width over its height
+int pvGen[PV_SLOTS];         // counts the pictures opened and turned, for TvPixels
 
 void PvInit()
 {
@@ -494,6 +499,7 @@ void PvInit()
 		pvCY[s]=0.;
 		pvFrame[s]=0;
 		pvNext[s]=0;
+		pvGen[s]=0;
 		pvPath[s*FC_PATH]=0;
 	}
 }
@@ -514,6 +520,7 @@ void PvOpen(int s, char* path)
 	pvScale[s]=0.;
 	pvFrame[s]=0;
 	pvNext[s]=0;
+	pvGen[s]++;
 	tvDirty=1;
 	FcTickRate();
 }
@@ -611,6 +618,20 @@ void PvPan(int s, int dx, int dy, int pw, int ph)
 	tvDirty=1;
 }
 
+// The scale and middle point slot s shows at in a view of pw*ph pixels.
+void PvView(int s, int pw, int ph, float& scale, float& cx, float& cy)
+{
+	scale=pvScale[s];
+	cx=pvCX[s];
+	cy=pvCY[s];
+	if(scale==0.)
+	{
+		scale=PvFit(s,pw,ph);
+		cx=img_info(s,0)/2.;
+		cy=img_info(s,1)/2.;
+	}
+}
+
 // "PNG 1920x1080", with the frame of an animation.
 void PvInfo(int s, char* out, int max)
 {
@@ -642,18 +663,31 @@ void PvDraw(int s, int x, int y, int w, int h)
 		return;
 	}
 	if(st!=2)return;
-	int pw=w;
-	int ph=h*2;
-	float scale=pvScale[s];
-	float cx=pvCX[s];
-	float cy=pvCY[s];
-	if(scale==0.)
+	if(TvHasPixels())
 	{
-		scale=PvFit(s,pw,ph);
-		cx=img_info(s,0)/2.;
-		cy=img_info(s,1)/2.;
+		// what the picture looks like now, so that the backend asks for it only
+		// when that changes
+		int key=pvGen[s]*7919+pvFrame[s]*104729+(int)(pvCX[s]*8.)*31+(int)(pvCY[s]*8.)*1009+(int)(pvScale[s]*1000000.);
+		TvPixels(s,x,y,w,h,key);
+		return;
 	}
+	float scale=0.;
+	float cx=0.;
+	float cy=0.;
+	PvView(s,w,h*2,scale,cx,cy);
 	img_draw(s,pvFrame[s],cx,cy,scale,pvAspect,x,y,w,h,&tvCh[0],&tvAt[0],TV_MAXW,clipX0,clipY0,clipX1,clipY1,G_UPHALF,0);
+}
+
+// The pixels of slot id for the graphic backend: its view is fullW*fullH pixels.
+void TvAppPixels(int id, int* buf, int fullW, int fullH, int ox, int oy, int w, int h)
+{
+	float scale=0.;
+	float cx=0.;
+	float cy=0.;
+	PvView(id,fullW,fullH,scale,cx,cy);
+	if(!img_pixels(id,pvFrame[id],cx,cy,scale,fullW,fullH,ox,oy,w,h,0,buf))
+		for(int i=0;i<w*h;i++)
+			buf[i]=0xFF000000;
 }
 
 // Notices finished decoding and moves animations on.
@@ -1531,7 +1565,7 @@ void PicDraw(int win)
 	char s[160];
 	PvInfo(win,&info[0],120);
 	float scale=pvScale[win];
-	if(scale==0.)scale=PvFit(win,t.w-2,(t.h-2)*2);
+	if(scale==0.)scale=PvFit(win,(t.w-2)*TvCellPxW(),(t.h-2)*TvCellPxH());
 	int pct=(int)(100./scale+0.5);
 	if(pvScale[win]==0.)snprintf(&s[0],160," %s  %i%% fit ",&info[0],pct);
 	else snprintf(&s[0],160," %s  %i%% ",&info[0],pct);
@@ -1575,8 +1609,8 @@ void PicStep(int win, int dir)
 int PicKey(int win, int key)
 {
 	TWin& t=tvWin[win];
-	int pw=t.w-2;
-	int ph=(t.h-2)*2;
+	int pw=(t.w-2)*TvCellPxW();
+	int ph=(t.h-2)*TvCellPxH();
 	int step=pw/8;
 	if(step<2)step=2;
 	if((key=='+')||(key=='='))PvZoom(win,1.5,pw/2,ph/2,pw,ph);
@@ -1595,6 +1629,7 @@ int PicKey(int win, int key)
 	else if(key=='r')
 	{
 		img_rotate(win);
+		pvGen[win]++;
 		pvScale[win]=0.;
 		tvDirty=1;
 	}
@@ -1607,10 +1642,12 @@ int PicKey(int win, int key)
 int PicMouse(int win, int ev, int x, int y)
 {
 	TWin& t=tvWin[win];
-	int pw=t.w-2;
-	int ph=(t.h-2)*2;
-	int px=x-1;
-	int py=(y-1)*2+1;
+	int cpw=TvCellPxW();
+	int cph=TvCellPxH();
+	int pw=(t.w-2)*cpw;
+	int ph=(t.h-2)*cph;
+	int px=(x-1)*cpw+cpw/2;
+	int py=(y-1)*cph+cph/2;
 	if(ev==EV_WHEEL)
 	{
 		if(evWheel>0)PvZoom(win,1.25,px,py,pw,ph);
@@ -1642,7 +1679,7 @@ int PicMouse(int win, int ev, int x, int y)
 	}
 	if(ev==EV_MDRAG)
 	{
-		PvPan(win,pvDragX-x,(pvDragY-y)*2,pw,ph);
+		PvPan(win,(pvDragX-x)*cpw,(pvDragY-y)*cph,pw,ph);
 		pvDragX=x;
 		pvDragY=y;
 		return 1;
@@ -2900,9 +2937,6 @@ int main(int argc, pchar* argv)
 	FcInitState();
 	PvInit();
 	FcQInit();
-#ifdef TV_GFX
-	pvAspect=2.*GFX_CW/GFX_CH;
-#endif
 	char left[FC_PATH];
 	char right[FC_PATH];
 	StrCpy(&left[0],".",FC_PATH);

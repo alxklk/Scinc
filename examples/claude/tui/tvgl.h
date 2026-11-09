@@ -9,6 +9,8 @@
 // fragment shader finds the cell under each pixel, looks up its slot and colours,
 // and mixes them by the atlas. So a flush only writes the changed cells into that
 // texture and uploads the rows they are on; nothing is drawn per character.
+// Pictures of TvPixels go into a third texture, as big as the grid on screen, and
+// their cells carry a slot of their own (GL_PIXSLOT) that makes the shader show it.
 //
 // The window can be resized (the grid follows it) and zoomed: Ctrl+= and Ctrl+-
 // change the pixel scale, Ctrl+0 goes back to the starting one.
@@ -80,6 +82,14 @@ int glUCellTex=0;
 int glUAtlasSize=0;
 int glUGlyph=0;
 int glUCursor=0;
+int glUPix=0;
+int glUPixSize=0;
+int glTexPix=0;          // the pixels of TvPixels, as big as the grid on screen
+int glPixW=0;
+int glPixH=0;
+int* glPix=0;            // pixels on their way to that texture
+int glPixN=0;
+#define GL_PIXSLOT 511   // the slot of a cell that shows that texture instead
 int glWinW=0;           // drawable size in pixels
 int glWinH=0;
 int glScale=TV_GL_SCALE;
@@ -330,6 +340,8 @@ char* glFS=
 	"uniform vec2 atlasSize;\n"
 	"uniform vec2 glyph;     // a glyph in the atlas, in texels\n"
 	"uniform vec3 cursor;    // column, row, shown\n"
+	"uniform sampler2D pix;  // the pixel pictures\n"
+	"uniform vec2 pixSize;\n"
 	"void main(){\n"
 	"  vec2 p=vec2(gl_FragCoord.x,winH-gl_FragCoord.y)-origin;\n"
 	"  vec2 c=floor(p/cellPx);\n"
@@ -338,6 +350,7 @@ char* glFS=
 	"  vec4 f=texture2D(cells,vec2(2.0*c.x+0.5,c.y+0.5)/cellTex);\n"
 	"  vec4 b=texture2D(cells,vec2(2.0*c.x+1.5,c.y+0.5)/cellTex);\n"
 	"  float slot=floor(f.a*255.0+0.5)+256.0*floor(b.a*255.0+0.5);\n"
+	"  if(slot>510.5){ gl_FragColor=vec4(texture2D(pix,(p+0.5)/pixSize).rgb,1.0); return; }\n"
 	"  float sy=floor(slot/32.0);\n"
 	"  vec2 s=vec2(slot-sy*32.0,sy);\n"
 	"  float a=texture2D(atlas,(s*glyph+g+0.5)/atlasSize).r;\n"
@@ -391,7 +404,10 @@ void GfxInit()
 	glUAtlasSize=glGetUniformLocation(glProg,"atlasSize");
 	glUGlyph=glGetUniformLocation(glProg,"glyph");
 	glUCursor=glGetUniformLocation(glProg,"cursor");
+	glUPix=glGetUniformLocation(glProg,"pix");
+	glUPixSize=glGetUniformLocation(glProg,"pixSize");
 	GlBuildAtlas();
+	if(glSlots>=GL_PIXSLOT)printf("tvgl.h: the atlas reaches the pixel slot\n");
 	glTexAtlas=GlTexture();
 	glwTexImage2D(glAtlasW,glAtlasH,glAtlas);
 	for(int i=0;i<2*TV_CELLS;i++)
@@ -418,6 +434,65 @@ int GfxCols()
 	return n;
 }
 
+int GfxCellPxW()
+{
+	return GL_W*glScale;
+}
+
+int GfxCellPxH()
+{
+	return GL_H*glScale;
+}
+
+// Puts the pictures of TvPixels into the pixel texture when they changed, all of
+// them in order so that the front one wins where they overlap; the cells that
+// show them sample it, so nothing else needs doing when only cells change.
+void GlPixels()
+{
+	if(!TvPixChanged())return;
+	if((tvPixN==0)&&(glTexPix==0))
+	{
+		TvPixCommit();
+		return;
+	}
+	int cw=GL_W*glScale;
+	int ch=GL_H*glScale;
+	int tw=tvW*cw;
+	int th=tvH*ch;
+	if((tw>glPixW)||(th>glPixH)||(glTexPix==0))
+	{
+		if(tw<glPixW)tw=glPixW;
+		if(th<glPixH)th=glPixH;
+		if(tw*th>glPixN)
+		{
+			if(glPix)free(glPix);
+			glPixN=tw*th;
+			glPix=(int*)malloc(glPixN*sizeof(int));
+		}
+		if(glTexPix==0)glTexPix=GlTexture();
+		glBindTexture(GL_TEXTURE_2D,glTexPix);
+		glwTexImage2D(tw,th,glPix);
+		glPixW=tw;
+		glPixH=th;
+	}
+	glBindTexture(GL_TEXTURE_2D,glTexPix);
+	for(int k=0;k<tvPixN;k++)
+	{
+		int* r=&tvPixR[k*9];
+		int pw=(r[6]-r[4])*cw;
+		int ph=(r[7]-r[5])*ch;
+		if(pw*ph>glPixN)
+		{
+			if(glPix)free(glPix);
+			glPixN=pw*ph;
+			glPix=(int*)malloc(glPixN*sizeof(int));
+		}
+		TvAppPixels(tvPixId[k],glPix,r[2]*cw,r[3]*ch,(r[4]-r[0])*cw,(r[5]-r[1])*ch,pw,ph);
+		glwTexSubImage2D(r[4]*cw,r[5]*ch,pw,ph,glPix,0);
+	}
+	TvPixCommit();
+}
+
 int GfxRows()
 {
 	int n=glWinH/(GL_H*glScale);
@@ -437,12 +512,16 @@ void GlDraw()
 	if(glOY<0)glOY=0;
 	glViewport(0,0,glWinW,glWinH);
 	glUseProgram(glProg);
+	glActiveTexture(GL_TEXTURE0+2);
+	glBindTexture(GL_TEXTURE_2D,glTexPix);
 	glActiveTexture(GL_TEXTURE0+1);
 	glBindTexture(GL_TEXTURE_2D,glTexCells);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D,glTexAtlas);
 	glUniform1i(glUAtlas,0);
 	glUniform1i(glUCells,1);
+	glUniform1i(glUPix,2);
+	glUniform2f(glUPixSize,glPixW+0.001,glPixH+0.001);
 	glUniform2f(glUCellPx,GL_W*glScale,GL_H*glScale);
 	glUniform1f(glUScale,glScale);
 	glUniform2f(glUOrigin,glOX,glOY);
@@ -470,6 +549,8 @@ void GlDraw()
 void GfxFlush()
 {
 	if(!glOk)return;
+	glActiveTexture(GL_TEXTURE0);
+	GlPixels();
 	int y0=TV_MAXH;
 	int y1=-1;
 	for(int y=0;y<tvH;y++)
@@ -484,7 +565,10 @@ void GfxFlush()
 			{
 				tvPrevCh[i]=ch;
 				tvPrevAt[i]=at;
-				int slot=GlSlot(ch);
+				int slot=0;
+				if(TvIsPixCell(ch,at))slot=GL_PIXSLOT;
+				else if(ch==TV_PIXCH)slot=glBlank;   // a shadow fell on it
+				else slot=GlSlot(ch);
 				int t=2*i;
 				glCells[t]=(TvAtFg(at)&0xFFFFFF)|((slot&255)<<24);
 				glCells[t+1]=(TvAtBg(at)&0xFFFFFF)|((slot>>8)<<24);
