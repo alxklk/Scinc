@@ -134,7 +134,8 @@ A desktop in the terminal, with overlapping windows, pull-down menus, a status
 line, modal dialogs and keyboard and mouse control. Scinc draws it all with ANSI
 escape sequences. A small native library, `term_dl.so`, adds what Scinc lacks for
 terminals: raw mode, reading a key with a timeout, the terminal size, the time,
-directory listing and saving files safely.
+directory listing and saving files safely, and for t2fc below copying, moving and
+deleting files step by step and running programs.
 
 Run `./build_so.sh` once, then `Scinc tvdemo.cpp [file]` from this folder.
 
@@ -147,4 +148,42 @@ Run `./build_so.sh` once, then `Scinc tvdemo.cpp [file]` from this folder.
 
 `xfce4-terminal` and others may catch F1, F10 or Alt keys for their own menus. The
 mouse and Ctrl+Q always work.
+
+## t2fc/ — a two-panel file manager on the tui desktop
+
+Panel windows in the manner of Midnight Commander, built from `../tui`: its
+desktop, editor, hex viewer, theme editor and dialogs, and `term_dl.so` for the
+file system. Build `../tui/build_so.sh` once (and `../opengl/build_so.sh` for the
+OpenGL versions), then from this folder run `Scinc t2fc.cpp [left [right]]` in a
+terminal. `t2fc_gfx.cpp`, `t2fc_raster.cpp`, `t2fc_small.cpp`, `t2fc_gl.cpp` and
+`t2fc_gl_small.cpp` show the same thing in a graphic or OpenGL window, as tvdemo's
+files of those names do. F1 shows every key.
+
+| Keys | What they do |
+|------|--------------|
+| Tab, Enter, Backspace, letters | Other panel, enter a directory, the parent, jump to a name |
+| Insert, right click, `+` `-` `*` | Mark, mark by pattern, unmark by pattern, invert |
+| F3, F4, Shift+F4 | View (text read-only, binary in hex), edit, edit a new file |
+| F5, F6, Shift+F6, F7, F8 | Copy, move, rename, make a directory, delete; with progress, Cancel, and questions before replacing |
+| F2, Alt+Enter, Enter on an executable | Run a program (see below) |
+| Ctrl+N | Another panel window (up to six), each with its own directories and modes |
+| Alt+1..9, Alt+N, Alt+0 | Go to a window by number, from the Windows menu, or from the window list. Up to 12 windows are open besides dialogs, numbered 1..9, a, b, c; click a number on the menu bar to bring that window to the front |
+| Ctrl+U, Alt+I, Ctrl+R, Alt+. | Swap panels, other panel here, reread, hidden files |
+
+Clicking a column title sorts by it; the Left and Right menus choose full or
+brief listings and the sort order, and Command > Compare directories marks the
+files that differ.
+
+**Running programs.** In a terminal, t2fc gives the terminal to the program, as MC
+does: the desktop steps aside, the program runs with the real screen and keyboard
+(Ctrl+C reaches only the program), and a key brings the desktop back. A graphic
+window has no terminal of its own, so there the program runs in a new terminal
+window that stays open until Enter: `$TERMINAL`, then `x-terminal-emulator`,
+`gnome-terminal`, `konsole`, `xfce4-terminal` and others are tried, or Options >
+Preferences names one (as `xterm -e`). Command > Open with the desktop hands the
+file to `xdg-open`. File names are quoted for the shell, and the panels are read
+again afterwards.
+
+Settings, including the directories of the panel window in front at exit, are kept
+in `t2fc.cfg`; colour themes are shared with tvdemo (`../tui/tvthemes.cfg`).
 

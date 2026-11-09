@@ -30,12 +30,12 @@
 
 // flat blocks only: Scinc's preprocessor loses track of nested ones that are skipped
 #ifdef TV_GL_SMALL
-#include "tvglfont6.h"
+#include "../tui/tvglfont6.h"
 #define GL_COLS0 150
 #define GL_ROWS0 42
 #endif
 #ifndef TV_GL_SMALL
-#include "tvglfont9.h"
+#include "../tui/tvglfont9.h"
 #define GL_COLS0 100
 #define GL_ROWS0 32
 #endif

@@ -2506,6 +2506,7 @@ void DrawViewer(int win)
 {
 	TWin& t=tvWin[win];
 	TEdit& e=ed[win];
+	tvWinDirty[win]=EdModified(win);   // for the window list
 	int rows=t.h-2;
 	int cols=EdCols(t);
 	int g=EdGutter(t);

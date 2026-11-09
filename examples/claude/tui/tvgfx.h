@@ -61,13 +61,13 @@
 #include "graphics.h"
 #include "../../ws.h"
 #ifdef GFX_RASTER_ON
-#include "tvrmap.h"
+#include "../tui/tvrmap.h"
 #endif
 #ifdef GFX_FONT6
-#include "tvrfont6.h"
+#include "../tui/tvrfont6.h"
 #endif
 #ifdef GFX_FONT9
-#include "tvrfont9.h"
+#include "../tui/tvrfont9.h"
 #endif
 #ifdef GFX_STROKE
 #include "../../graphic/font.h"

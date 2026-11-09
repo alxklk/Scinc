@@ -9,7 +9,9 @@
 #ifndef TV_H
 #define TV_H
 
-#include "term.h"
+// Scinc looks for #include files from the working directory, so these headers name
+// each other as ../tui/x.h, which works both here and from a sibling folder (../t2fc).
+#include "../tui/term.h"
 
 // ---------------------------------------------------------------- application hooks
 
@@ -914,14 +916,20 @@ int TvText(int x, int y, char* s, int at)
 	return TvTextN(x,y,s,at,1000000);
 }
 
-// "~F~ile": text between tildes is drawn in the hot colour.
+// "~F~ile": text between tildes is drawn in the hot colour; "~~" is a tilde.
 int TvHotText(int x, int y, char* s, int at, int hot)
 {
 	int i=0;
 	int cur=at;
 	while(s[i]!=0)
 	{
-		if(s[i]=='~')
+		if((s[i]=='~')&&(s[i+1]=='~'))
+		{
+			TvPut(x,y,'~',cur);
+			x++;
+			i++;
+		}
+		else if(s[i]=='~')
 		{
 			if(cur==at)cur=hot;
 			else cur=at;
@@ -942,7 +950,12 @@ int HotLen(char* s)
 	int i=0;
 	while(s[i]!=0)
 	{
-		if(s[i]!='~')n++;
+		if((s[i]=='~')&&(s[i+1]=='~'))
+		{
+			n++;
+			i++;
+		}
+		else if(s[i]!='~')n++;
 		i++;
 	}
 	return n;
@@ -961,7 +974,8 @@ int HotChar(char* s)
 	int i=0;
 	while(s[i]!=0)
 	{
-		if(s[i]=='~')
+		if((s[i]=='~')&&(s[i+1]=='~'))i++;
+		else if(s[i]=='~')
 		{
 			if(s[i+1]==0)return 0;
 			return LowerKey(s[i+1]);
@@ -1069,6 +1083,7 @@ int TvVBarPos(int y, int h, int max, int my)
 // ---------------------------------------------------------------- windows and controls
 
 #define TV_MAXWIN 16
+#define TV_MAXNUM 12   // windows other than modal dialogs; the rest are kept for those
 #define TV_MAXCTL 96
 
 #define C_LABEL 0
@@ -1094,6 +1109,8 @@ int TvVBarPos(int y, int h, int max, int my)
 #define CM_CASCADE 14
 #define CM_TILE 15
 #define CM_MENU 16
+#define CM_WINLIST 17   // the window list dialog
+#define CM_WINGO 20     // CM_WINGO+w brings window w to the front (the Windows menu)
 #define CM_USER 100
 
 #define WF_RESIZE 1
@@ -1147,6 +1164,8 @@ struct TCtl
 };
 
 TWin tvWin[TV_MAXWIN];
+int tvWinDirty[TV_MAXWIN];  // set by the program for a window with unsaved changes;
+                            // the window list marks it with *
 TCtl tvCtl[TV_MAXCTL];
 int tvZ[TV_MAXWIN];  // back to front
 int tvNZ=0;
@@ -1170,6 +1189,8 @@ int dragDX=0;
 int dragDY=0;
 int dragCtl=-1;
 int pressedInside=0;
+int tvTitleWin=-1;   // the window whose title was clicked last, and when, for double clicks
+int tvTitleMs=0;
 
 int TvTop()
 {
@@ -1189,12 +1210,46 @@ void TvToFront(int id)
 	tvDirty=1;
 }
 
+// The windows open other than modal dialogs.
+int TvOpenCount()
+{
+	int n=0;
+	for(int i=0;i<TV_MAXWIN;i++)
+		if(tvWin[i].used&&!tvWin[i].modal)n++;
+	return n;
+}
+
+// The smallest window number no other window has, or 0.
+int TvFreeNum(int self)
+{
+	int found=0;
+	for(int n=TV_MAXNUM;n>=1;n--)
+	{
+		int taken=0;
+		for(int i=0;i<TV_MAXWIN;i++)
+			if(tvWin[i].used)
+				if((i!=self)&&(tvWin[i].num==n))taken=1;
+		if(!taken)found=n;
+	}
+	return found;
+}
+
+// How a window number is shown: 1..9, then a, b, c.
+int TvNumChar(int n)
+{
+	if(n>=10)return 'a'+n-10;
+	return '0'+n;
+}
+
 int TvNew(int type, char* title, int x, int y, int w, int h, int flags)
 {
 	int id=-1;
 	for(int i=TV_MAXWIN-1;i>=0;i--)
 		if(!tvWin[i].used)id=i;
 	if(id<0)return -1;
+	// an ordinary window must leave the last slots to modal dialogs
+	if(!(flags&WF_DIALOG))
+		if(TvOpenCount()>=TV_MAXNUM)return -1;
 	TWin& t=tvWin[id];
 	t.used=1;
 	t.type=type;
@@ -1214,19 +1269,11 @@ int TvNew(int type, char* title, int x, int y, int w, int h, int flags)
 	t.e=0;
 	t.f=0;
 	StrCpy(&t.title[0],title,48);
-	// the smallest free number, for the Alt+digit shortcut
+	tvWinDirty[id]=0;
+	// the smallest free number, 1..9 then a, b, c: a dialog gets one later if it
+	// turns out not to be modal (TvNumberWindows)
 	t.num=0;
-	if(!(flags&WF_DIALOG))
-	{
-		for(int n=9;n>=1;n--)
-		{
-			int taken=0;
-			for(int i=0;i<TV_MAXWIN;i++)
-				if(tvWin[i].used)
-					if((i!=id)&&(tvWin[i].num==n))taken=1;
-			if(!taken)t.num=n;
-		}
-	}
+	if(!(flags&WF_DIALOG))t.num=TvFreeNum(id);
 	tvZ[tvNZ]=id;
 	tvNZ++;
 	tvDirty=1;
@@ -1345,10 +1392,41 @@ int TvListCount(TCtl& c)
 }
 
 // The text of item k of a list or combo box.
+// ---------------------------------------------------------------- the window list
+
+#define W_WINLIST 1000
+
+int tvWlWin[TV_MAXWIN];   // the windows the list shows, front first
+int tvWlN=0;
+
+void TvWinListFill(int self)
+{
+	tvWlN=0;
+	for(int z=tvNZ-1;z>=0;z--)
+		if(tvZ[z]!=self)
+		{
+			tvWlWin[tvWlN]=tvZ[z];
+			tvWlN++;
+		}
+}
+
+void TvWinListItem(int i, char* out, int max)
+{
+	int w=tvWlWin[i];
+	char* mark="";
+	if(tvWinDirty[w])mark=" *";
+	char num[4];
+	num[0]=' ';
+	num[1]=0;
+	if(tvWin[w].num>0)num[0]=TvNumChar(tvWin[w].num);
+	snprintf(out,max,"%s  %s%s",&num[0],&tvWin[w].title[0],mark);
+}
+
 void TvCtlItem(int id, int k, char* out, int max)
 {
 	TCtl& c=tvCtl[id];
-	if(c.virt)TvAppListItem(c.win,id,k,out,max);
+	if(tvWin[c.win].type==W_WINLIST)TvWinListItem(k,out,max);
+	else if(c.virt)TvAppListItem(c.win,id,k,out,max);
 	else TvItemAt(&c.text[0],k,out,max);
 }
 
@@ -1769,7 +1847,7 @@ void TvDrawWin(int id)
 		}
 	}
 	if((t.num>0)&&(t.w>12))
-		TvPut(t.x+t.w-7,t.y,'0'+t.num,at);
+		TvPut(t.x+t.w-7,t.y,TvNumChar(t.num),at);
 	TvClip(t.x+1,t.y+1,t.x+t.w-1,t.y+t.h-1);
 	if(clipY0<1)clipY0=1;
 	if(clipY1>tvH-1)clipY1=tvH-1;
@@ -1901,6 +1979,101 @@ void TvMenuLine()
 	TvMenuItem("","",0,0);
 }
 
+// The Windows menu: one item per open window, filled anew each time it opens.
+int tvWinMenu=-1;
+int tvWinMenuSel=0;
+
+// Adds the Windows menu to the menu bar, with this title. Picking an item brings
+// that window to the front.
+void TvWindowsMenu(char* title)
+{
+	TvMenuAdd(title);
+	tvWinMenu=tvNMenu-1;
+	for(int i=0;i<TV_MAXWIN;i++)
+		TvMenuItem("","",0,0);
+}
+
+// One Windows menu item for window w: "~N~ title *", with Alt+N as the hint.
+void TvWinMenuSet(int k, int w)
+{
+	TItem& it=tvItem[tvMenu[tvWinMenu].first+k];
+	TWin& t=tvWin[w];
+	// the end of a long title, which holds the file name; tildes are doubled
+	char ti[64];
+	int n=0;
+	int len=StrLen(&t.title[0]);
+	int from=0;
+	if(len>24)
+	{
+		from=len-21;
+		StrCpy(&ti[0],"...",4);
+		n=3;
+	}
+	for(int i=from;i<len;i++)
+	{
+		if(t.title[i]=='~')
+		{
+			ti[n]='~';
+			n++;
+		}
+		ti[n]=t.title[i];
+		n++;
+	}
+	ti[n]=0;
+	char* mark="";
+	if(tvWinDirty[w])mark=" *";
+	if(t.num>0)
+	{
+		snprintf(&it.text[0],32,"~%c~ %s%s",TvNumChar(t.num),&ti[0],mark);
+		it.hint[0]=0;
+		if(t.num<=9)snprintf(&it.hint[0],12,"Alt+%d",t.num);
+	}
+	else
+	{
+		snprintf(&it.text[0],32,"  %s%s",&ti[0],mark);
+		it.hint[0]=0;
+	}
+	it.cmd=CM_WINGO+w;
+	it.key=0;
+	it.sub=-1;
+}
+
+// Fills the Windows menu: numbered windows by number, then the others, and the
+// front window highlighted.
+void TvWinMenuFill()
+{
+	TMenu& m=tvMenu[tvWinMenu];
+	int top=TvTop();
+	int k=0;
+	tvWinMenuSel=0;
+	for(int pass=0;pass<2;pass++)
+		for(int key=0;key<=TV_MAXWIN;key++)
+			for(int w=0;w<TV_MAXWIN;w++)
+				if(tvWin[w].used)
+				{
+					int want=0;
+					if((pass==0)&&(tvWin[w].num==key)&&(key>0))want=1;
+					if((pass==1)&&(tvWin[w].num==0)&&(w==key)&&!tvWin[w].modal)want=1;
+					if(want)
+					{
+						if(w==top)tvWinMenuSel=k;
+						TvWinMenuSet(k,w);
+						k++;
+					}
+				}
+	if(k==0)
+	{
+		TItem& it=tvItem[m.first];
+		StrCpy(&it.text[0],"  (no windows)",32);
+		it.hint[0]=0;
+		it.cmd=0;
+		it.key=0;
+		it.sub=-1;
+		k=1;
+	}
+	m.count=k;
+}
+
 void TvStatusAdd(char* text, int cmd, int key)
 {
 	TStatus& s=tvStatus[tvNStatus];
@@ -1949,6 +2122,44 @@ void TvMenuBox(int n, int& x, int& y, int& w, int& h)
 	if(x<0)x=0;
 }
 
+int TvBarCount();
+
+// The window with number n, or -1.
+int TvNumWin(int n)
+{
+	for(int i=0;i<TV_MAXWIN;i++)
+		if(tvWin[i].used)
+			if(tvWin[i].num==n)return i;
+	return -1;
+}
+
+int tvBarStep=2;   // columns per window number on the menu bar
+
+// Where window number n is on the menu bar, or -1 when it is not shown. The
+// numbers sit right-aligned before the clock, two columns apart when there is
+// room, else one.
+int TvBarNumX(int n)
+{
+	if(TvNumWin(n)<0)return -1;
+	int count=0;
+	int k=0;
+	for(int i=1;i<=TV_MAXNUM;i++)
+		if(TvNumWin(i)>=0)
+		{
+			if(i<n)k++;
+			count++;
+		}
+	int left=0;
+	int bars=TvBarCount();
+	if(bars>0)left=TvMenuX(bars-1)+HotLen(&tvMenu[bars-1].title[0])+2;
+	int right=tvW-11;
+	tvBarStep=2;
+	if(right-left<count*2)tvBarStep=1;
+	int x=right-(count-1-k)*tvBarStep;
+	if(x<left)return -1;
+	return x;
+}
+
 void TvDrawMenuBar()
 {
 	TvClip(0,0,tvW,tvH);
@@ -1970,6 +2181,21 @@ void TvDrawMenuBar()
 	char clk[16];
 	snprintf(&clk[0],16,"%02i:%02i:%02i",term_time(0),term_time(1),term_time(2));
 	TvText(tvW-9,0,&clk[0],A_MENU);
+	// the window numbers, to bring one to the front with a click
+	int top=TvTop();
+	for(int n=1;n<=TV_MAXNUM;n++)
+	{
+		int w=TvNumWin(n);
+		int x=TvBarNumX(n);
+		if((w>=0)&&(x>=0))
+		{
+			int at=A_MENU;
+			if(w==top)at=A_MENU_SEL;
+			if(tvBarStep==2)TvPut(x-1,0,' ',at);
+			TvPut(x,0,TvNumChar(n),at);
+			if(tvBarStep==2)TvPut(x+1,0,' ',at);
+		}
+	}
 }
 
 // Draws menu n with item sel highlighted.
@@ -2185,6 +2411,8 @@ void DecodeCSI()
 	if(c=='H')evKey=K_HOME;
 	if(c=='F')evKey=K_END;
 	if(c=='Z')evKey=K_BTAB;
+	// F1..F4 with a modifier: ESC [1;2S is Shift+F4
+	if((c>='P')&&(c<='S'))evKey=K_F1+c-'P';
 	if(c=='~')
 	{
 		if((p==1)||(p==7))evKey=K_HOME;
@@ -2208,10 +2436,10 @@ void DecodeCSI()
 #endif
 #ifdef TV_GL
 #undef TV_GFX_GRAPH
-#include "tvgl.h"
+#include "../tui/tvgl.h"
 #endif
 #ifdef TV_GFX_GRAPH
-#include "tvgfx.h"
+#include "../tui/tvgfx.h"
 #endif
 
 void TvReadEvent(int timeoutMs)
@@ -2364,6 +2592,8 @@ void TvTile()
 
 void TvOpenMenu(int n);
 
+void TvWinList();
+
 void TvCommand(int cmd)
 {
 	tvDirty=1;
@@ -2391,6 +2621,18 @@ void TvCommand(int cmd)
 	else if(cmd==CM_CASCADE)TvCascade();
 	else if(cmd==CM_TILE)TvTile();
 	else if(cmd==CM_MENU)TvOpenMenu(0);
+	else if(cmd==CM_WINLIST)
+	{
+		if(top>=0)
+			if(tvWin[top].modal)return;
+		TvWinList();
+	}
+	else if((cmd>=CM_WINGO)&&(cmd<CM_WINGO+TV_MAXWIN))
+	{
+		if(top>=0)
+			if(tvWin[top].modal)return;
+		if(tvWin[cmd-CM_WINGO].used)TvToFront(cmd-CM_WINGO);
+	}
 	else TvAppCommand(cmd);
 }
 
@@ -2804,7 +3046,12 @@ void TvOpenMenu(int n)
 	menuOpen=n;
 	menuSub=-1;
 	menuSel=0;
-	if(tvItem[tvMenu[n].first].text[0]==0)menuSel=1;
+	if(n==tvWinMenu)
+	{
+		TvWinMenuFill();
+		menuSel=tvWinMenuSel;
+	}
+	else if(tvItem[tvMenu[n].first].text[0]==0)menuSel=1;
 	tvDirty=1;
 }
 
@@ -2984,6 +3231,17 @@ int TvMenuMouse(int ev)
 						TvOpenMenu(i);
 					return 1;
 				}
+			}
+		if((ev==EV_MDOWN)&&(menuOpen<0))
+			for(int n=1;n<=TV_MAXNUM;n++)
+			{
+				int x=TvBarNumX(n);
+				if(x>=0)
+					if((evX==x)||((tvBarStep==2)&&(evX==x-1)))
+					{
+						TvToFront(TvNumWin(n));
+						return 1;
+					}
 			}
 		if(menuOpen<0)return 1;
 	}
@@ -3249,6 +3507,16 @@ void TvMouse()
 			pressedInside=1;
 			return;
 		}
+		// a double click on the title zooms the window, or puts it back
+		int now=term_ms();
+		if((t.flags&WF_RESIZE)&&(tvTitleWin==win)&&(now-tvTitleMs<400))
+		{
+			tvTitleWin=-1;
+			TvZoom(win);
+			return;
+		}
+		tvTitleWin=win;
+		tvTitleMs=now;
 		dragWin=win;
 		dragMode=1;
 		dragDX=rx;
@@ -3406,11 +3674,35 @@ void TvPasteEvent()
 }
 
 // Runs until the program quits or, with stopWin>=0, until that modal window has a result.
+int TvMessage(char* title, char* text, int askYesNo);
+
+// A dialog that stays open without TvExec is a window like the others: it gets a
+// number, or is closed when TV_MAXNUM windows are open already.
+void TvNumberWindows()
+{
+	for(int i=0;i<TV_MAXWIN;i++)
+		if(tvWin[i].used&&!tvWin[i].modal&&(tvWin[i].num==0))
+		{
+			int n=TvFreeNum(i);
+			if((n==0)||(TvOpenCount()>TV_MAXNUM))
+			{
+				TvClose(i);
+				TvMessage("Windows","Too many windows are open.",0);
+			}
+			else
+			{
+				tvWin[i].num=n;
+				tvDirty=1;
+			}
+		}
+}
+
 int TvRun(int stopWin)
 {
 	int behind=0;
 	while(tvRunning)
 	{
+		TvNumberWindows();
 		if(stopWin>=0)
 			if(tvWin[stopWin].result!=0)
 				return tvWin[stopWin].result;
@@ -3483,9 +3775,49 @@ int TvRun(int stopWin)
 int TvExec(int win)
 {
 	tvWin[win].modal=1;
+	tvWin[win].num=0;
 	tvWin[win].result=0;
 	TvToFront(win);
 	return TvRun(win);
+}
+
+// Window > List: every window, front first, with its number and a * for unsaved
+// changes. Switch brings one to the front; Close closes it as its close box would.
+void TvWinList()
+{
+	int win=TvNewCentered(W_WINLIST,"Windows",56,18,WF_DIALOG);
+	if(win<0)return;
+	TvAdd(win,C_LABEL,3,2,10,1,"~W~indows",0);
+	int lst=TvAdd(win,C_LIST,3,3,34,13,"",0);
+	tvCtl[lst].virt=1;
+	int b=TvAdd(win,C_BUTTON,40,3,13,2,"~S~witch",CM_OK);
+	tvCtl[b].isDefault=1;
+	TvAdd(win,C_BUTTON,40,6,13,2,"~C~lose",CM_CLOSE);
+	TvAdd(win,C_BUTTON,40,9,13,2,"Cancel",CM_CANCEL);
+	tvWin[win].focus=lst;
+	while(tvRunning)
+	{
+		TvWinListFill(win);
+		tvCtl[lst].count=tvWlN;
+		if(tvCtl[lst].val>=tvWlN)tvCtl[lst].val=tvWlN-1;
+		if(tvCtl[lst].val<0)tvCtl[lst].val=0;
+		int res=TvExec(win);
+		int pick=-1;
+		if(tvWlN>0)pick=tvWlWin[tvCtl[lst].val];
+		if((res==CM_CLOSE)&&(pick>=0))
+		{
+			tvWin[win].focus=lst;
+			if(TvAppCanClose(pick))TvClose(pick);
+			TvToFront(win);
+		}
+		else
+		{
+			TvClose(win);
+			if((res==CM_OK)&&(pick>=0))TvToFront(pick);
+			return;
+		}
+	}
+	TvClose(win);
 }
 
 int TvLineCount(char* s)
@@ -3609,7 +3941,10 @@ void TvInit()
 	tvVga[6]=3;
 	tvVga[7]=7;
 	for(int i=0;i<TV_MAXWIN;i++)
+	{
 		tvWin[i].used=0;
+		tvWinDirty[i]=0;
+	}
 	for(int i=0;i<TV_MAXCTL;i++)
 		tvCtl[i].used=0;
 	for(int i=0;i<TV_CELLS;i++)
@@ -3647,6 +3982,32 @@ void TvDone()
 	OutStr("\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?7h\x1b[?25h\x1b[0m\x1b[?1049l");
 	OutFlush();
 	term_close();
+}
+
+// Gives the terminal back for a while, as TvDone does, so that another program can
+// use it; TvResume takes it again and draws everything anew. Both do nothing in a
+// graphic window.
+void TvSuspend()
+{
+	TvDone();
+}
+
+void TvResume()
+{
+#ifdef TV_GFX
+	return;
+#endif
+	term_open();
+	OutStr("\x1b[?1049h\x1b[?7l\x1b[?25l\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?2004h\x1b[0m\x1b[2J");
+	OutFlush();
+	for(int i=0;i<TV_CELLS;i++)
+	{
+		tvPrevCh[i]=-1;
+		tvPrevAt[i]=-1;
+	}
+	tvCurShown=0;
+	tvDirty=1;
+	TvCheckSize();
 }
 
 #endif // TV_H

@@ -64,7 +64,6 @@ typedef char* pchar;
 #define CM_PAINT 120
 #define CM_LINENUMS 121
 #define CM_WRAP 122
-#define CM_WINLIST 123
 #define CM_SAVERWIN 124
 #define CM_THEMEED 125
 #define CM_SVNOW 400    // + a saver kind, SV_RANDOM the last
@@ -75,7 +74,6 @@ typedef char* pchar;
 
 #define W_PREFS 8
 #define W_PROGRESS 9
-#define W_WINLIST 10
 
 // ---------------------------------------------------------------- calculator
 
@@ -787,7 +785,7 @@ void ProgressTick()
 	if(c.val>=c.count)tvWin[progWin].result=CM_OK;
 }
 
-// ---------------------------------------------------------------- editor options and the window list
+// ---------------------------------------------------------------- editor options
 
 int itemLineNums=-1;  // the menu items whose hints show on or off
 int itemWrap=-1;
@@ -809,72 +807,6 @@ void ShowToggles()
 				EdReveal(i);
 			}
 	tvDirty=1;
-}
-
-int wlWin[TV_MAXWIN];  // the windows the list shows, front first
-int wlN=0;
-
-void WinListFill(int self)
-{
-	wlN=0;
-	for(int z=tvNZ-1;z>=0;z--)
-		if(tvZ[z]!=self)
-		{
-			wlWin[wlN]=tvZ[z];
-			wlN++;
-		}
-}
-
-void WinListItem(int i, char* out, int max)
-{
-	int w=wlWin[i];
-	char* mark="";
-	if(tvWin[w].type==W_VIEW)
-		if(EdModified(w))mark=" *";
-	if(w==ptWin)
-		if(ptMod)mark=" *";
-	char num[4];
-	num[0]=' ';
-	num[1]=0;
-	if(tvWin[w].num>0)num[0]='0'+tvWin[w].num;
-	snprintf(out,max,"%s  %s%s",&num[0],&tvWin[w].title[0],mark);
-}
-
-void RunWinList()
-{
-	int win=TvNewCentered(W_WINLIST,"Windows",56,18,WF_DIALOG);
-	if(win<0)return;
-	TvAdd(win,C_LABEL,3,2,10,1,"~W~indows",0);
-	int lst=TvAdd(win,C_LIST,3,3,34,13,"",0);
-	tvCtl[lst].virt=1;
-	int b=TvAdd(win,C_BUTTON,40,3,13,2,"~S~witch",CM_OK);
-	tvCtl[b].isDefault=1;
-	TvAdd(win,C_BUTTON,40,6,13,2,"~C~lose",CM_CLOSE);
-	TvAdd(win,C_BUTTON,40,9,13,2,"Cancel",CM_CANCEL);
-	tvWin[win].focus=lst;
-	while(tvRunning)
-	{
-		WinListFill(win);
-		tvCtl[lst].count=wlN;
-		if(tvCtl[lst].val>=wlN)tvCtl[lst].val=wlN-1;
-		if(tvCtl[lst].val<0)tvCtl[lst].val=0;
-		int res=TvExec(win);
-		int pick=-1;
-		if(wlN>0)pick=wlWin[tvCtl[lst].val];
-		if((res==CM_CLOSE)&&(pick>=0))
-		{
-			tvWin[win].focus=lst;
-			if(TvAppCanClose(pick))TvClose(pick);
-			TvToFront(win);
-		}
-		else
-		{
-			TvClose(win);
-			if((res==CM_OK)&&(pick>=0))TvToFront(pick);
-			return;
-		}
-	}
-	TvClose(win);
 }
 
 // ---------------------------------------------------------------- context menus
@@ -961,15 +893,8 @@ int FdEnterSelected()
 	return 1;
 }
 
-void WinListItem(int i, char* out, int max);
-
 void TvAppListItem(int win, int ctl, int i, char* out, int max)
 {
-	if(tvWin[win].type==W_WINLIST)
-	{
-		WinListItem(i,out,max);
-		return;
-	}
 	if(tvWin[win].type==W_THEME)
 	{
 		TeListItem(ctl,i,out,max);
@@ -1316,6 +1241,11 @@ void OpenHelp()
 		"  F5, Ctrl+W        zoom, close the window\n"
 		"  F6, F7            next, previous window\n"
 		"  Alt+1..9          go to a window by number\n"
+		"  1..9 a b c        the windows on the menu bar: click one to go\n"
+		"                    to it (up to 12 windows, besides dialogs)\n"
+		"  Alt+0             the list of windows\n"
+		"  Alt+N             the Windows menu: pick one to go to it\n"
+		"  Double click a window's title to zoom it, or put it back\n"
 		"  Tab, Shift+Tab    move between dialog controls\n"
 		"  Space, Enter      toggle, press\n"
 		"  Esc               cancel a dialog or close a menu\n"
@@ -1666,7 +1596,6 @@ void TvAppCommand(int cmd)
 		ShowToggles();
 		PrefsSave();
 	}
-	else if(cmd==CM_WINLIST)RunWinList();
 	else if(cmd==CM_PAINT)PtOpen();
 	else if(cmd==CM_DOCALC)
 	{
@@ -1821,6 +1750,7 @@ int main(int argc, pchar* argv)
 	TvMenuItem("C~a~scade","",CM_CASCADE,0);
 	TvMenuItem("~T~ile","",CM_TILE,0);
 	TvMenuItem("~L~ist...","Alt+0",CM_WINLIST,K_ALT+'0');
+	TvWindowsMenu("Wi~n~dows");
 	TvMenuAdd("~H~elp");
 	TvMenuItem("~K~eys and mouse","F1",CM_HELP,K_F1);
 

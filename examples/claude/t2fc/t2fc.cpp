@@ -1,0 +1,2369 @@
+// t2fc: a two-panel file manager on the Turbo Vision style desktop of ../tui.
+// Each panel window holds two file panels in the manner of Midnight Commander (Ctrl+N
+// opens another). F3 views a file (text in a read-only editor window, binary in the
+// hex viewer), F4 edits it in the tui editor, F5-F8 copy, move, make directories and
+// delete, with progress, and F2 or Enter on an executable runs a program: on the
+// terminal itself, or in a new terminal window when t2fc draws in a graphic window.
+// The editor, hex viewer, theme editor and dialogs all come from ../tui.
+//
+//   (cd ../tui && ./build_so.sh)       once, builds the terminal and file library
+//   Scinc t2fc.cpp [left [right]]       from this folder, in a terminal
+//
+// t2fc_gfx.cpp, t2fc_raster.cpp and t2fc_small.cpp draw the same desktop in a graphic
+// window (stroke font, 9x16 and 6x12 bitmap fonts); t2fc_gl.cpp and t2fc_gl_small.cpp
+// draw it with OpenGL (build ../opengl first).
+#include <stdio.h>
+#define TERM_DL "../tui/term_dl"
+#define TVAPPS_TOOLS                       // only the hex viewer and the theme editor
+#define TE_FILE "../tui/tvthemes.cfg"      // the themes are shared with tvdemo
+#define TE_OLDFILE "../tui/tvtheme.cfg"
+#define TVAPP_DRAW
+#define TVAPP_KEY
+#define TVAPP_MOUSE
+#define TVAPP_COMMAND
+#define TVAPP_BUTTON
+#define TVAPP_CLOSED
+#define TVAPP_LISTITEM
+#define TVAPP_CANCLOSE
+#define TVAPP_PASTE
+#define TVAPP_TICK
+#include "../tui/tv.h"
+#include "../tui/tvapp.h"
+#include "../tui/tvedit.h"
+#include "../tui/tvapps.h"
+
+#pragma STACK_SIZE 655360
+
+typedef char* pchar;
+
+#define W_FC 60
+#define W_JOB 61
+#define W_ASK 62
+#define W_PREFS 63
+
+#define CM_QUIT 500
+#define CM_HELP 501
+#define CM_ABOUT 502
+#define CM_PREFS 503
+#define CM_THEMEED 504
+#define CM_THEMEPICK 505
+#define CM_LINENUMS 506
+#define CM_WRAP 507
+
+// the panels' commands, FC_CMD0 to FC_CMD1
+#define FC_CMD0 600
+#define CM_VIEW 600
+#define CM_EDIT 601
+#define CM_NEWFILE 602
+#define CM_FCOPY 603
+#define CM_MOVE 604
+#define CM_RENAME 605
+#define CM_MKDIR 606
+#define CM_DELETE 607
+#define CM_HEXVIEW 608
+#define CM_SELGROUP 609
+#define CM_UNSELGROUP 610
+#define CM_INVERT 611
+#define CM_SWAP 612
+#define CM_SAMEDIR 613
+#define CM_REREAD 614
+#define CM_HIDDEN 615
+#define CM_COMPARE 616
+#define CM_HOME 617
+#define CM_GODIR 618
+#define CM_NEWPANELS 619
+#define CM_PANEL 620    // + panel*10 + one of the PN_ actions below
+#define CM_RUN 640
+#define CM_OPENSYS 641
+#define FC_CMD1 649
+
+#define PN_FULL 0
+#define PN_BRIEF 1
+#define PN_NAME 2
+#define PN_EXT 3
+#define PN_SIZE 4
+#define PN_TIME 5
+#define PN_REVERSE 6
+
+#define FC_PATH 1024
+#define CFG_FILE "t2fc.cfg"
+
+// the panel colours, VGA attributes as Midnight Commander draws them; the themes
+// recolour these through their 16-colour palette
+#define FC_BG 0x17
+#define FC_FRAME 0x17
+#define FC_HEAD 0x1E
+#define FC_FILE 0x17
+#define FC_DIR 0x1F
+#define FC_EXEC 0x1A
+#define FC_LINK 0x1B
+#define FC_ARCH 0x1D
+#define FC_MEDIA 0x13
+#define FC_JUNK 0x18
+#define FC_MARK 0x1E
+#define FC_CUR 0x30
+#define FC_CURMARK 0x3E
+#define FC_PATHON 0x30
+
+// ---------------------------------------------------------------- panel state
+
+// There can be several panel windows. Panel window c has the panels 2c (left) and
+// 2c+1 (right); the arrays below are indexed by panel. The functions work on the
+// current panel window, which FcSelect picks: fcWin, fcBase (its left panel) and
+// fcActive (its active panel, a panel number) describe it.
+#define FC_MAXC 6
+#define FC_MAXP 12
+
+int fcWinOf[FC_MAXC];       // the window of each panel window, -1 if not open
+int fcAct[FC_MAXC];         // its active panel
+int fcReload[FC_MAXC];      // files may have changed: read them again on the next draw
+int fcC=0;
+int fcWin=-1;
+int fcBase=0;
+int fcActive=0;
+int fcHidden=0;
+char fcDir[12288];          // FC_MAXP paths of FC_PATH
+int fcCount[FC_MAXP];
+int fcCur[FC_MAXP];
+int fcTop[FC_MAXP];
+int fcSort[FC_MAXP];        // term_dl sort modes: 0 name, 1 ext, 2 size, 3 time, +4 reversed
+int fcBrief[FC_MAXP];
+int fcStamp[FC_MAXP];
+int fcLastClick=0;          // for double clicks
+int fcLastP=-1;
+int fcLastI=-1;
+int fcView[TV_MAXWIN];      // an editor window opened by F3, to close with F3 or Esc
+int fcLocked[TV_MAXWIN];    // the editor made it read-only for its own reasons
+int prefTheme=0;
+char fcTermCmd[200];        // how to open a terminal window, as "xterm -e"; empty finds one
+int fcAskAtStart=0;         // FcAsk puts the cursor at the start of the text
+int popPanel=-1;
+int popEdit=-1;
+
+void ShowToggles();
+
+void FcInitState()
+{
+	for(int c=0;c<FC_MAXC;c++)
+	{
+		fcWinOf[c]=-1;
+		fcAct[c]=c*2;
+		fcReload[c]=0;
+	}
+	for(int p=0;p<FC_MAXP;p++)
+	{
+		fcDir[p*FC_PATH]=0;
+		fcCount[p]=0;
+		fcCur[p]=0;
+		fcTop[p]=0;
+		fcSort[p]=0;
+		fcBrief[p]=0;
+		fcStamp[p]=-1;
+	}
+	fcTermCmd[0]=0;
+	for(int i=0;i<TV_MAXWIN;i++)
+	{
+		fcView[i]=0;
+		fcLocked[i]=0;
+	}
+}
+
+// Makes panel window c the current one.
+void FcSelect(int c)
+{
+	fcC=c;
+	fcWin=fcWinOf[c];
+	fcBase=c*2;
+	fcActive=fcAct[c];
+}
+
+void FcSetActive(int p)
+{
+	fcActive=p;
+	fcAct[p/2]=p;
+}
+
+// Files changed: every panel window reads its directories again when drawn.
+void FcReloadAll()
+{
+	for(int c=0;c<FC_MAXC;c++)
+		fcReload[c]=1;
+}
+
+// The panel window in front of the others, or -1.
+int FcTopC()
+{
+	for(int i=tvNZ-1;i>=0;i--)
+		if(tvWin[tvZ[i]].type==W_FC)return tvWin[tvZ[i]].a;
+	return -1;
+}
+
+// Every listing call works on the slot of a panel, panel+1 (0 is the file dialog's).
+void FcUse(int p)
+{
+	fs_slot(p+1);
+}
+
+char* FcDirOf(int p)
+{
+	return &fcDir[p*FC_PATH];
+}
+
+void FcJoin(char* out, char* dir, char* name)
+{
+	if((dir[0]=='/')&&(dir[1]==0))snprintf(out,FC_PATH,"/%s",name);
+	else snprintf(out,FC_PATH,"%s/%s",dir,name);
+}
+
+int FcIsUp(char* s)
+{
+	if(s[0]!='.')return 0;
+	if(s[1]!='.')return 0;
+	if(s[2]!=0)return 0;
+	return 1;
+}
+
+// The entry's name, and 1 if it is a directory.
+int FcName(int p, int i, char* out)
+{
+	FcUse(p);
+	return fs_name(i,out,256);
+}
+
+void FcPathOf(int p, int i, char* out)
+{
+	char name[256];
+	FcName(p,i,&name[0]);
+	FcJoin(out,FcDirOf(p),&name[0]);
+}
+
+// Rows of entries a panel shows, from the window's size.
+int FcRows(int p)
+{
+	int r=tvWin[fcWinOf[p/2]].h-6;
+	if(r<1)r=1;
+	return r;
+}
+
+int FcVisible(int p)
+{
+	int r=FcRows(p);
+	if(fcBrief[p])return r*2;
+	return r;
+}
+
+void FcClamp(int p)
+{
+	int n=fcCount[p];
+	if(fcCur[p]>=n)fcCur[p]=n-1;
+	if(fcCur[p]<0)fcCur[p]=0;
+	int vis=FcVisible(p);
+	if(fcCur[p]<fcTop[p])fcTop[p]=fcCur[p];
+	if(fcCur[p]>=fcTop[p]+vis)fcTop[p]=fcCur[p]-vis+1;
+	if(fcTop[p]>n-vis)fcTop[p]=n-vis;
+	if(fcTop[p]<0)fcTop[p]=0;
+}
+
+// Lists a directory in panel p with selectName under the cursor if it is there.
+// Returns 0, keeping the panel as it was, if the directory cannot be read.
+int FcLoad(int p, char* path, char* selectName)
+{
+	char resolved[FC_PATH];
+	FcUse(p);
+	fs_sort(fcSort[p]);
+	int n=fs_list(path,&resolved[0],FC_PATH,fcHidden);
+	if(n<0)return 0;
+	int same=1;
+	int k=0;
+	while(same)
+	{
+		if(resolved[k]!=fcDir[p*FC_PATH+k])same=0;
+		if(resolved[k]==0)break;
+		k++;
+	}
+	StrCpy(FcDirOf(p),&resolved[0],FC_PATH);
+	fcCount[p]=n;
+	fcStamp[p]=fs_stamp(&resolved[0]);
+	int at=fs_index(selectName);
+	if(at>=0)fcCur[p]=at;
+	else if(!same)
+	{
+		fcCur[p]=0;
+		fcTop[p]=0;
+	}
+	FcClamp(p);
+	return 1;
+}
+
+// Lists the panel's directory again, keeping the cursor on the same name, or goes
+// up until a directory can be read if this one is gone.
+void FcReload(int p)
+{
+	char keep[256];
+	FcName(p,fcCur[p],&keep[0]);
+	char path[FC_PATH];
+	StrCpy(&path[0],FcDirOf(p),FC_PATH);
+	int tries=0;
+	while(!FcLoad(p,&path[0],&keep[0]))
+	{
+		int base=0;
+		int k=0;
+		while(path[k]!=0)
+		{
+			if(path[k]=='/')base=k;
+			k++;
+		}
+		if(base==0)
+		{
+			StrCpy(&path[0],"/",FC_PATH);
+			tries++;
+			if(tries>1)return;
+		}
+		else path[base]=0;
+	}
+}
+
+void FcReloadBoth()
+{
+	FcReload(fcBase);
+	FcReload(fcBase+1);
+}
+
+// Lists the parent directory with the one we left under the cursor.
+void FcGoUp(int p)
+{
+	char* dir=FcDirOf(p);
+	if((dir[0]=='/')&&(dir[1]==0))return;
+	int base=0;
+	int k=0;
+	while(dir[k]!=0)
+	{
+		if(dir[k]=='/')base=k+1;
+		k++;
+	}
+	char left[256];
+	StrCpy(&left[0],&dir[base],256);
+	char path[FC_PATH];
+	FcJoin(&path[0],dir,"..");
+	if(!FcLoad(p,&path[0],&left[0]))
+		TvMessage("Error","Cannot read the parent directory.",0);
+}
+
+void FcChangeDir(int p, char* path)
+{
+	if(!FcLoad(p,path,""))
+		TvMessage("Error","Cannot read this directory.",0);
+}
+
+// ---------------------------------------------------------------- drawing the panels
+
+int FcEndsWith(char* s, char* ext)
+{
+	int n=StrLen(s);
+	int m=StrLen(ext);
+	if(n<m)return 0;
+	for(int i=0;i<m;i++)
+		if(LowerKey(s[n-m+i])!=ext[i])return 0;
+	return 1;
+}
+
+int FcIsArchive(char* s)
+{
+	if(FcEndsWith(s,".zip"))return 1;
+	if(FcEndsWith(s,".tar"))return 1;
+	if(FcEndsWith(s,".gz"))return 1;
+	if(FcEndsWith(s,".tgz"))return 1;
+	if(FcEndsWith(s,".bz2"))return 1;
+	if(FcEndsWith(s,".xz"))return 1;
+	if(FcEndsWith(s,".zst"))return 1;
+	if(FcEndsWith(s,".7z"))return 1;
+	if(FcEndsWith(s,".rar"))return 1;
+	if(FcEndsWith(s,".deb"))return 1;
+	if(FcEndsWith(s,".rpm"))return 1;
+	return 0;
+}
+
+int FcIsMedia(char* s)
+{
+	if(FcEndsWith(s,".png"))return 1;
+	if(FcEndsWith(s,".jpg"))return 1;
+	if(FcEndsWith(s,".jpeg"))return 1;
+	if(FcEndsWith(s,".gif"))return 1;
+	if(FcEndsWith(s,".bmp"))return 1;
+	if(FcEndsWith(s,".svg"))return 1;
+	if(FcEndsWith(s,".mp3"))return 1;
+	if(FcEndsWith(s,".wav"))return 1;
+	if(FcEndsWith(s,".ogg"))return 1;
+	if(FcEndsWith(s,".flac"))return 1;
+	if(FcEndsWith(s,".mp4"))return 1;
+	if(FcEndsWith(s,".mkv"))return 1;
+	if(FcEndsWith(s,".avi"))return 1;
+	if(FcEndsWith(s,".webm"))return 1;
+	return 0;
+}
+
+int FcIsJunk(char* s)
+{
+	if(FcEndsWith(s,"~"))return 1;
+	if(FcEndsWith(s,".bak"))return 1;
+	if(FcEndsWith(s,".tmp"))return 1;
+	if(FcEndsWith(s,".o"))return 1;
+	if(FcEndsWith(s,".swp"))return 1;
+	return 0;
+}
+
+// The colour of an entry: by type, then by name, as the panels of MC colour them.
+int FcAttrOf(int isDir, int mark, char* name)
+{
+	if(mark=='@')return FC_LINK;
+	if(isDir)return FC_DIR;
+	if(mark=='*')return FC_EXEC;
+	if(mark!=' ')return FC_LINK;
+	if(FcIsArchive(name))return FC_ARCH;
+	if(FcIsMedia(name))return FC_MEDIA;
+	if(FcIsJunk(name))return FC_JUNK;
+	return FC_FILE;
+}
+
+// Writes s into w columns at x, ending in } if it had to be cut, as MC does.
+void FcCut(int x, int y, char* s, int at, int w)
+{
+	if(w<=0)return;
+	if(TvCols(s)<=w)
+	{
+		TvText(x,y,s,at);
+		return;
+	}
+	TvTextN(x,y,s,at,w-1);
+	TvPut(x+w-1,y,'}',at);
+}
+
+// Right-aligns s in w columns.
+void FcRight(int x, int y, char* s, int at, int w)
+{
+	int n=TvCols(s);
+	if(n>w)n=w;
+	TvTextN(x+w-n,y,s,at,n);
+}
+
+// One entry in a cell w wide. The cursor bar spans the cell.
+void FcCell(int p, int i, int x, int y, int w, int sizeX, int timeX, int cursor)
+{
+	char name[256];
+	char mark[4];
+	char text[260];
+	int isDir=FcName(p,i,&name[0]);
+	fs_field(i,3,&mark[0],4);
+	int m=mark[0];
+	int marked=fs_marked(i);
+	int at=FcAttrOf(isDir,m,&name[0]);
+	if(marked)at=FC_MARK;
+	if(cursor)
+	{
+		at=FC_CUR;
+		if(marked)at=FC_CURMARK;
+	}
+	if(FcIsUp(&name[0]))m='/';
+	snprintf(&text[0],260,"%c%s",m,&name[0]);
+	int nameW=w;
+	if(sizeX>0)nameW=sizeX-x;
+	if(cursor)TvFill(x,y,w,1,' ',at);
+	FcCut(x,y,&text[0],at,nameW);
+	int sepAt=FC_FRAME;
+	if(cursor)sepAt=at;
+	if(sizeX>0)
+	{
+		char size[16];
+		fs_field(i,0,&size[0],16);
+		TvPut(sizeX,y,G_VERT,sepAt);
+		FcRight(sizeX+1,y,&size[0],at,7);
+	}
+	if(timeX>0)
+	{
+		char when[24];
+		fs_field(i,1,&when[0],24);
+		TvPut(timeX,y,G_VERT,sepAt);
+		TvTextN(timeX+1,y,&when[0],at,12);
+	}
+}
+
+// The header of a column, with an arrow if the panel is sorted by it.
+void FcHead(int x, int y, int w, char* title, int sorted, int reversed)
+{
+	char s[40];
+	if(sorted)
+	{
+		if(reversed)snprintf(&s[0],40,"%s%s",title,"\xe2\x96\xb2");
+		else snprintf(&s[0],40,"%s%s",title,"\xe2\x96\xbc");
+	}
+	else StrCpy(&s[0],title,40);
+	int n=TvCols(&s[0]);
+	if(n>w)n=w;
+	TvTextN(x+(w-n)/2,y,&s[0],FC_HEAD,n);
+}
+
+// The columns of a full listing: where the size and time separators go, or 0.
+void FcColumns(int p, int x, int w, int& sizeX, int& timeX)
+{
+	sizeX=0;
+	timeX=0;
+	if(fcBrief[p])return;
+	if(w>=36)
+	{
+		timeX=x+w-13;
+		sizeX=timeX-8;
+	}
+	else if(w>=20)sizeX=x+w-8;
+}
+
+void FcDrawPanel(int p, int x, int y, int w, int h)
+{
+	int active=(p==fcActive);
+	char* dir=FcDirOf(p);
+	// the path, its end if it is long
+	int at=FC_FRAME;
+	if(active)at=FC_PATHON;
+	TvFill(x,y,w,1,' ',at);
+	int room=w-2;
+	int cols=TvCols(dir);
+	int i=0;
+	int px=x+1;
+	if(cols>room)
+	{
+		for(int k=0;k<cols-room+1;k++)
+			TvUtf8(dir,i);
+		TvPut(px,y,G_LEFT,at);
+		px++;
+	}
+	TvText(px,y,&dir[i],at);
+	// the column headers
+	int sizeX=0;
+	int timeX=0;
+	FcColumns(p,x,w,sizeX,timeX);
+	int key=fcSort[p]&3;
+	int rev=fcSort[p]&4;
+	int byName=0;
+	if(key<2)byName=1;
+	int rows=h-4;
+	if(fcBrief[p])
+	{
+		int cw=(w-1)/2;
+		char* t="Name";
+		if(key==1)t="Name.ext";
+		FcHead(x,y+1,cw,t,byName,rev);
+		FcHead(x+cw+1,y+1,w-cw-1,t,byName,rev);
+		for(int r=0;r<rows+1;r++)
+			TvPut(x+cw,y+1+r,G_VERT,FC_FRAME);
+		TvPut(x+cw,y+h-2,0x2534,FC_FRAME);
+	}
+	else
+	{
+		int nameW=w;
+		if(sizeX>0)nameW=sizeX-x;
+		char* t="Name";
+		if(key==1)t="Name.ext";
+		FcHead(x,y+1,nameW,t,byName,rev);
+		if(sizeX>0)
+		{
+			TvPut(sizeX,y+1,G_VERT,FC_FRAME);
+			FcHead(sizeX+1,y+1,7,"Size",key==2,rev);
+		}
+		if(timeX>0)
+		{
+			TvPut(timeX,y+1,G_VERT,FC_FRAME);
+			FcHead(timeX+1,y+1,12,"Modified",key==3,rev);
+		}
+		for(int r=0;r<rows;r++)
+		{
+			if(sizeX>0)TvPut(sizeX,y+2+r,G_VERT,FC_FRAME);
+			if(timeX>0)TvPut(timeX,y+2+r,G_VERT,FC_FRAME);
+		}
+	}
+	// the entries
+	FcUse(p);
+	for(int r=0;r<rows;r++)
+	{
+		if(fcBrief[p])
+		{
+			int cw=(w-1)/2;
+			for(int c=0;c<2;c++)
+			{
+				int k=fcTop[p]+c*rows+r;
+				int cx=x;
+				int ww=cw;
+				if(c==1)
+				{
+					cx=x+cw+1;
+					ww=w-cw-1;
+				}
+				if(k<fcCount[p])FcCell(p,k,cx,y+2+r,ww,0,0,active&&(k==fcCur[p]));
+			}
+		}
+		else
+		{
+			int k=fcTop[p]+r;
+			if(k<fcCount[p])FcCell(p,k,x,y+2+r,w,sizeX,timeX,active&&(k==fcCur[p]));
+		}
+	}
+	// the line under them, with the free space on the disk
+	int ly=y+h-2;
+	TvFill(x,ly,w,1,G_HORZ,FC_FRAME);
+	if(sizeX>0)TvPut(sizeX,ly,0x2534,FC_FRAME);
+	if(timeX>0)TvPut(timeX,ly,0x2534,FC_FRAME);
+	if(fcBrief[p])TvPut(x+(w-1)/2,ly,0x2534,FC_FRAME);
+	char disk[64];
+	char shown[72];
+	if(fs_disk(dir,&disk[0],64))
+	{
+		snprintf(&shown[0],72," %s ",&disk[0]);
+		int n=StrLen(&shown[0]);
+		if(n<w-2)TvText(x+(w-n)/2,ly,&shown[0],FC_FRAME);
+	}
+	// the cursor entry, or what is marked
+	int iy=y+h-1;
+	char info[80];
+	FcUse(p);
+	int marked=fs_mark_info(&info[0],80);
+	if(marked>0)
+	{
+		int n=TvCols(&info[0]);
+		if(n>w)n=w;
+		TvTextN(x+(w-n)/2,iy,&info[0],FC_MARK,n);
+	}
+	else if(fcCount[p]>0)
+	{
+		char name[256];
+		char perm[16];
+		char size[16];
+		char right[40];
+		int k=fcCur[p];
+		FcName(p,k,&name[0]);
+		fs_field(k,2,&perm[0],16);
+		fs_field(k,0,&size[0],16);
+		snprintf(&right[0],40,"%s %s",&size[0],&perm[0]);
+		int rn=StrLen(&right[0]);
+		if(rn>w-4)rn=0;
+		FcCut(x,iy,&name[0],FC_FILE,w-rn-1);
+		if(rn>0)TvText(x+w-rn,iy,&right[0],FC_FILE);
+	}
+}
+
+void FcPanelBox(int p, int& x, int& y, int& w, int& h)
+{
+	TWin& t=tvWin[fcWin];
+	int side=p&1;
+	int iw=t.w-2;
+	int lw=(iw-1)/2;
+	x=t.x+1;
+	y=t.y+1;
+	w=lw;
+	h=t.h-2;
+	if(side==1)
+	{
+		x=t.x+2+lw;
+		w=iw-lw-1;
+	}
+}
+
+void FcDraw(int win)
+{
+	if(fcReload[fcC])
+	{
+		fcReload[fcC]=0;
+		FcReloadBoth();
+	}
+	TWin& t=tvWin[win];
+	TvFill(t.x+1,t.y+1,t.w-2,t.h-2,' ',FC_BG);
+	if((t.w<20)||(t.h<8))return;
+	FcClamp(fcBase);
+	FcClamp(fcBase+1);
+	int x=0;
+	int y=0;
+	int w=0;
+	int h=0;
+	for(int p=fcBase;p<fcBase+2;p++)
+	{
+		FcPanelBox(p,x,y,w,h);
+		FcDrawPanel(p,x,y,w,h);
+	}
+	FcPanelBox(fcBase+1,x,y,w,h);
+	ShowToggles();     // keys and clicks change the modes the menus show
+	for(int r=0;r<h;r++)
+		TvPut(x-1,y+r,G_VERT,FC_FRAME);
+	TvPut(x-1,y+h-2,0x253C,FC_FRAME);
+}
+
+// ---------------------------------------------------------------- dialogs
+
+char fcPrompt[300];
+int fcAskIn=-1;
+
+// Asks for a line of text, starting from init. Returns 1 if it was given.
+int FcAsk(char* title, char* prompt, char* init, char* out)
+{
+	int w=64;
+	if(w>tvW-2)w=tvW-2;
+	int win=TvNewCentered(W_ASK,title,w,9,WF_DIALOG);
+	if(win<0)return 0;
+	StrCpy(&fcPrompt[0],prompt,300);
+	fcAskIn=TvAdd(win,C_INPUT,3,3,w-6,1,"",0);
+	StrCpy(&tvCtl[fcAskIn].text[0],init,200);
+	tvCtl[fcAskIn].val=StrLen(&tvCtl[fcAskIn].text[0]);
+	if(fcAskAtStart)tvCtl[fcAskIn].val=0;
+	fcAskAtStart=0;
+	tvCtl[fcAskIn].top=0;
+	int bx=(w-26)/2;
+	int b=TvAdd(win,C_BUTTON,bx,5,12,2,"O~K~",CM_OK);
+	tvCtl[b].isDefault=1;
+	TvAdd(win,C_BUTTON,bx+14,5,12,2,"Cancel",CM_CANCEL);
+	tvWin[win].focus=fcAskIn;
+	int res=TvExec(win);
+	StrCpy(out,&tvCtl[fcAskIn].text[0],FC_PATH);
+	TvClose(win);
+	if(res!=CM_OK)return 0;
+	if(out[0]==0)return 0;
+	return 1;
+}
+
+void DrawAsk(int win)
+{
+	TWin& t=tvWin[win];
+	TvTextN(t.x+3,t.y+2,&fcPrompt[0],A_DLG,t.w-6);
+}
+
+// A typed path: ~ means home, and a relative one is in the active panel's directory.
+void FcResolve(char* typed, char* out)
+{
+	if((typed[0]=='~')&&((typed[1]=='/')||(typed[1]==0)))
+	{
+		char home[FC_PATH];
+		fs_home(&home[0],FC_PATH);
+		if(typed[1]==0)StrCpy(out,&home[0],FC_PATH);
+		else FcJoin(out,&home[0],&typed[2]);
+	}
+	else if(typed[0]=='/')StrCpy(out,typed,FC_PATH);
+	else FcJoin(out,FcDirOf(fcActive),typed);
+}
+
+// ---------------------------------------------------------------- copying, moving, deleting
+
+int fcJobWin=-1;
+int fcJobOp=0;
+int fcJobAsking=0;
+int fcJobTotal=-1;
+int fcJobFile=-1;
+int fcJobDone=0;           // 1 finished, 2 aborted
+
+void FcTickRate()
+{
+	int ms=1000;      // watch the directories for changes
+	if(fcJobWin>=0)ms=15;
+	if(ms!=tvTickMs)
+	{
+		tvTickMs=ms;
+		tvNextTick=term_ms()+ms;
+	}
+}
+
+void DrawJob(int win)
+{
+	TWin& t=tvWin[win];
+	char name[FC_PATH];
+	char line[80];
+	char* verb="Copying";
+	if(fcJobOp==1)verb="Moving";
+	if(fcJobOp==2)verb="Deleting";
+	TvText(t.x+3,t.y+2,verb,A_DLG);
+	fs_job_name(0,&name[0],FC_PATH);
+	int w=t.w-6;
+	// the end of a long path is the part worth showing
+	int cols=TvCols(&name[0]);
+	int i=0;
+	if(cols>w)
+		for(int k=0;k<cols-w;k++)
+			TvUtf8(&name[0],i);
+	TvTextN(t.x+3,t.y+3,&name[i],A_DLG,w);
+	if(fcJobOp!=2)
+	{
+		TvText(t.x+3,t.y+4,"to",A_DLG);
+		fs_job_name(1,&name[0],FC_PATH);
+		cols=TvCols(&name[0]);
+		i=0;
+		if(cols>w)
+			for(int k=0;k<cols-w;k++)
+				TvUtf8(&name[0],i);
+		TvTextN(t.x+3,t.y+5,&name[i],A_DLG,w);
+	}
+	snprintf(&line[0],80,"%i of %i",fs_job_info(1),fs_job_info(2));
+	TvText(t.x+3,t.y+8,&line[0],A_DLG);
+	tvCtl[fcJobFile].val=fs_job_info(3);
+	tvCtl[fcJobTotal].val=fs_job_info(0);
+}
+
+// Asks what to do about a failed action or an existing target, for fs_job_answer.
+void FcJobQuestion(int r)
+{
+	char msg[600];
+	char name[FC_PATH];
+	char err[300];
+	int k=-1;
+	if(r==-2)
+	{
+		fs_job_name(1,&name[0],FC_PATH);
+		snprintf(&msg[0],600,"\"%s\"\nalready exists. Overwrite it?",&name[EdBase(&name[0])]);
+		k=TvChoose("Target exists",&msg[0],"~Y~es|~N~o|~A~ll|No~n~e|A~b~ort");
+		if(k<0)k=4;
+	}
+	else
+	{
+		fs_error(&err[0],300);
+		fs_job_name(0,&name[0],FC_PATH);
+		snprintf(&msg[0],600,"%s\n\"%s\"",&err[0],&name[EdBase(&name[0])]);
+		int c=TvChoose("Error",&msg[0],"~S~kip|Skip ~a~ll|~R~etry|A~b~ort");
+		k=4;
+		if(c==0)k=1;
+		if(c==1)k=2;
+		if(c==2)k=0;
+	}
+	fs_job_answer(k);
+	if(k==4)fcJobDone=2;
+}
+
+void FcJobTick()
+{
+	if(fcJobWin<0)return;
+	if(fcJobAsking)return;     // a question's dialog runs the loop meanwhile
+	if(fcJobDone)return;
+	int r=fs_job_step(40);
+	tvDirty=1;
+	if(r<0)
+	{
+		fcJobAsking=1;
+		FcJobQuestion(r);
+		fcJobAsking=0;
+	}
+	else if(r==0)fcJobDone=1;
+	if(fcJobDone)tvWin[fcJobWin].result=CM_OK;
+}
+
+// Runs the job fs_job_start planned, in a dialog with progress bars and Cancel.
+// Returns 1 if it ran to the end.
+int FcRunJob(int op, char* title)
+{
+	int w=60;
+	if(w>tvW-2)w=tvW-2;
+	int win=TvNewCentered(W_JOB,title,w,14,WF_DIALOG);
+	if(win<0)return 0;
+	fcJobOp=op;
+	fcJobDone=0;
+	fcJobAsking=0;
+	fcJobFile=TvAdd(win,C_PROGRESS,3,6,w-6,1,"",0);
+	tvCtl[fcJobFile].count=1000;
+	fcJobTotal=TvAdd(win,C_PROGRESS,3,7,w-6,1,"",0);
+	tvCtl[fcJobTotal].count=1000;
+	if(op==2)
+	{
+		// one bar is enough when nothing is copied
+		tvCtl[fcJobFile].used=0;
+		tvCtl[fcJobTotal].y=6;
+	}
+	TvAdd(win,C_BUTTON,(w-12)/2,10,12,2,"Cancel",CM_CANCEL);
+	fcJobWin=win;
+	FcTickRate();
+	int res=TvExec(win);
+	if(res!=CM_OK)
+	{
+		fs_job_answer(4);
+		fcJobDone=2;
+	}
+	fcJobWin=-1;
+	FcTickRate();
+	TvClose(win);
+	FcReloadAll();
+	return fcJobDone==1;
+}
+
+// The marked entries of the active panel, or the one under the cursor. Adds them to
+// a new job and describes them in what. Returns how many there are.
+int FcSources(char* what)
+{
+	int p=fcActive;
+	FcUse(p);
+	fs_job_clear();
+	int n=0;
+	char path[FC_PATH];
+	char name[256];
+	for(int i=0;i<fcCount[p];i++)
+		if(fs_marked(i))
+		{
+			FcPathOf(p,i,&path[0]);
+			FcUse(p);
+			fs_job_add(&path[0]);
+			n++;
+		}
+	if(n>0)
+	{
+		snprintf(what,300,"%i entries",n);
+		if(n==1)StrCpy(what,"1 entry",300);
+		return n;
+	}
+	if(fcCount[p]==0)return 0;
+	FcName(p,fcCur[p],&name[0]);
+	if(FcIsUp(&name[0]))return 0;
+	FcPathOf(p,fcCur[p],&path[0]);
+	fs_job_add(&path[0]);
+	snprintf(what,300,"\"%s\"",&name[0]);
+	return 1;
+}
+
+void FcUnmark(int p)
+{
+	FcUse(p);
+	fs_mark_match(0,"",1);
+}
+
+// F5 and F6: copy or move to the other panel's directory, or to a typed name.
+// inPlace (Shift+F6) offers the entry's own name, to rename it.
+void FcCopyMove(int op, int inPlace)
+{
+	char what[300];
+	int n=FcSources(&what[0]);
+	if(n==0)return;
+	char prompt[340];
+	char target[FC_PATH];
+	char typed[FC_PATH];
+	char* verb="Copy";
+	if(op==1)verb="Move";
+	snprintf(&prompt[0],340,"%s %s to:",verb,&what[0]);
+	StrCpy(&target[0],FcDirOf(fcActive^1),FC_PATH);
+	if(inPlace)
+	{
+		if(n>1)
+		{
+			TvMessage("Rename","Rename works on one entry; unmark the others first.",0);
+			return;
+		}
+		FcName(fcActive,fcCur[fcActive],&target[0]);
+		StrCpy(&prompt[0],"Rename to:",340);
+	}
+	char* title="Copy";
+	if(op==1)title="Rename or move";
+	if(!FcAsk(title,&prompt[0],&target[0],&typed[0]))return;
+	FcResolve(&typed[0],&target[0]);
+	// FcSources cleared the job and added the sources; the dialog did not touch them
+	if(!fs_job_start(op,&target[0]))
+	{
+		char err[300];
+		fs_error(&err[0],300);
+		TvMessage(title,&err[0],0);
+		return;
+	}
+	int ok=FcRunJob(op,title);
+	if(ok)FcUnmark(fcActive);
+	FcReloadBoth();
+	// a rename keeps the cursor on the entry under its new name
+	if(ok&&inPlace)
+		FcLoad(fcActive,FcDirOf(fcActive),&target[EdBase(&target[0])]);
+}
+
+void FcDelete()
+{
+	char what[300];
+	int n=FcSources(&what[0]);
+	if(n==0)return;
+	char msg[400];
+	char info[80];
+	snprintf(&msg[0],400,"Delete %s?",&what[0]);
+	FcUse(fcActive);
+	if(fs_mark_info(&info[0],80)==0)
+	{
+		char name[256];
+		if(FcName(fcActive,fcCur[fcActive],&name[0]))
+			snprintf(&msg[0],400,"Delete the directory \"%s\"\nand everything in it?",&name[0]);
+	}
+	if(TvMessage("Delete",&msg[0],1)!=CM_YES)return;
+	fs_job_start(2,"");
+	int ok=FcRunJob(2,"Delete");
+	if(ok)FcUnmark(fcActive);
+	FcReloadBoth();
+}
+
+void FcMkdir()
+{
+	char typed[FC_PATH];
+	char path[FC_PATH];
+	if(!FcAsk("Make directory","Name of the new directory:","",&typed[0]))return;
+	FcResolve(&typed[0],&path[0]);
+	if(!fs_mkdir(&path[0]))
+	{
+		char err[300];
+		fs_error(&err[0],300);
+		TvMessage("Make directory",&err[0],0);
+		return;
+	}
+	FcReloadBoth();
+	FcLoad(fcActive,FcDirOf(fcActive),&path[EdBase(&path[0])]);
+}
+
+// ---------------------------------------------------------------- viewing and editing
+
+void FcSetTitle(int win, char* prefix, char* path)
+{
+	snprintf(&tvWin[win].title[0],48,"%s%s",prefix,&path[EdBase(path)]);
+}
+
+// Keeps an editor window's title "View: name" or "Edit: name", whatever the editor
+// set it to on opening or Save as; the help (a view with no file) keeps its own.
+void FcEditorTitle(int win)
+{
+	TWin& t=tvWin[win];
+	char want[48];
+	if(ed[win].path[0]!=0)
+	{
+		if(fcView[win])FcSetTitle(win,"View: ",&ed[win].path[0]);
+		else FcSetTitle(win,"Edit: ",&ed[win].path[0]);
+		return;
+	}
+	if(fcView[win])return;
+	if((t.title[0]=='E')&&(t.title[4]==':'))return;
+	snprintf(&want[0],48,"Edit: %s",&t.title[0]);
+	StrCpy(&t.title[0],&want[0],48);
+}
+
+// F3: directories are entered, binary files go to the hex viewer, and text opens in a
+// read-only editor window.
+void FcViewPath(char* path)
+{
+	if(fs_isdir(path))return;
+	char head[4096];
+	int n=fs_load(path,&head[0],4096);
+	if(n<0)
+	{
+		char err[300];
+		fs_error(&err[0],300);
+		TvMessage("View",&err[0],0);
+		return;
+	}
+	int binary=0;
+	for(int i=0;i<n;i++)
+		if(head[i]==0)binary=1;
+	if(binary)
+	{
+		HxOpen(path);
+		return;
+	}
+	char full[ED_PATH];
+	int was=-1;
+	if(EdAbsPath(path,&full[0])==1)was=EdFindPath(&full[0]);
+	int win=OpenFile(path);
+	if(win<0)return;
+	if(win==was)return;     // already open, perhaps for editing
+	fcLocked[win]=ed[win].ro;
+	ed[win].ro=1;
+	fcView[win]=1;
+	FcSetTitle(win,"View: ",path);
+}
+
+// F4, or F4 in a view window: an editor window for the file.
+void FcEditPath(char* path)
+{
+	if(fs_isdir(path))return;
+	char full[ED_PATH];
+	int was=-1;
+	if(EdAbsPath(path,&full[0])==1)was=EdFindPath(&full[0]);
+	int win=OpenFile(path);
+	if(win<0)return;
+	if(win!=was)
+	{
+		fcView[win]=0;
+		fcLocked[win]=ed[win].ro;
+		return;
+	}
+	if(fcView[win])
+	{
+		fcView[win]=0;
+		ed[win].ro=fcLocked[win];
+		FcSetTitle(win,"",&ed[win].path[0]);
+	}
+}
+
+void FcView()
+{
+	int p=fcActive;
+	if(fcCount[p]==0)return;
+	char path[FC_PATH];
+	FcPathOf(p,fcCur[p],&path[0]);
+	FcViewPath(&path[0]);
+}
+
+void FcEdit()
+{
+	int p=fcActive;
+	if(fcCount[p]==0)return;
+	char path[FC_PATH];
+	FcPathOf(p,fcCur[p],&path[0]);
+	if(fs_isdir(&path[0]))
+	{
+		TvMessage("Edit","That is a directory.",0);
+		return;
+	}
+	FcEditPath(&path[0]);
+}
+
+void FcNewFile()
+{
+	char typed[FC_PATH];
+	char path[FC_PATH];
+	if(!FcAsk("New file","Name of the file to edit:","",&typed[0]))return;
+	FcResolve(&typed[0],&path[0]);
+	FcEditPath(&path[0]);
+}
+
+void FcHex()
+{
+	int p=fcActive;
+	if(fcCount[p]==0)return;
+	char path[FC_PATH];
+	FcPathOf(p,fcCur[p],&path[0]);
+	if(!fs_isdir(&path[0]))HxOpen(&path[0]);
+}
+
+// The editor's Save as: a name typed in a dialog, in the commander's directory if it
+// is not absolute.
+int RunSaveAs(int ew)
+{
+	char typed[FC_PATH];
+	char path[FC_PATH];
+	char full[FC_PATH];
+	char* old=&ed[ew].path[0];
+	char init[FC_PATH];
+	if(old[0]!=0)StrCpy(&init[0],old,FC_PATH);
+	else FcJoin(&init[0],FcDirOf(fcActive),"untitled.txt");
+	if(!FcAsk("Save as","Save the file as:",&init[0],&typed[0]))return 0;
+	FcResolve(&typed[0],&path[0]);
+	int where=EdAbsPath(&path[0],&full[0]);
+	if(where==-2)
+	{
+		TvMessage("Save as","That path is too long.",0);
+		return 0;
+	}
+	if(where<0)
+	{
+		TvMessage("Save as","There is no such directory.",0);
+		return 0;
+	}
+	if(fs_isdir(&full[0]))
+	{
+		TvMessage("Save as","That is a directory.",0);
+		return 0;
+	}
+	int other=EdFindPath(&full[0]);
+	if((other>=0)&&(other!=ew))
+	{
+		TvMessage("Save as","That file is open in another window.",0);
+		return 0;
+	}
+	if((where==1)&&(other!=ew))
+		if(TvMessage("Save as","This file already exists.\nReplace it?",1)!=CM_YES)return 0;
+	int saved=EdSaveAs(ew,&full[0]);
+	if(saved)FcReloadAll();
+	return saved;
+}
+
+// ---------------------------------------------------------------- running programs
+
+// In a terminal the command gets the terminal itself: the desktop steps aside, the
+// command runs with the screen and keyboard as in a shell, and a key brings the
+// desktop back.
+#ifndef TV_GFX
+void FcRunIn(char* cmd, char* dir)
+{
+	TvSuspend();
+	run_here(cmd,dir);
+	TvResume();
+	FcReloadAll();
+}
+#endif
+
+// A graphic window has no terminal of its own, so the command runs in a new terminal
+// window, which stays open until Enter is pressed so that its output can be read.
+#ifdef TV_GFX
+void FcRunIn(char* cmd, char* dir)
+{
+	if(!run_has_display())
+	{
+		TvMessage("Run","There is no display to open a terminal window on.",0);
+		return;
+	}
+	char term[200];
+	if(fcTermCmd[0]!=0)StrCpy(&term[0],&fcTermCmd[0],200);
+	else if(!run_terminal(&term[0],200))
+	{
+		TvMessage("Run","No terminal program was found.\nName one in Options > Preferences.",0);
+		return;
+	}
+	char qdir[2100];
+	char script[3400];
+	char quoted[4000];
+	char full[4300];
+	run_quote(dir,&qdir[0],2100);
+	snprintf(&script[0],3400,"cd %s || exit; %s; s=$?; echo; echo \"[exit code $s] Press Enter to close this window\"; read x",&qdir[0],cmd);
+	run_quote(&script[0],&quoted[0],4000);
+	snprintf(&full[0],4300,"%s sh -c %s",&term[0],&quoted[0]);
+	if(!run_detached(&full[0],dir))
+	{
+		char err[300];
+		fs_error(&err[0],300);
+		TvMessage("Run",&err[0],0);
+	}
+	FcReloadAll();
+}
+#endif
+
+// The entry under the cursor is an executable file (not a link to one).
+int FcIsExec(int p)
+{
+	if(fcCount[p]==0)return 0;
+	char name[256];
+	char mark[4];
+	if(FcName(p,fcCur[p],&name[0]))return 0;
+	fs_field(fcCur[p],3,&mark[0],4);
+	if(mark[0]=='*')return 1;
+	return 0;
+}
+
+// Enter on an executable file runs it in its directory.
+void FcRunCursor()
+{
+	int p=fcActive;
+	char name[256];
+	char rel[262];
+	char cmd[600];
+	FcName(p,fcCur[p],&name[0]);
+	snprintf(&rel[0],262,"./%s",&name[0]);
+	run_quote(&rel[0],&cmd[0],600);
+	FcRunIn(&cmd[0],FcDirOf(p));
+}
+
+// F2 or Alt+Enter: a command typed in a dialog, run in the active panel's directory.
+// It starts with the entry under the cursor, quoted for the shell, and the cursor
+// before it, ready for the program's name; an executable is offered as ./name.
+void FcRunDialog()
+{
+	int p=fcActive;
+	char init[FC_PATH];
+	char typed[FC_PATH];
+	char prompt[300];
+	init[0]=0;
+	if(fcCount[p]>0)
+	{
+		char name[256];
+		char arg[600];
+		FcName(p,fcCur[p],&name[0]);
+		if(!FcIsUp(&name[0]))
+		{
+			if(FcIsExec(p))
+			{
+				char rel[262];
+				snprintf(&rel[0],262,"./%s",&name[0]);
+				run_quote(&rel[0],&arg[0],600);
+				snprintf(&init[0],FC_PATH,"%s ",&arg[0]);
+			}
+			else
+			{
+				run_quote(&name[0],&arg[0],600);
+				snprintf(&init[0],FC_PATH," %s",&arg[0]);
+				fcAskAtStart=1;
+			}
+		}
+	}
+	snprintf(&prompt[0],300,"Run in %s:",FcDirOf(p));
+	if(!FcAsk("Run",&prompt[0],&init[0],&typed[0]))return;
+	FcRunIn(&typed[0],FcDirOf(p));
+}
+
+// Opens the entry with the desktop's application for it (xdg-open), without waiting.
+void FcOpenSystem()
+{
+	int p=fcActive;
+	if(fcCount[p]==0)return;
+	if(!run_has_display())
+	{
+		TvMessage("Open","There is no graphic desktop to open it on.",0);
+		return;
+	}
+	char path[FC_PATH];
+	char quoted[2100];
+	char cmd[2200];
+	FcPathOf(p,fcCur[p],&path[0]);
+	run_quote(&path[0],&quoted[0],2100);
+	snprintf(&cmd[0],2200,"xdg-open %s",&quoted[0]);
+	if(!run_detached(&cmd[0],FcDirOf(p)))
+	{
+		char err[300];
+		fs_error(&err[0],300);
+		TvMessage("Open",&err[0],0);
+	}
+}
+
+// ---------------------------------------------------------------- the panel's keys and mouse
+
+void FcEnter()
+{
+	int p=fcActive;
+	if(fcCount[p]==0)return;
+	char name[256];
+	int isDir=FcName(p,fcCur[p],&name[0]);
+	if(!isDir)
+	{
+		if(FcIsExec(p))FcRunCursor();
+		else FcView();
+		return;
+	}
+	if(FcIsUp(&name[0]))
+	{
+		FcGoUp(p);
+		return;
+	}
+	char path[FC_PATH];
+	FcJoin(&path[0],FcDirOf(p),&name[0]);
+	FcChangeDir(p,&path[0]);
+}
+
+void FcSetSort(int p, int key)
+{
+	if((fcSort[p]&3)==key)fcSort[p]=fcSort[p]^4;
+	else fcSort[p]=key;
+	FcReload(p);
+}
+
+void FcMarkGroup(int v)
+{
+	char typed[FC_PATH];
+	char* title="Select group";
+	if(v==0)title="Unselect group";
+	if(!FcAsk(title,"Files whose names match (* and ? are wild):","*",&typed[0]))return;
+	FcUse(fcActive);
+	fs_mark_match(v,&typed[0],v==0);
+}
+
+void FcSwap()
+{
+	char a[FC_PATH];
+	char b[FC_PATH];
+	int l=fcBase;
+	int r=fcBase+1;
+	StrCpy(&a[0],FcDirOf(l),FC_PATH);
+	StrCpy(&b[0],FcDirOf(r),FC_PATH);
+	int s=fcSort[l];
+	fcSort[l]=fcSort[r];
+	fcSort[r]=s;
+	int br=fcBrief[l];
+	fcBrief[l]=fcBrief[r];
+	fcBrief[r]=br;
+	FcLoad(l,&b[0],"");
+	FcLoad(r,&a[0],"");
+}
+
+int StrCmp(char* a, char* b)
+{
+	int i=0;
+	while(1)
+	{
+		int x=a[i];
+		int y=b[i];
+		if(x!=y)return x-y;
+		if(x==0)return 0;
+		i++;
+	}
+	return 0;
+}
+
+// Marks, in both panels, the files missing from the other one or different there in
+// size or time.
+void FcCompare()
+{
+	char name[256];
+	char s1[24];
+	char s2[24];
+	char t1[24];
+	char t2[24];
+	int differ=0;
+	for(int p=fcBase;p<fcBase+2;p++)
+	{
+		int q=p^1;
+		FcUnmark(p);
+		for(int i=0;i<fcCount[p];i++)
+		{
+			FcUse(p);
+			int isDir=fs_name(i,&name[0],256);
+			if(!isDir)
+			{
+				fs_field(i,0,&s1[0],24);
+				fs_field(i,1,&t1[0],24);
+				FcUse(q);
+				int k=fs_index(&name[0]);
+				int mark=1;
+				if(k>=0)
+				{
+					fs_field(k,0,&s2[0],24);
+					fs_field(k,1,&t2[0],24);
+					mark=0;
+					if(StrCmp(&s1[0],&s2[0])!=0)mark=1;
+					if(StrCmp(&t1[0],&t2[0])!=0)mark=1;
+				}
+				if(mark)
+				{
+					FcUse(p);
+					fs_mark(i,1);
+					differ++;
+				}
+			}
+		}
+	}
+	if(differ==0)TvMessage("Compare","The files of both directories are the same.",0);
+}
+
+int FcKey(int win, int key)
+{
+	int p=fcActive;
+	int vis=FcVisible(p);
+	int rows=FcRows(p);
+	if(key==K_TAB)
+	{
+		FcSetActive(fcActive^1);
+		return 1;
+	}
+	if(key==K_UP)fcCur[p]--;
+	else if(key==K_DOWN)fcCur[p]++;
+	else if(key==K_PGUP)fcCur[p]=fcCur[p]-vis+1;
+	else if(key==K_PGDN)fcCur[p]=fcCur[p]+vis-1;
+	else if(key==K_HOME)fcCur[p]=0;
+	else if(key==K_END)fcCur[p]=fcCount[p]-1;
+	else if((key==K_LEFT)&&fcBrief[p])fcCur[p]=fcCur[p]-rows;
+	else if((key==K_RIGHT)&&fcBrief[p])fcCur[p]=fcCur[p]+rows;
+	else if(key==K_ENTER)FcEnter();
+	else if(key==K_ALT+K_ENTER)FcRunDialog();
+	else if(key==K_BACKSPACE)FcGoUp(p);
+	else if(key==K_INS)
+	{
+		FcUse(p);
+		fs_mark(fcCur[p],-1);
+		fcCur[p]++;
+	}
+	else if(key==K_F3)FcView();
+	else if(key==K_F4)
+	{
+		if(evMod&MOD_SHIFT)FcNewFile();
+		else FcEdit();
+	}
+	else if(key==K_F5)FcCopyMove(0,0);
+	else if(key==K_F6)
+	{
+		if(evMod&MOD_SHIFT)FcCopyMove(1,1);
+		else FcCopyMove(1,0);
+	}
+	else if(key==K_F7)FcMkdir();
+	else if((key==K_F8)||(key==K_DEL))FcDelete();
+	else if(key=='+')FcMarkGroup(1);
+	else if(key=='-')FcMarkGroup(0);
+	else if(key=='*')
+	{
+		FcUse(p);
+		fs_mark_match(2,"",0);
+	}
+	else if(key==21)FcSwap();                  // Ctrl+U
+	else if(key==K_ALT+'i')TvAppCommand(CM_SAMEDIR);
+	else if(key==K_ALT+'.')TvAppCommand(CM_HIDDEN);
+	else if((key>' ')&&(key<127))
+	{
+		// letters jump to the next name that starts with them
+		FcUse(p);
+		if(fcCount[p]>0)
+		{
+			int k=fs_find(key,fcCur[p]);
+			if(k>=0)fcCur[p]=k;
+		}
+	}
+	else return 0;
+	FcClamp(p);
+	return 1;
+}
+
+// The entry at a point inside the window, in panel p, or -1. part is 1 on the header.
+int FcHit(int x, int y, int& p, int& part)
+{
+	TWin& t=tvWin[fcWin];
+	int ax=t.x+x;
+	int ay=t.y+y;
+	int px=0;
+	int py=0;
+	int pw=0;
+	int ph=0;
+	part=0;
+	p=-1;
+	for(int k=fcBase;k<fcBase+2;k++)
+	{
+		FcPanelBox(k,px,py,pw,ph);
+		if((ax>=px)&&(ax<px+pw))p=k;
+	}
+	if(p<0)return -1;
+	FcPanelBox(p,px,py,pw,ph);
+	int row=ay-py-2;
+	if(ay==py+1)part=1;
+	int rows=ph-4;
+	if((row<0)||(row>=rows))return -1;
+	int k=fcTop[p]+row;
+	if(fcBrief[p])
+		if(ax>px+(pw-1)/2)k=k+rows;
+	if(k>=fcCount[p])return -1;
+	return k;
+}
+
+int FcMouse(int win, int ev, int x, int y)
+{
+	if((ev==EV_RDOWN)&&(x<0))
+	{
+		TvOpenPopup(popPanel,-1,-1);
+		return 1;
+	}
+	int p=0;
+	int part=0;
+	int k=FcHit(x,y,p,part);
+	if(p<0)return 1;
+	if(ev==EV_WHEEL)
+	{
+		fcCur[p]=fcCur[p]-evWheel*3;
+		FcClamp(p);
+		return 1;
+	}
+	if(ev==EV_RDOWN)
+	{
+		FcSetActive(p);
+		if(k>=0)
+		{
+			FcUse(p);
+			fs_mark(k,-1);
+			fcCur[p]=k;
+		}
+		return 1;
+	}
+	if(ev!=EV_MDOWN)return 1;
+	FcSetActive(p);
+	if(part==1)
+	{
+		// a click on a column header sorts by it, again reverses
+		int px=0;
+		int py=0;
+		int pw=0;
+		int ph=0;
+		FcPanelBox(p,px,py,pw,ph);
+		int sizeX=0;
+		int timeX=0;
+		FcColumns(p,px,pw,sizeX,timeX);
+		int ax=tvWin[fcWin].x+x;
+		int key=0;
+		if((sizeX>0)&&(ax>sizeX))key=2;
+		if((timeX>0)&&(ax>timeX))key=3;
+		FcSetSort(p,key);
+		return 1;
+	}
+	if(k<0)return 1;
+	int now=term_ms();
+	int twice=0;
+	if((fcLastP==p)&&(fcLastI==k))
+		if(now-fcLastClick<400)twice=1;
+	fcLastClick=now;
+	fcLastP=p;
+	fcLastI=k;
+	fcCur[p]=k;
+	FcClamp(p);
+	if(twice)
+	{
+		fcLastI=-1;
+		FcEnter();
+	}
+	return 1;
+}
+
+// ---------------------------------------------------------------- settings
+
+// t2fc.cfg: a line of numbers (theme, hidden, the panels' sort and brief modes, the
+// active panel, line numbers, wrap) and then the two directories.
+void PrefsLoad(char* left, char* right)
+{
+	char buf[2200];
+	int n=fs_load(CFG_FILE,&buf[0],2199);
+	if(n<=0)return;
+	buf[n]=0;
+	int v[9];
+	int k=0;
+	int i=0;
+	while((k<9)&&(buf[i]!=0)&&(buf[i]!=10))
+	{
+		if((buf[i]>='0')&&(buf[i]<='9'))
+		{
+			int x=0;
+			while((buf[i]>='0')&&(buf[i]<='9'))
+			{
+				x=x*10+buf[i]-'0';
+				i++;
+			}
+			v[k]=x;
+			k++;
+		}
+		else i++;
+	}
+	if(k<9)return;
+	prefTheme=v[0];
+	fcHidden=(v[1]!=0);
+	fcSort[0]=v[2]&7;
+	fcSort[1]=v[3]&7;
+	fcBrief[0]=(v[4]!=0);
+	fcBrief[1]=(v[5]!=0);
+	FcSetActive(v[6]!=0);
+	edLineNums=(v[7]!=0);
+	edWrap=(v[8]!=0);
+	// the directories, one a line, then the terminal command
+	for(int d=0;d<3;d++)
+	{
+		while((buf[i]!=0)&&(buf[i]!=10))i++;
+		if(buf[i]==0)return;
+		i++;
+		char* out=left;
+		int room=FC_PATH-1;
+		if(d==1)out=right;
+		if(d==2)
+		{
+			out=&fcTermCmd[0];
+			room=199;
+		}
+		int o=0;
+		while((buf[i]!=0)&&(buf[i]!=10)&&(o<room))
+		{
+			out[o]=buf[i];
+			o++;
+			i++;
+		}
+		out[o]=0;
+	}
+}
+
+void PrefsSave()
+{
+	char buf[2200];
+	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
+		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
+	if(fs_save_begin(CFG_FILE))
+	{
+		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
+		fs_save_end(ok);
+	}
+}
+
+int itemLineNums=-1;     // menu items whose hints show on or off
+int itemWrap=-1;
+int itemHidden=-1;
+int itemPanel[2];        // each panel's menu: Full and Brief, then the sort keys
+
+void SetHint(int item, int on)
+{
+	if(item<0)return;
+	if(on)StrCpy(&tvItem[item].hint[0],"on",12);
+	else StrCpy(&tvItem[item].hint[0],"off",12);
+}
+
+// Puts a dot by the listing mode and the sort key of each panel's menu.
+void ShowToggles()
+{
+	SetHint(itemLineNums,edLineNums);
+	SetHint(itemWrap,edWrap);
+	SetHint(itemHidden,fcHidden);
+	// the menus speak of the panel window in front
+	int base=fcBase;
+	int tc=FcTopC();
+	if(tc>=0)base=tc*2;
+	for(int side=0;side<2;side++)
+	{
+		int it=itemPanel[side];
+		int p=base+side;
+		for(int k=0;k<6;k++)
+			tvItem[it+k].hint[0]=0;
+		if(fcBrief[p])StrCpy(&tvItem[it+1].hint[0],"\xe2\x80\xa2",12);
+		else StrCpy(&tvItem[it].hint[0],"\xe2\x80\xa2",12);
+		StrCpy(&tvItem[it+2+(fcSort[p]&3)].hint[0],"\xe2\x80\xa2",12);
+		if(fcSort[p]&4)StrCpy(&tvItem[it+6].hint[0],"on",12);
+		else StrCpy(&tvItem[it+6].hint[0],"off",12);
+	}
+}
+
+void RunPrefs()
+{
+	int win=TvNewCentered(W_PREFS,"Preferences",50,16,WF_DIALOG);
+	if(win<0)return;
+	TvAdd(win,C_LABEL,3,2,10,1,"~T~heme",0);
+	char names[200];
+	TeThemeNames(&names[0],200);
+	int th=TvAdd(win,C_COMBO,14,2,30,1,&names[0],CM_THEMEPICK);
+	tvCtl[th].val=prefTheme;
+	int hid=TvAdd(win,C_CHECK,2,4,30,1,"Show ~h~idden files",0);
+	tvCtl[hid].val=fcHidden;
+	int ln=TvAdd(win,C_CHECK,2,5,30,1,"Editor ~l~ine numbers",0);
+	tvCtl[ln].val=edLineNums;
+	int wr=TvAdd(win,C_CHECK,2,6,30,1,"Editor ~w~ord wrap",0);
+	tvCtl[wr].val=edWrap;
+	TvAdd(win,C_LABEL,3,8,40,1,"Te~r~minal for F2 in a graphic window",0);
+	int term=TvAdd(win,C_INPUT,3,9,44,1,"",0);
+	StrCpy(&tvCtl[term].text[0],&fcTermCmd[0],200);
+	tvCtl[term].val=StrLen(&fcTermCmd[0]);
+	int ok=TvAdd(win,C_BUTTON,11,12,12,2,"O~K~",CM_OK);
+	tvCtl[ok].isDefault=1;
+	TvAdd(win,C_BUTTON,26,12,12,2,"Cancel",CM_CANCEL);
+	tvWin[win].focus=th;
+	int res=TvExec(win);
+	if(res==CM_OK)
+	{
+		prefTheme=tvCtl[th].val;
+		int h=tvCtl[hid].val;
+		edLineNums=tvCtl[ln].val;
+		edWrap=tvCtl[wr].val;
+		StrCpy(&fcTermCmd[0],&tvCtl[term].text[0],200);
+		if(h!=fcHidden)
+		{
+			fcHidden=h;
+			FcReloadBoth();
+		}
+		PrefsSave();
+	}
+	TvClose(win);
+	// the combo box showed each theme as it was picked
+	TeUseTheme(prefTheme);
+	ShowToggles();
+}
+
+void DrawPrefs(int win)
+{
+	TWin& t=tvWin[win];
+	TvText(t.x+3,t.y+10,"empty: the first one found, as \"xterm -e\"",A_DLG);
+}
+
+// ---------------------------------------------------------------- help
+
+void OpenHelp()
+{
+	int win=NewViewer("Help");
+	if(win<0)return;
+	TWin& t=tvWin[win];
+	ed[win].ro=1;
+	fcView[win]=1;
+	t.w=66;
+	if(t.w>tvW)t.w=tvW;
+	t.h=tvH-4;
+	t.x=(tvW-t.w)/2;
+	t.y=2;
+	char* text=
+		"t2fc, a two-panel file manager written in Scinc\n"
+		"\n"
+		"Panels\n"
+		"  Tab                  the other panel\n"
+		"  Enter, double click  enter a directory, view a file,\n"
+		"                       run an executable file\n"
+		"  Backspace            the parent directory\n"
+		"  Insert, right click  mark an entry; + - * mark by a pattern,\n"
+		"                       unmark by one, invert the marks\n"
+		"  letters              jump to the next name starting so\n"
+		"  click a column title sort by it; again reverses\n"
+		"  Ctrl+R               read both directories again\n"
+		"  Ctrl+U               swap the panels\n"
+		"  Alt+I                the other panel shows this directory\n"
+		"  Alt+.                show or hide hidden files\n"
+		"  Ctrl+N               another panel window (up to six)\n"
+		"\n"
+		"Files (the marked ones, or the one under the cursor)\n"
+		"  F3                   view: text read-only, binary in hex\n"
+		"  F4, Shift+F4         edit, edit a new file\n"
+		"  F5                   copy to the other panel\n"
+		"  F6, Shift+F6         move to the other panel, rename\n"
+		"  F7                   make a directory\n"
+		"  F8, Delete           delete\n"
+		"  Copies and moves ask before they replace anything, and\n"
+		"  can be cancelled. A target name may start with ~ for home.\n"
+		"\n"
+		"Running programs\n"
+		"  F2, Alt+Enter        run a command in this directory; it\n"
+		"                       starts with the name under the cursor\n"
+		"  In a terminal the command gets the whole terminal, and a\n"
+		"  key brings t2fc back afterwards. In a graphic window it runs\n"
+		"  in a new terminal window, which stays open until Enter;\n"
+		"  Options > Preferences can name the terminal program.\n"
+		"  Command > Open with the desktop: the desktop's own program\n"
+		"  for the file (xdg-open)\n"
+		"\n"
+		"View and edit windows\n"
+		"  F3, Esc              close a view window\n"
+		"  F4                   make a view window editable\n"
+		"  F2, Ctrl+S           save (F2 runs a command in the panels)\n"
+		"  Ctrl+Z, Ctrl+Y       undo, redo\n"
+		"  Ctrl+X, Ctrl+C, Ctrl+V   cut, copy, paste\n"
+		"  Ctrl+F, Ctrl+L       find, find next; Ctrl+R replace\n"
+		"  Ctrl+G               go to a line\n"
+		"  Ctrl+W               close\n"
+		"\n"
+		"Desktop\n"
+		"  F10, Alt+letter      the menus\n"
+		"  Alt+1..9             a window by number\n"
+		"  1..9 a b c on the menu bar  click one to go to that window;\n"
+		"                       up to 12 windows, besides dialogs\n"
+		"  Alt+0                the list of windows\n"
+		"  Alt+N                the Windows menu: pick one to go to it\n"
+		"  double click a title zoom the window, or put it back\n"
+		"  Shift+F10            the context menu\n"
+		"  Alt+X                quit\n";
+	char line[80];
+	int o=0;
+	int i=0;
+	while(text[i]!=0)
+	{
+		if(text[i]==10)
+		{
+			line[o]=0;
+			VwAddLine(t,&line[0]);
+			o=0;
+		}
+		else if(o<78)
+		{
+			line[o]=text[i];
+			o++;
+		}
+		i++;
+	}
+}
+
+// ---------------------------------------------------------------- application hooks
+
+void TvAppDraw(int win)
+{
+	int type=tvWin[win].type;
+	if(type==W_FC)
+	{
+		// drawing may come in the middle of another panel window's command
+		int keep=fcC;
+		FcSelect(tvWin[win].a);
+		FcDraw(win);
+		FcSelect(keep);
+	}
+	else if(type==W_VIEW)
+	{
+		FcEditorTitle(win);
+		DrawViewer(win);
+	}
+	else if(type==W_HEX)HxDraw(win);
+	else if(type==W_THEME)TeDraw(win);
+	else if(type==W_JOB)DrawJob(win);
+	else if(type==W_ASK)DrawAsk(win);
+	else if(type==W_PREFS)DrawPrefs(win);
+}
+
+int TvAppKey(int win, int key)
+{
+	TWin& t=tvWin[win];
+	int type=t.type;
+	if(type==W_FC)
+	{
+		FcSelect(t.a);
+		return FcKey(win,key);
+	}
+	// view windows close with F3 or Esc as in MC, and F4 makes them editable
+	if((type==W_HEX)||((type==W_VIEW)&&fcView[win]))
+	{
+		if((key==K_F3)||(key==K_ESC))
+		{
+			TvClose(win);
+			return 1;
+		}
+	}
+	if((type==W_VIEW)&&fcView[win]&&(key==K_F4)&&(ed[win].path[0]!=0))
+	{
+		FcEditPath(&ed[win].path[0]);
+		return 1;
+	}
+	if(type==W_VIEW)return ViewerKey(win,key);
+	if(type==W_HEX)return HxKey(win,key);
+	if(type==W_THEME)return TeKey(win,key);
+	return 0;
+}
+
+int TvAppMouse(int win, int ev, int x, int y)
+{
+	TWin& t=tvWin[win];
+	int type=t.type;
+	if(type==W_FC)
+	{
+		FcSelect(t.a);
+		return FcMouse(win,ev,x,y);
+	}
+	if(type==W_THEME)return TeMouse(win,ev,x,y);
+	if(ev==EV_RDOWN)
+	{
+		if(t.flags&WF_DIALOG)return 0;
+		if(type!=W_VIEW)return 0;
+		if(x<0)TvOpenPopup(popEdit,-1,-1);
+		else TvOpenPopup(popEdit,t.x+x,t.y+y);
+		return 1;
+	}
+	if(type==W_VIEW)return ViewerMouse(win,ev,x,y);
+	if(type==W_HEX)return HxMouse(win,ev,x,y);
+	return 0;
+}
+
+void TvAppButton(int win, int ctl, int cmd)
+{
+	if(cmd==CM_THEMEPICK)
+	{
+		TeUseTheme(tvCtl[ctl].val);
+		return;
+	}
+	if((cmd>=CM_TEDEPTH)&&(cmd<=CM_TETHEME))
+		TeButton(win,ctl,cmd);
+}
+
+void TvAppClosed(int win)
+{
+	if(tvWin[win].type==W_VIEW)
+	{
+		EdClosed(win);
+		fcView[win]=0;
+		FcReloadAll();
+	}
+	if(win==hxWin)
+	{
+		free(hxBuf);
+		hxWin=-1;
+	}
+	if(tvWin[win].type==W_FC)
+	{
+		int c=tvWin[win].a;
+		fcWinOf[c]=-1;
+		if(fcC==c)fcWin=-1;
+	}
+}
+
+void TvAppTick()
+{
+	if(fcJobWin>=0)
+	{
+		FcJobTick();
+		return;
+	}
+	// another program, or the shell, changed a directory a panel shows
+	int keep=fcC;
+	for(int c=0;c<FC_MAXC;c++)
+		if(fcWinOf[c]>=0)
+		{
+			FcSelect(c);
+			for(int p=fcBase;p<fcBase+2;p++)
+				if(fs_stamp(FcDirOf(p))!=fcStamp[p])
+				{
+					FcReload(p);
+					tvDirty=1;
+				}
+		}
+	FcSelect(keep);
+}
+
+void TvAppListItem(int win, int ctl, int i, char* out, int max)
+{
+	if(tvWin[win].type==W_THEME)
+	{
+		TeListItem(ctl,i,out,max);
+		return;
+	}
+	out[0]=0;
+}
+
+void FcQuit()
+{
+	// the settings keep the directories of the panel window in front
+	if(FcTopC()>=0)FcSelect(FcTopC());
+	int r=EdCanQuit();
+	if(r==1)tvRunning=0;
+	else if(r==2)
+		if(TvMessage("Quit","Leave t2fc?",1)==CM_YES)
+			tvRunning=0;
+	if(!tvRunning)PrefsSave();
+}
+
+int TvAppCanClose(int win)
+{
+	// closing the last panel window is quitting
+	if(tvWin[win].type==W_FC)
+	{
+		int open=0;
+		for(int c=0;c<FC_MAXC;c++)
+			if(fcWinOf[c]>=0)open++;
+		if(open>1)return 1;
+		FcQuit();
+		return 0;
+	}
+	return EdCanClose(win);
+}
+
+int TvAppPaste(int win, char* s, int n)
+{
+	return EdPaste(win,s,n);
+}
+
+// Opens a panel window on these directories, with the modes of panel window from
+// (or those already set, when from is -1). Returns its number, or -1.
+int FcOpen(char* left, char* right, int from)
+{
+	int c=-1;
+	int open=0;
+	for(int k=FC_MAXC-1;k>=0;k--)
+	{
+		if(fcWinOf[k]<0)c=k;
+		else open++;
+	}
+	if(c<0)
+	{
+		TvMessage("New panels","There are six panel windows open already.",0);
+		return -1;
+	}
+	int w=tvW-8;
+	int h=tvH-6;
+	int x=1+open*2;
+	int y=2+open;
+	if(x+w>tvW)x=tvW-w;
+	if(y+h>tvH-1)y=tvH-1-h;
+	int win=TvNew(W_FC,"Panels",x,y,w,h,WF_RESIZE);
+	if(win<0)
+	{
+		TvMessage("New panels","Too many windows are open.",0);
+		return -1;
+	}
+	tvWin[win].a=c;
+	fcWinOf[c]=win;
+	if(from>=0)
+	{
+		for(int side=0;side<2;side++)
+		{
+			fcSort[c*2+side]=fcSort[from*2+side];
+			fcBrief[c*2+side]=fcBrief[from*2+side];
+		}
+		fcAct[c]=c*2+(fcAct[from]&1);
+	}
+	FcSelect(c);
+	for(int p=fcBase;p<fcBase+2;p++)
+	{
+		fcDir[p*FC_PATH]=0;
+		fcCur[p]=0;
+		fcTop[p]=0;
+		char* dir=left;
+		if(p==fcBase+1)dir=right;
+		if(!FcLoad(p,dir,""))
+			if(!FcLoad(p,".",""))FcLoad(p,"/","");
+		// a listing slot used before may still hold marks
+		FcUse(p);
+		fs_mark_match(0,"",1);
+	}
+	return c;
+}
+
+// Window > New panels: another panel window, on the directories of the front one.
+void FcNewWindow()
+{
+	int from=FcTopC();
+	char left[FC_PATH];
+	char right[FC_PATH];
+	StrCpy(&left[0],".",FC_PATH);
+	fs_home(&right[0],FC_PATH);
+	if(from>=0)
+	{
+		StrCpy(&left[0],FcDirOf(from*2),FC_PATH);
+		StrCpy(&right[0],FcDirOf(from*2+1),FC_PATH);
+	}
+	FcOpen(&left[0],&right[0],from);
+}
+
+// The panel commands act on the panels even when another window is in front.
+int FcPanelCommand(int cmd)
+{
+	if((cmd<FC_CMD0)||(cmd>FC_CMD1))return 0;
+	if(cmd==CM_NEWPANELS)
+	{
+		FcNewWindow();
+		return 1;
+	}
+	int c=FcTopC();
+	if(c<0)return 1;
+	FcSelect(c);
+	TvToFront(fcWin);
+	int p=fcActive;
+	if(cmd==CM_VIEW)FcView();
+	else if(cmd==CM_EDIT)FcEdit();
+	else if(cmd==CM_NEWFILE)FcNewFile();
+	else if(cmd==CM_FCOPY)FcCopyMove(0,0);
+	else if(cmd==CM_MOVE)FcCopyMove(1,0);
+	else if(cmd==CM_RENAME)FcCopyMove(1,1);
+	else if(cmd==CM_MKDIR)FcMkdir();
+	else if(cmd==CM_DELETE)FcDelete();
+	else if(cmd==CM_HEXVIEW)FcHex();
+	else if(cmd==CM_SELGROUP)FcMarkGroup(1);
+	else if(cmd==CM_UNSELGROUP)FcMarkGroup(0);
+	else if(cmd==CM_INVERT)
+	{
+		FcUse(p);
+		fs_mark_match(2,"",0);
+	}
+	else if(cmd==CM_SWAP)FcSwap();
+	else if(cmd==CM_SAMEDIR)FcLoad(p^1,FcDirOf(p),"");
+	else if(cmd==CM_REREAD)FcReloadBoth();
+	else if(cmd==CM_HIDDEN)
+	{
+		fcHidden=!fcHidden;
+		FcReloadBoth();
+	}
+	else if(cmd==CM_COMPARE)FcCompare();
+	else if(cmd==CM_RUN)FcRunDialog();
+	else if(cmd==CM_OPENSYS)FcOpenSystem();
+	else if(cmd==CM_HOME)
+	{
+		char home[FC_PATH];
+		fs_home(&home[0],FC_PATH);
+		FcChangeDir(p,&home[0]);
+	}
+	else if(cmd==CM_GODIR)
+	{
+		char typed[FC_PATH];
+		char path[FC_PATH];
+		if(FcAsk("Go to directory","Directory:",FcDirOf(p),&typed[0]))
+		{
+			FcResolve(&typed[0],&path[0]);
+			FcChangeDir(p,&path[0]);
+		}
+	}
+	else
+	{
+		int q=fcBase+(cmd-CM_PANEL)/10;
+		int a=(cmd-CM_PANEL)%10;
+		if(a==PN_FULL)fcBrief[q]=0;
+		else if(a==PN_BRIEF)fcBrief[q]=1;
+		else if(a==PN_REVERSE)fcSort[q]=fcSort[q]^4;
+		else fcSort[q]=(fcSort[q]&4)|(a-PN_NAME);
+		FcReload(q);
+	}
+	FcClamp(fcBase);
+	FcClamp(fcBase+1);
+	ShowToggles();
+	return 1;
+}
+
+void TvAppCommand(int cmd)
+{
+	int top=TvTop();
+	// in front of the panels, Ctrl+R reads the directories again rather than replacing
+	if((top>=0)&&(tvWin[top].type==W_FC)&&(cmd==CM_REPLACE))
+	{
+		FcReloadBoth();
+		return;
+	}
+	// and F2 runs a command, as MC's F2 offers commands
+	if((top>=0)&&(tvWin[top].type==W_FC)&&(cmd==CM_SAVE))
+	{
+		FcPanelCommand(CM_RUN);
+		return;
+	}
+	if((top>=0)&&(top==hxWin)&&(cmd==CM_GOTO))
+	{
+		HxGoto(top);
+		return;
+	}
+	if(FcPanelCommand(cmd))return;
+	// the commands below that use the panels' directories take the front window's
+	if(FcTopC()>=0)FcSelect(FcTopC());
+	if(EdCommand(cmd))
+	{
+		if((cmd==CM_SAVE)||(cmd==CM_SAVEAS))FcReloadAll();
+		return;
+	}
+	if(cmd==CM_QUIT)FcQuit();
+	else if(cmd==CM_HELP)OpenHelp();
+	else if(cmd==CM_PREFS)RunPrefs();
+	else if(cmd==CM_THEMEED)
+	{
+		int r=TeRun(prefTheme);
+		if(r>=0)
+		{
+			prefTheme=r;
+			PrefsSave();
+		}
+	}
+	else if(cmd==CM_LINENUMS)
+	{
+		edLineNums=!edLineNums;
+		ShowToggles();
+		PrefsSave();
+	}
+	else if(cmd==CM_WRAP)
+	{
+		edWrap=!edWrap;
+		ShowToggles();
+		PrefsSave();
+	}
+	else if(cmd==CM_ABOUT)
+		TvMessage("About","t2fc, a two-panel file manager\nWritten in Scinc on the tui desktop",0);
+}
+
+// ---------------------------------------------------------------- main
+
+// A panel's menu: listing mode, sort keys, reverse. Returns its first item.
+int PanelMenu(char* title, int p)
+{
+	TvMenuAdd(title);
+	int first=tvNItem;
+	int base=CM_PANEL+p*10;
+	TvMenuItem("~F~ull listing","",base+PN_FULL,0);
+	TvMenuItem("~B~rief listing","",base+PN_BRIEF,0);
+	TvMenuItem("Sort by ~n~ame","",base+PN_NAME,0);
+	TvMenuItem("Sort by ~e~xtension","",base+PN_EXT,0);
+	TvMenuItem("Sort by ~s~ize","",base+PN_SIZE,0);
+	TvMenuItem("Sort by ~t~ime","",base+PN_TIME,0);
+	TvMenuItem("~R~everse order","",base+PN_REVERSE,0);
+	return first;
+}
+
+int main(int argc, pchar* argv)
+{
+	if(!TvStart(CM_QUIT))return 1;
+	EdInit();
+	FcInitState();
+	char left[FC_PATH];
+	char right[FC_PATH];
+	StrCpy(&left[0],".",FC_PATH);
+	fs_home(&right[0],FC_PATH);
+	PrefsLoad(&left[0],&right[0]);
+	if(argc>1)StrCpy(&left[0],argv[1],FC_PATH);
+	if(argc>2)StrCpy(&right[0],argv[2],FC_PATH);
+	TeLoadThemes();
+	if(prefTheme>=teThN)prefTheme=0;
+	TeUseTheme(prefTheme);
+
+	itemPanel[0]=PanelMenu("~L~eft",0);
+	TvMenuAdd("~F~ile");
+	TvMenuItem("~V~iew","F3",CM_VIEW,0);
+	TvMenuItem("~E~dit","F4",CM_EDIT,0);
+	TvMenuItem("~N~ew file...","Shift+F4",CM_NEWFILE,0);
+	TvMenuItem("~C~opy...","F5",CM_FCOPY,0);
+	TvMenuItem("Rename or ~m~ove...","F6",CM_MOVE,0);
+	TvMenuItem("Rena~m~e...","Shift+F6",CM_RENAME,0);
+	TvMenuItem("Make ~d~irectory...","F7",CM_MKDIR,0);
+	TvMenuItem("De~l~ete...","F8",CM_DELETE,0);
+	TvMenuItem("~H~ex view","",CM_HEXVIEW,0);
+	TvMenuLine();
+	TvMenuItem("~S~elect group...","+",CM_SELGROUP,0);
+	TvMenuItem("~U~nselect group...","-",CM_UNSELGROUP,0);
+	TvMenuItem("~I~nvert selection","*",CM_INVERT,0);
+	TvMenuLine();
+	TvMenuItem("~S~ave","F2",CM_SAVE,K_F2);
+	TvMenuItem("Save ~a~s...","",CM_SAVEAS,0);
+	TvMenuLine();
+	TvMenuItem("E~x~it","Alt+X",CM_QUIT,K_ALT+'x');
+	TvMenuAdd("~C~ommand");
+	TvMenuItem("~R~un...","F2",CM_RUN,0);
+	TvMenuItem("Open ~w~ith the desktop","",CM_OPENSYS,0);
+	TvMenuLine();
+	TvMenuItem("~S~wap panels","Ctrl+U",CM_SWAP,0);
+	TvMenuItem("~O~ther panel here","Alt+I",CM_SAMEDIR,0);
+	TvMenuItem("~C~ompare directories","",CM_COMPARE,0);
+	TvMenuItem("R~e~read","Ctrl+R",CM_REREAD,0);
+	TvMenuLine();
+	TvMenuItem("~H~ome directory","",CM_HOME,0);
+	TvMenuItem("~G~o to directory...","",CM_GODIR,0);
+	TvMenuAdd("~E~dit");
+	TvMenuItem("~U~ndo","Ctrl+Z",CM_UNDO,26);
+	TvMenuItem("~R~edo","Ctrl+Y",CM_REDO,25);
+	TvMenuLine();
+	TvMenuItem("Cu~t~","Ctrl+X",CM_CUT,24);
+	TvMenuItem("~C~opy","Ctrl+C",CM_COPY,3);
+	TvMenuItem("~P~aste","Ctrl+V",CM_PASTE,22);
+	TvMenuItem("Select ~a~ll","Ctrl+A",CM_SELALL,1);
+	TvMenuLine();
+	TvMenuItem("~F~ind...","Ctrl+F",CM_FIND,6);
+	TvMenuItem("Find ~n~ext","Ctrl+L",CM_FINDNEXT,12);
+	TvMenuItem("R~e~place...","Ctrl+R",CM_REPLACE,18);
+	TvMenuItem("~G~o to line...","Ctrl+G",CM_GOTO,7);
+	TvMenuItem("~M~atching bracket","Ctrl+B",CM_MATCH,2);
+	TvMenuAdd("~O~ptions");
+	TvMenuItem("~P~references...","",CM_PREFS,0);
+	TvMenuItem("~T~heme editor...","",CM_THEMEED,0);
+	TvMenuLine();
+	TvMenuItem("~H~idden files","Alt+.",CM_HIDDEN,0);
+	itemHidden=tvNItem-1;
+	TvMenuItem("~L~ine numbers","off",CM_LINENUMS,0);
+	itemLineNums=tvNItem-1;
+	TvMenuItem("~W~ord wrap","off",CM_WRAP,0);
+	itemWrap=tvNItem-1;
+	itemPanel[1]=PanelMenu("~R~ight",1);
+	TvMenuAdd("~W~indow");
+	TvMenuItem("Ne~w~ panels","Ctrl+N",CM_NEWPANELS,14);
+	TvMenuLine();
+	TvMenuItem("~Z~oom","",CM_ZOOM,0);
+	TvMenuItem("~N~ext","",CM_NEXT,0);
+	TvMenuItem("~P~revious","",CM_PREV,0);
+	TvMenuItem("~C~lose","Ctrl+W",CM_CLOSE,23);
+	TvMenuLine();
+	TvMenuItem("C~a~scade","",CM_CASCADE,0);
+	TvMenuItem("~T~ile","",CM_TILE,0);
+	TvMenuItem("~L~ist...","Alt+0",CM_WINLIST,K_ALT+'0');
+	TvWindowsMenu("Wi~n~dows");
+	TvMenuAdd("~H~elp");
+	TvMenuItem("~K~eys and mouse","F1",CM_HELP,K_F1);
+	TvMenuItem("~A~bout...","",CM_ABOUT,0);
+
+	popPanel=TvPopupAdd();
+	TvMenuItem("R~u~n...","F2",CM_RUN,0);
+	TvMenuItem("~O~pen with the desktop","",CM_OPENSYS,0);
+	TvMenuItem("~V~iew","F3",CM_VIEW,0);
+	TvMenuItem("~E~dit","F4",CM_EDIT,0);
+	TvMenuItem("~C~opy...","F5",CM_FCOPY,0);
+	TvMenuItem("~M~ove...","F6",CM_MOVE,0);
+	TvMenuItem("~R~ename...","Shift+F6",CM_RENAME,0);
+	TvMenuItem("~D~elete...","F8",CM_DELETE,0);
+	TvMenuLine();
+	TvMenuItem("~H~ex view","",CM_HEXVIEW,0);
+	TvMenuItem("Make director~y~...","F7",CM_MKDIR,0);
+	popEdit=TvPopupAdd();
+	TvMenuItem("~U~ndo","Ctrl+Z",CM_UNDO,0);
+	TvMenuItem("~R~edo","Ctrl+Y",CM_REDO,0);
+	TvMenuLine();
+	TvMenuItem("Cu~t~","Ctrl+X",CM_CUT,0);
+	TvMenuItem("~C~opy","Ctrl+C",CM_COPY,0);
+	TvMenuItem("~P~aste","Ctrl+V",CM_PASTE,0);
+	TvMenuItem("Select ~a~ll","Ctrl+A",CM_SELALL,0);
+	TvMenuLine();
+	TvMenuItem("~F~ind...","Ctrl+F",CM_FIND,0);
+	TvMenuItem("~G~o to line...","Ctrl+G",CM_GOTO,0);
+	TvMenuLine();
+	TvMenuItem("C~l~ose","Ctrl+W",CM_CLOSE,0);
+
+	// the F keys of the panels are read by the panel window, so that view and edit
+	// windows keep their own; a click on these works anywhere
+	TvStatusAdd("~F2~ Run",CM_RUN,0);
+	TvStatusAdd("~F3~ View",CM_VIEW,0);
+	TvStatusAdd("~F4~ Edit",CM_EDIT,0);
+	TvStatusAdd("~F5~ Copy",CM_FCOPY,0);
+	TvStatusAdd("~F6~ Move",CM_MOVE,0);
+	TvStatusAdd("~F7~ Mkdir",CM_MKDIR,0);
+	TvStatusAdd("~F8~ Delete",CM_DELETE,0);
+	TvStatusAdd("~F10~ Menu",CM_MENU,0);
+	TvStatusAdd("~Alt+X~ Quit",CM_QUIT,17); // Ctrl+Q quits too
+
+	int first=FcOpen(&left[0],&right[0],-1);
+	if(first>=0)TvZoom(fcWinOf[first]);
+	ShowToggles();
+	FcTickRate();
+
+	TvRun(-1);
+	TvStop();
+	return 0;
+}

@@ -1,23 +1,28 @@
-// Three more desktop applications:
-//   Sonar       a mine-charting game: numbers count the mines around a cell, buoys mark
-//               them, and three sonar pings per game reveal a 3x3 patch safely
-//   Hex viewer  the bytes of any file, with offsets and the ASCII column
-//   ANSI paint  a 76x16 picture of coloured characters, saved and loaded as .ans
+// Four more desktop applications:
+//   Sonar         a mine-charting game: numbers count the mines around a cell, buoys mark
+//                 them, and three sonar pings per game reveal a 3x3 patch safely
+//   Hex viewer    the bytes of any file, with offsets and the ASCII column
+//   ANSI paint    a 76x16 picture of coloured characters, saved and loaded as .ans
+//   Theme editor  the colours of every part of the desktop, kept as named themes
 //
-// It uses ToyRandom from tvtoys.h, and the program routes the hooks of these windows.
+// Sonar uses ToyRandom from tvtoys.h, and the program routes the hooks of these windows.
+// A program that defines TVAPPS_TOOLS before including this gets only the hex viewer
+// and the theme editor, without tvtoys.h (../t2fc does). TE_FILE may name the themes
+// file elsewhere.
 #ifndef TVAPPS_H
 #define TVAPPS_H
 
 // guarded here too: Scinc reads a header again on every #include, and it can only
 // read 16 files in all
 #ifndef TV_H
-#include "tv.h"
+#include "../tui/tv.h"
 #endif
 
 #define W_SONAR 43
 #define W_HEX 44
 #define W_PAINT 45
 
+#ifndef TVAPPS_TOOLS
 // ---------------------------------------------------------------- Sonar
 
 #define SN_N 480
@@ -441,6 +446,8 @@ int SnMouse(int win, int ev, int x, int y)
 	return 1;
 }
 
+#endif // TVAPPS_TOOLS
+
 // ---------------------------------------------------------------- hex viewer
 
 #define HX_MAX 16777216
@@ -688,6 +695,7 @@ int HxMouse(int win, int ev, int x, int y)
 	return 1;
 }
 
+#ifndef TVAPPS_TOOLS
 // ---------------------------------------------------------------- ANSI paint
 
 #define PT_W 76
@@ -803,6 +811,7 @@ void PtOpen()
 void PtDraw(int win)
 {
 	TWin& t=tvWin[win];
+	tvWinDirty[win]=ptMod;   // for the window list
 	int x0=t.x+1;
 	int y0=t.y+1;
 	for(int y=0;y<PT_H;y++)
@@ -1297,6 +1306,8 @@ int PtCanClose(int win)
 	return r==1;
 }
 
+#endif // TVAPPS_TOOLS
+
 // ---------------------------------------------------------------- theme editor
 
 // Edits tv.h's custom theme: the colours of every role (menus, windows, dialogs,
@@ -1323,8 +1334,12 @@ int PtCanClose(int win)
 #define CM_TESAVE 316
 #define CM_TESAVEAS 317
 #define W_TENAME 48
+#ifndef TE_OLDFILE
 #define TE_OLDFILE "tvtheme.cfg"   // the one custom theme of before
+#endif
+#ifndef TE_FILE
 #define TE_FILE "tvthemes.cfg"
+#endif
 #define TE_MAXTH 16
 #define TE_VALS 149                // 33+R_N*2: depth, palette, roles
 #define TE_NAMELEN 32
