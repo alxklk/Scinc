@@ -176,6 +176,14 @@ Clicking a column title sorts by it; the Left and Right menus choose full or
 brief listings, quick view and the sort order, and Command > Compare directories
 marks the files that differ.
 
+The status line follows the front window: the panels' F keys, a view or edit
+window's, a picture window's, a dialog's. A click on a key there does what the key
+does (tv.h: `TvStatusFor(context)` before `TvStatusAdd`, where the context is a
+window type or `TV_ST_DESK`, `TV_ST_DIALOG`, `TV_ST_OTHER`, `TV_ST_ALL`, and the
+`TvAppStatus` hook can name the front window's own). The graphic and OpenGL
+versions need a local desktop; without one, over ssh for instance, they say so and
+name `t2fc.cpp` to run instead.
+
 **Pictures.** F3 on a picture opens a picture window, and quick view shows the
 picture under the other panel's cursor. In a terminal they are drawn as tvdemo's
 Mandelbrot is, two pixels a character cell with half blocks, in 24-bit colour

@@ -23,6 +23,7 @@
 #define TVAPP_CANCLOSE
 #define TVAPP_PASTE
 #define TVAPP_TICK
+#define TV_TERM_HINT "Scinc tvdemo.cpp"
 #include "tv.h"
 #include "tvapp.h"
 #include "tvedit.h"
@@ -1790,10 +1791,62 @@ int main(int argc, pchar* argv)
 	TvMenuLine();
 	TvMenuItem("~P~references...","",CM_PREFS,0);
 
+	// the status line shows the main keys of the front window: items after
+	// TvStatusFor(type) show for that window type, TV_ST_OTHER ones for the rest. A
+	// key given with a command works everywhere, as a menu item's does.
+	TvStatusFor(TV_ST_OTHER);
 	TvStatusAdd("~F1~ Help",CM_HELP,0);
 	TvStatusAdd("~F2~ Save",CM_SAVE,K_F2);
 	TvStatusAdd("~F3~ Open",CM_OPEN,15); // Ctrl+O opens too
 	TvStatusAdd("~F6~ Next",CM_NEXT,0);
+	TvStatusFor(W_VIEW);
+	TvStatusAdd("~F2~ Save",CM_SAVE,0);
+	TvStatusAdd("~Ctrl+F~ Find",CM_FIND,0);
+	TvStatusAdd("~Ctrl+L~ Next",CM_FINDNEXT,0);
+	TvStatusAdd("~Ctrl+R~ Replace",CM_REPLACE,0);
+	TvStatusAdd("~Ctrl+G~ Line",CM_GOTO,0);
+	TvStatusFor(W_MANDEL);
+	TvStatusAdd("~+~ In",0,'+');
+	TvStatusAdd("~-~ Out",0,'-');
+	TvStatusAdd("~[~ ~]~ Iterations",0,0);
+	TvStatusAdd("~P~ Palette",0,'p');
+	TvStatusAdd("~Home~ Reset",0,K_HOME);
+	TvStatusFor(W_LIFE);
+	TvStatusAdd("~Space~ Run",0,' ');
+	TvStatusAdd("~N~ Step",0,'n');
+	TvStatusAdd("~C~ Clear",0,'c');
+	TvStatusAdd("~R~ Random",0,'r');
+	TvStatusAdd("~+~ ~-~ Speed",0,0);
+	TvStatusAdd("~1~-~4~ Shapes",0,0);
+	TvStatusFor(W_SONAR);
+	TvStatusAdd("~B~ Buoy",0,'b');
+	TvStatusAdd("~P~ Ping",0,'p');
+	TvStatusAdd("~N~ New",0,'n');
+	TvStatusAdd("~1~-~3~ Size",0,0);
+	TvStatusFor(W_CIRCUIT);
+	TvStatusAdd("~N~ New",0,'n');
+	TvStatusAdd("~M~ Mode",0,'m');
+	TvStatusAdd("~P~ Pause",0,'p');
+	TvStatusFor(W_SAVER);
+	TvStatusAdd("~Space~ Next",0,' ');
+	TvStatusAdd("~1~-~9~ Pick",0,0);
+	TvStatusFor(W_HEX);
+	TvStatusAdd("~G~ Go to",0,'g');
+	TvStatusAdd("~PgUp~ ~PgDn~ Page",0,0);
+	TvStatusFor(W_PAINT);
+	TvStatusAdd("~Tab~ Tool",0,K_TAB);
+	TvStatusAdd("~Ctrl+Z~ Undo",CM_UNDO,0);
+	TvStatusAdd("~F2~ Save",CM_SAVE,0);
+	TvStatusAdd("~F3~ Open",CM_OPEN,0);
+	TvStatusFor(W_CAL);
+	TvStatusAdd("~PgUp~ Earlier",0,K_PGUP);
+	TvStatusAdd("~PgDn~ Later",0,K_PGDN);
+	TvStatusFor(TV_ST_DIALOG);
+	TvStatusAdd("~Tab~ Next field",0,K_TAB);
+	TvStatusAdd("~Space~ Toggle",0,' ');
+	TvStatusAdd("~Enter~ OK",0,K_ENTER);
+	TvStatusAdd("~Esc~ Cancel",0,K_ESC);
+	TvStatusFor(TV_ST_ALL);
 	TvStatusAdd("~F10~ Menu",CM_MENU,0);
 	TvStatusAdd("~Alt+X~ Exit",CM_QUIT,17); // Ctrl+Q quits too
 

@@ -1,7 +1,7 @@
 // The parts of a tv.h program that are the same in every program: empty hooks for
 // the ones it does not need, and starting and stopping the desktop.
 //
-// tv.h calls ten TvApp* hooks. A program writes only those it uses and says so
+// tv.h calls twelve TvApp* hooks. A program writes only those it uses and says so
 // with a TVAPP_* define before including this file, for example
 //
 //   #define TVAPP_DRAW
@@ -49,6 +49,13 @@ int TvAppPaste(int win, char* s, int n){return 0;}
 #endif
 #ifndef TVAPP_TICK
 void TvAppTick(){}
+#endif
+#ifndef TVAPP_STATUS
+int TvAppStatus(int win)
+{
+	if(tvWin[win].modal)return TV_ST_DIALOG;
+	return tvWin[win].type;
+}
 #endif
 #ifndef TVAPP_PIXELS
 void TvAppPixels(int id, int* buf, int fullW, int fullH, int ox, int oy, int w, int h){}

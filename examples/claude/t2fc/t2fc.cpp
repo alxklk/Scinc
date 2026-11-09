@@ -29,6 +29,8 @@
 #define TVAPP_PASTE
 #define TVAPP_TICK
 #define TVAPP_PIXELS
+#define TVAPP_STATUS
+#define TV_TERM_HINT "Scinc t2fc.cpp"
 #include "../tui/tv.h"
 #include "../tui/tvapp.h"
 #include "../tui/tvedit.h"
@@ -1516,6 +1518,7 @@ void FcEditorTitle(int win)
 // ---------------------------------------------------------------- picture windows
 
 #define W_PIC 64
+#define ST_VIEWER 1000 // the status line context of view windows
 
 int pvPanel[TV_MAXWIN];      // the panel a picture window came from
 int pvDragX=0;
@@ -2580,6 +2583,15 @@ int TvAppKey(int win, int key)
 	return 0;
 }
 
+// The status line context of a window: view windows have their own keys.
+int TvAppStatus(int win)
+{
+	TWin& t=tvWin[win];
+	if(t.modal)return TV_ST_DIALOG;
+	if((t.type==W_VIEW)&&fcView[win])return ST_VIEWER;
+	return t.type;
+}
+
 int TvAppMouse(int win, int ev, int x, int y)
 {
 	TWin& t=tvWin[win];
@@ -3046,8 +3058,10 @@ int main(int argc, pchar* argv)
 	TvMenuLine();
 	TvMenuItem("C~l~ose","Ctrl+W",CM_CLOSE,0);
 
-	// the F keys of the panels are read by the panel window, so that view and edit
-	// windows keep their own; a click on these works anywhere
+	// the status line shows the main keys of the front window (TvAppStatus). The F
+	// keys of the panels are read by the panel window, so that view and edit windows
+	// keep their own.
+	TvStatusFor(W_FC);
 	TvStatusAdd("~F2~ Run",CM_RUN,0);
 	TvStatusAdd("~F3~ View",CM_VIEW,0);
 	TvStatusAdd("~F4~ Edit",CM_EDIT,0);
@@ -3055,6 +3069,38 @@ int main(int argc, pchar* argv)
 	TvStatusAdd("~F6~ Move",CM_MOVE,0);
 	TvStatusAdd("~F7~ Mkdir",CM_MKDIR,0);
 	TvStatusAdd("~F8~ Delete",CM_DELETE,0);
+	TvStatusFor(ST_VIEWER);
+	TvStatusAdd("~F3~ Close",0,K_F3);
+	TvStatusAdd("~F4~ Edit",0,K_F4);
+	TvStatusAdd("~Ctrl+F~ Find",CM_FIND,0);
+	TvStatusAdd("~Ctrl+L~ Next",CM_FINDNEXT,0);
+	TvStatusAdd("~Ctrl+G~ Line",CM_GOTO,0);
+	TvStatusFor(W_VIEW);
+	TvStatusAdd("~F2~ Save",CM_SAVE,0);
+	TvStatusAdd("~Ctrl+Z~ Undo",CM_UNDO,0);
+	TvStatusAdd("~Ctrl+F~ Find",CM_FIND,0);
+	TvStatusAdd("~Ctrl+R~ Replace",CM_REPLACE,0);
+	TvStatusAdd("~Ctrl+G~ Line",CM_GOTO,0);
+	TvStatusFor(W_PIC);
+	TvStatusAdd("~+~ In",0,'+');
+	TvStatusAdd("~-~ Out",0,'-');
+	TvStatusAdd("~0~ Fit",0,'0');
+	TvStatusAdd("~1~ 1:1",0,'1');
+	TvStatusAdd("~Space~ Next",0,' ');
+	TvStatusAdd("~Bksp~ Prev",0,K_BACKSPACE);
+	TvStatusAdd("~R~ Turn",0,'r');
+	TvStatusAdd("~F3~ Close",0,K_F3);
+	TvStatusFor(W_HEX);
+	TvStatusAdd("~G~ Go to",0,'g');
+	TvStatusAdd("~PgUp~ ~PgDn~ Page",0,0);
+	TvStatusAdd("~F3~ Close",0,K_F3);
+	TvStatusFor(TV_ST_DESK);
+	TvStatusAdd("~Ctrl+N~ Panels",CM_NEWPANELS,0);
+	TvStatusFor(TV_ST_DIALOG);
+	TvStatusAdd("~Tab~ Next field",0,K_TAB);
+	TvStatusAdd("~Enter~ OK",0,K_ENTER);
+	TvStatusAdd("~Esc~ Cancel",0,K_ESC);
+	TvStatusFor(TV_ST_ALL);
 	TvStatusAdd("~F10~ Menu",CM_MENU,0);
 	TvStatusAdd("~Alt+X~ Quit",CM_QUIT,17); // Ctrl+Q quits too
 

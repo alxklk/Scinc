@@ -60,6 +60,14 @@
 #define G_SCREEN_MODE 1
 #define NO_GREEDY_EVENT
 #include "graphics.h"
+// ../../ws.h opens the window from a global initialiser, before main, so the check
+// for a display has to come first in the same way.
+int TvCheckDisplay()
+{
+	TvNeedDisplay();
+	return 1;
+}
+int gfxHasDisplay=TvCheckDisplay();
 #include "../../ws.h"
 #ifdef GFX_RASTER_ON
 #include "../tui/tvrmap.h"

@@ -28,6 +28,8 @@ int  TvAppPaste(int win, char* s, int n);            // return 1 if the pasted t
 void TvAppTick();                                    // called every tvTickMs while that is above 0
 void TvAppPixels(int id, int* buf, int fullW, int fullH, int ox, int oy, int w, int h);
                                                      // pixels for TvPixels, graphic backends only
+int  TvAppStatus(int win);                           // the status line context of the front
+                                                     // window (see TvStatusFor)
 
 // ---------------------------------------------------------------- keys and events
 
@@ -1994,7 +1996,7 @@ void TvDrawWin(int id)
 
 #define TV_MAXMENU 16
 #define TV_MAXITEM 128
-#define TV_MAXSTATUS 10
+#define TV_MAXSTATUS 96
 
 struct TMenu
 {
@@ -2018,7 +2020,19 @@ struct TStatus
 	char text[24];
 	int cmd;
 	int key;
+	int ctx;   // where it shows: a window type, a TV_ST_* context, or what TvAppStatus names
 };
+
+// Status line contexts. Items added after TvStatusFor(ctx) show only while the front
+// window's context is ctx; that is TvAppStatus(win), by default the window type, or
+// TV_ST_DIALOG for a modal dialog.
+#define TV_ST_ALL -1     // everywhere, but in modal dialogs that have items of their own
+#define TV_ST_DESK -2    // no window open
+#define TV_ST_DIALOG -3  // a modal dialog
+#define TV_ST_OTHER -4   // any context that has no items of its own
+int tvStatusFor=TV_ST_ALL;
+int tvStCtx=TV_ST_DESK; // the context the status line shows, from TvStatusUpdate
+int tvStOwn=0;          // that context has items of its own
 
 TMenu tvMenu[TV_MAXMENU];
 TItem tvItem[TV_MAXITEM];
@@ -2196,11 +2210,62 @@ void TvWinMenuFill()
 
 void TvStatusAdd(char* text, int cmd, int key)
 {
+	if(tvNStatus>=TV_MAXSTATUS)return;
 	TStatus& s=tvStatus[tvNStatus];
 	StrCpy(&s.text[0],text,24);
 	s.cmd=cmd;
 	s.key=key;
+	s.ctx=tvStatusFor;
 	tvNStatus++;
+}
+
+// The context of the status line items added from now on (TV_ST_ALL at the start).
+// An item with a command sends it when clicked, and its key sends it everywhere, as
+// a menu item's does. An item with no command names a key of the window: the key
+// goes to the window as usual, and a click on the item sends it there.
+void TvStatusFor(int ctx)
+{
+	tvStatusFor=ctx;
+}
+
+void TvStatusUpdate()
+{
+	int top=TvTop();
+	tvStCtx=TV_ST_DESK;
+	if(top>=0)tvStCtx=TvAppStatus(top);
+	tvStOwn=0;
+	for(int i=0;i<tvNStatus;i++)
+		if(tvStatus[i].ctx==tvStCtx)tvStOwn=1;
+}
+
+int TvStatusShown(int i);
+
+// The space between status line items: two, or one when they do not fit so.
+int TvStatusGap()
+{
+	int n=0;
+	int w=1;
+	for(int i=0;i<tvNStatus;i++)
+		if(TvStatusShown(i))
+		{
+			w=w+HotLen(&tvStatus[i].text[0]);
+			n++;
+		}
+	if(w+2*(n-1)>tvW)return 1;
+	return 2;
+}
+
+// 1 if status line item i shows now (after TvStatusUpdate).
+int TvStatusShown(int i)
+{
+	int c=tvStatus[i].ctx;
+	if(c==tvStCtx)return 1;
+	if(tvStCtx==TV_ST_DIALOG)
+		if(tvStOwn)return 0;
+	if(c==TV_ST_ALL)return 1;
+	if(c==TV_ST_OTHER)
+		if(!tvStOwn)return 1;
+	return 0;
 }
 
 int TvMenuX(int n)
@@ -2370,9 +2435,12 @@ void TvDrawStatus()
 {
 	TvClip(0,0,tvW,tvH);
 	TvFill(0,tvH-1,tvW,1,' ',A_STATUS);
+	TvStatusUpdate();
+	int gap=TvStatusGap();
 	int x=1;
 	for(int i=0;i<tvNStatus;i++)
 	{
+		if(!TvStatusShown(i))continue;
 		int at=A_STATUS;
 		int hot=A_STATUS_HOT;
 		if((dragMode==8)&&(dragCtl==i)&&pressedInside)
@@ -2381,7 +2449,7 @@ void TvDrawStatus()
 			hot=A_STATUS_SELHOT;
 		}
 		x=TvHotText(x,tvH-1,&tvStatus[i].text[0],at,hot);
-		x=x+2;
+		x=x+gap;
 	}
 }
 
@@ -2552,6 +2620,27 @@ void DecodeCSI()
 
 // TV_GL (with TV_GFX) picks the OpenGL backend instead of the Graph one. The
 // choice is made with a marker, since #ifdef blocks must not nest here.
+#ifdef TV_GFX
+#ifndef TV_TERM_HINT
+#define TV_TERM_HINT "the terminal build of this program"
+#endif
+// Leaves at once, with a word on what to run instead, when there is no display to
+// open the window on: over ssh, or on a text console. A shared memory or OpenGL
+// window does not work across the network even with X11 forwarding.
+void TvNoDisplay(char* why)
+{
+	printf("%s\n",why);
+	printf("This build draws in a window, so it needs a local graphic desktop; over ssh\n");
+	printf("or on a text console run " TV_TERM_HINT " instead.\n");
+	exit(1);
+}
+
+void TvNeedDisplay()
+{
+	if(!run_has_display())TvNoDisplay("No graphic display: neither DISPLAY nor WAYLAND_DISPLAY is set.");
+}
+#endif
+
 #ifdef TV_GFX
 #define TV_GFX_GRAPH
 #endif
@@ -3432,15 +3521,35 @@ int TvFramePart(int win, int x, int y)
 	return 0;
 }
 
+void TvKey();
+
+// A click on status line item i: its command, or its key to the front window.
+void TvStatusPress(int i)
+{
+	TStatus& s=tvStatus[i];
+	if(s.cmd!=0)
+	{
+		TvCommand(s.cmd);
+		return;
+	}
+	if(s.key==0)return;
+	evKey=s.key;
+	evMod=0;
+	TvKey();
+}
+
 // The status line item at column x, or -1.
 int TvStatusAt(int x)
 {
+	TvStatusUpdate();
+	int gap=TvStatusGap();
 	int sx=1;
 	for(int i=0;i<tvNStatus;i++)
 	{
+		if(!TvStatusShown(i))continue;
 		int l=HotLen(&tvStatus[i].text[0]);
 		if((x>=sx)&&(x<sx+l))return i;
-		sx=sx+l+2;
+		sx=sx+l+gap;
 	}
 	return -1;
 }
@@ -3507,7 +3616,7 @@ void TvMouse()
 				}
 			if(mode==8)
 			{
-				if(evY==tvH-1)TvCommand(tvStatus[ctl].cmd);
+				if(evY==tvH-1)TvStatusPress(ctl);
 			}
 			return;
 		}
@@ -3598,8 +3707,10 @@ void TvMouse()
 	}
 	if(evY==tvH-1)
 	{
-		if(modal)return;
 		int item=TvStatusAt(evX);
+		if(item>=0)
+			if(modal)
+				if(tvStatus[item].cmd!=0)item=-1;
 		if(item>=0)
 		{
 			dragMode=8;
@@ -3711,7 +3822,7 @@ void TvKey()
 			}
 		}
 		for(int i=0;i<tvNStatus;i++)
-			if((tvStatus[i].key!=0)&&(tvStatus[i].key==key))
+			if((tvStatus[i].cmd!=0)&&(tvStatus[i].key!=0)&&(tvStatus[i].key==key))
 			{
 				TvCommand(tvStatus[i].cmd);
 				return;
@@ -4080,6 +4191,7 @@ void TvInit()
 	TvInitRgb256();
 	tvLastInput=term_ms();
 #ifdef TV_GFX
+	TvNeedDisplay();
 	GfxInit();
 	tvW=GfxCols();
 	tvH=GfxRows();

@@ -386,12 +386,13 @@ void GlTitle()
 void GfxInit()
 {
 	if(!glwInit(TV_GFX_COLS*GL_W*glScale,TV_GFX_ROWS*GL_H*glScale,TV_GL_TITLE))
-	{
-		printf("tvgl.h: cannot open the OpenGL window\n");
-		return;
-	}
+		TvNoDisplay("tvgl.h: cannot open the OpenGL window.");
 	glProg=glwCreateProgram(glVS,glFS);
-	if(!glProg)return;
+	if(!glProg)
+	{
+		printf("tvgl.h: cannot build the OpenGL shader\n");
+		exit(1);
+	}
 	glOk=1;
 	glUAtlas=glGetUniformLocation(glProg,"atlas");
 	glUCells=glGetUniformLocation(glProg,"cells");
