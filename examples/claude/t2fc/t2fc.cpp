@@ -1,12 +1,13 @@
 // t2fc: a two-panel file manager on the Turbo Vision style desktop of ../tui.
 // Each panel window holds two file panels in the manner of Midnight Commander (Ctrl+N
 // opens another). F3 views a file (text in a read-only editor window, binary in the
-// hex viewer), F4 edits it in the tui editor, F5-F8 copy, move, make directories and
+// hex viewer, pictures in a picture window), F4 edits it in the tui editor, F5-F8 copy, move, make directories and
 // delete, with progress, and F2 or Enter on an executable runs a program: on the
 // terminal itself, or in a new terminal window when t2fc draws in a graphic window.
 // The editor, hex viewer, theme editor and dialogs all come from ../tui.
 //
 //   (cd ../tui && ./build_so.sh)       once, builds the terminal and file library
+//   ./build_so.sh                       once, builds the picture decoder img_dl.so
 //   Scinc t2fc.cpp [left [right]]       from this folder, in a terminal
 //
 // t2fc_gfx.cpp, t2fc_raster.cpp and t2fc_small.cpp draw the same desktop in a graphic
@@ -84,6 +85,7 @@ typedef char* pchar;
 #define PN_SIZE 4
 #define PN_TIME 5
 #define PN_REVERSE 6
+#define PN_QUICK 7
 
 #define FC_PATH 1024
 #define CFG_FILE "t2fc.cfg"
@@ -297,8 +299,11 @@ int FcLoad(int p, char* path, char* selectName)
 
 // Lists the panel's directory again, keeping the cursor on the same name, or goes
 // up until a directory can be read if this one is gone.
+void FcQForget(int p);
+
 void FcReload(int p)
 {
+	FcQForget(p);
 	char keep[256];
 	FcName(p,fcCur[p],&keep[0]);
 	char path[FC_PATH];
@@ -446,6 +451,444 @@ void FcRight(int x, int y, char* s, int at, int w)
 	TvTextN(x+w-n,y,s,at,n);
 }
 
+// ---------------------------------------------------------------- pictures
+
+// img_dl.so (build_so.sh here) decodes pictures on threads of its own and draws them
+// straight into the screen arrays as half-block cells, two pixels a cell. A picture
+// lives in a slot: a picture window uses its window's number, the quick view of
+// panel p uses 16+p.
+#define IMG_DL "img_dl"
+int StrCmp(char* a, char* b);
+[[scinc::dynlink(IMG_DL,"img_is_wrapper")]]int img_is(char* path);
+[[scinc::dynlink(IMG_DL,"img_open_wrapper")]]int img_open(int s, char* path);
+[[scinc::dynlink(IMG_DL,"img_free_wrapper")]]void img_free(int s);
+[[scinc::dynlink(IMG_DL,"img_state_wrapper")]]int img_state(int s);
+[[scinc::dynlink(IMG_DL,"img_error_wrapper")]]void img_error(int s, char* buf, int max);
+[[scinc::dynlink(IMG_DL,"img_format_wrapper")]]void img_format(int s, char* buf, int max);
+[[scinc::dynlink(IMG_DL,"img_info_wrapper")]]int img_info(int s, int k);
+[[scinc::dynlink(IMG_DL,"img_delay_wrapper")]]int img_delay(int s, int f);
+[[scinc::dynlink(IMG_DL,"img_rotate_wrapper")]]void img_rotate(int s);
+[[scinc::dynlink(IMG_DL,"img_draw_wrapper")]]int img_draw(int s, int f, float cx, float cy, float scale, float aspect, int x0, int y0, int cw, int ch, int* cells, int* attrs, int stride, int clx0, int cly0, int clx1, int cly1, int uphalf, int bg);
+
+#define PV_SLOTS 32
+#define PV_QUICK 16          // the quick view slots start here
+
+int pvUsed[PV_SLOTS];
+int pvSeen[PV_SLOTS];        // the state of the slot when it was last drawn
+float pvCX[PV_SLOTS];        // the picture point in the middle of the view
+float pvCY[PV_SLOTS];
+float pvScale[PV_SLOTS];     // picture pixels per screen pixel; 0 fits the view
+int pvFrame[PV_SLOTS];       // the animation frame shown
+int pvNext[PV_SLOTS];        // and when the next one is due
+char pvPath[32768];          // PV_SLOTS paths of FC_PATH
+float pvAspect=1.;           // a screen pixel's width over its height: half a cell
+
+void PvInit()
+{
+	for(int s=0;s<PV_SLOTS;s++)
+	{
+		pvUsed[s]=0;
+		pvSeen[s]=0;
+		pvScale[s]=0.;
+		pvCX[s]=0.;
+		pvCY[s]=0.;
+		pvFrame[s]=0;
+		pvNext[s]=0;
+		pvPath[s*FC_PATH]=0;
+	}
+}
+
+char* PvPathOf(int s)
+{
+	return &pvPath[s*FC_PATH];
+}
+
+void FcTickRate();
+
+void PvOpen(int s, char* path)
+{
+	StrCpy(PvPathOf(s),path,FC_PATH);
+	img_open(s,path);
+	pvUsed[s]=1;
+	pvSeen[s]=-2;
+	pvScale[s]=0.;
+	pvFrame[s]=0;
+	pvNext[s]=0;
+	tvDirty=1;
+	FcTickRate();
+}
+
+void PvFree(int s)
+{
+	if(!pvUsed[s])return;
+	img_free(s);
+	pvUsed[s]=0;
+	pvPath[s*FC_PATH]=0;
+	FcTickRate();
+}
+
+// Some slot is decoding or shows an animation: the tick must come often.
+int PvBusy()
+{
+	for(int s=0;s<PV_SLOTS;s++)
+		if(pvUsed[s])
+		{
+			int st=img_state(s);
+			if(st==1)return 1;
+			if(st==2)
+				if(img_info(s,2)>1)return 1;
+		}
+	return 0;
+}
+
+// The scale that shows the whole picture in pw*ph screen pixels.
+float PvFit(int s, int pw, int ph)
+{
+	float sx=1.*img_info(s,0)/(pw*pvAspect);
+	float sy=1.*img_info(s,1)/ph;
+	if(sy>sx)return sy;
+	return sx;
+}
+
+// Keeps a zoomed picture covering the view, or centred where it is smaller.
+void PvClamp(int s, int pw, int ph)
+{
+	if(pvScale[s]==0.)return;
+	float w=1.*img_info(s,0);
+	float h=1.*img_info(s,1);
+	float hw=pw*pvScale[s]*pvAspect/2.;
+	float hh=ph*pvScale[s]/2.;
+	if(w<=2.*hw)pvCX[s]=w/2.;
+	else if(pvCX[s]<hw)pvCX[s]=hw;
+	else if(pvCX[s]>w-hw)pvCX[s]=w-hw;
+	if(h<=2.*hh)pvCY[s]=h/2.;
+	else if(pvCY[s]<hh)pvCY[s]=hh;
+	else if(pvCY[s]>h-hh)pvCY[s]=h-hh;
+}
+
+// Sets the scale keeping the picture point at screen pixel px,py where it is.
+void PvSetScale(int s, float scale, int px, int py, int pw, int ph)
+{
+	if(img_state(s)!=2)return;
+	float fit=PvFit(s,pw,ph);
+	float cur=pvScale[s];
+	if(cur==0.)
+	{
+		cur=fit;
+		pvCX[s]=img_info(s,0)/2.;
+		pvCY[s]=img_info(s,1)/2.;
+	}
+	float wx=pvCX[s]+(px-pw/2.)*cur*pvAspect;
+	float wy=pvCY[s]+(py-ph/2.)*cur;
+	if(scale<1./32.)scale=1./32.;
+	if(scale>=fit)
+	{
+		pvScale[s]=0.;
+		tvDirty=1;
+		return;
+	}
+	pvScale[s]=scale;
+	pvCX[s]=wx-(px-pw/2.)*scale*pvAspect;
+	pvCY[s]=wy-(py-ph/2.)*scale;
+	PvClamp(s,pw,ph);
+	tvDirty=1;
+}
+
+void PvZoom(int s, float f, int px, int py, int pw, int ph)
+{
+	float cur=pvScale[s];
+	if(cur==0.)cur=PvFit(s,pw,ph);
+	PvSetScale(s,cur/f,px,py,pw,ph);
+}
+
+// Moves a zoomed picture by dx,dy screen pixels.
+void PvPan(int s, int dx, int dy, int pw, int ph)
+{
+	if(pvScale[s]==0.)return;
+	pvCX[s]=pvCX[s]+dx*pvScale[s]*pvAspect;
+	pvCY[s]=pvCY[s]+dy*pvScale[s];
+	PvClamp(s,pw,ph);
+	tvDirty=1;
+}
+
+// "PNG 1920x1080", with the frame of an animation.
+void PvInfo(int s, char* out, int max)
+{
+	char fmt[16];
+	img_format(s,&fmt[0],16);
+	int n=img_info(s,2);
+	if(n>1)snprintf(out,max,"%s %ix%i, frame %i/%i",&fmt[0],img_info(s,0),img_info(s,1),pvFrame[s]+1,n);
+	else snprintf(out,max,"%s %ix%i",&fmt[0],img_info(s,0),img_info(s,1));
+}
+
+// Draws slot s into w*h cells at x,y: the picture, or why there is none yet.
+void PvDraw(int s, int x, int y, int w, int h)
+{
+	int st=img_state(s);
+	pvSeen[s]=st;
+	TvFill(x,y,w,h,' ',0x07);
+	if((w<1)||(h<1))return;
+	if(st==1)
+	{
+		char* msg="Loading...";
+		TvText(x+(w-StrLen(msg))/2,y+h/2,msg,0x07);
+		return;
+	}
+	if(st==-1)
+	{
+		char err[200];
+		img_error(s,&err[0],200);
+		FcCut(x+1,y+h/2,&err[0],0x0C,w-2);
+		return;
+	}
+	if(st!=2)return;
+	int pw=w;
+	int ph=h*2;
+	float scale=pvScale[s];
+	float cx=pvCX[s];
+	float cy=pvCY[s];
+	if(scale==0.)
+	{
+		scale=PvFit(s,pw,ph);
+		cx=img_info(s,0)/2.;
+		cy=img_info(s,1)/2.;
+	}
+	img_draw(s,pvFrame[s],cx,cy,scale,pvAspect,x,y,w,h,&tvCh[0],&tvAt[0],TV_MAXW,clipX0,clipY0,clipX1,clipY1,G_UPHALF,0);
+}
+
+// Notices finished decoding and moves animations on.
+void PvTick()
+{
+	int now=term_ms();
+	for(int s=0;s<PV_SLOTS;s++)
+		if(pvUsed[s])
+		{
+			int st=img_state(s);
+			if(st!=pvSeen[s])tvDirty=1;
+			if(st==2)
+			{
+				int n=img_info(s,2);
+				if((n>1)&&(now>=pvNext[s]))
+				{
+					if(pvNext[s]!=0)pvFrame[s]=(pvFrame[s]+1)%n;
+					pvNext[s]=now+img_delay(s,pvFrame[s]);
+					tvDirty=1;
+				}
+			}
+		}
+	FcTickRate();
+}
+
+// ---------------------------------------------------------------- quick view
+
+// A panel in quick view shows the file under the other panel's cursor: a picture,
+// the start of a text, a hex dump, or what a directory is.
+int fcQuick[FC_MAXP];
+char fcQPath[12288];        // FC_MAXP paths: what each quick view shows
+int fcQKind[FC_MAXP];       // 1 picture, 2 text, 3 binary, 4 directory, 5 unreadable
+char fcQText[16384];        // the start of the last text or binary file shown
+int fcQTextN=0;
+char fcQTextPath[FC_PATH];
+
+// Reads the start of a file into fcQText, unless it is there already.
+void FcQLoad(char* path)
+{
+	if(StrCmp(&fcQTextPath[0],path)==0)return;
+	fcQTextN=fs_load(path,&fcQText[0],16384);
+	StrCpy(&fcQTextPath[0],path,FC_PATH);
+}
+
+void FcQText(int x, int y, int w, int h)
+{
+	char line[600];
+	int i=0;
+	for(int r=0;r<h;r++)
+	{
+		if(i>=fcQTextN)return;
+		int n=0;
+		while((i<fcQTextN)&&(fcQText[i]!=10)&&(n<590))
+		{
+			int c=fcQText[i];
+			if(c==9)
+			{
+				line[n]=' ';
+				n++;
+				while((n%4)!=0)
+				{
+					line[n]=' ';
+					n++;
+				}
+			}
+			else
+			{
+				if((c>=0)&&(c<32))c='.';
+				line[n]=c;
+				n++;
+			}
+			i++;
+		}
+		// a long line is cut, and the rest of it skipped
+		while((i<fcQTextN)&&(fcQText[i]!=10))i++;
+		i++;
+		line[n]=0;
+		FcCut(x,y+r,&line[0],FC_FILE,w);
+	}
+}
+
+void FcQHex(int x, int y, int w, int h)
+{
+	int per=16;
+	if(w<76)per=8;
+	if(w<42)per=4;
+	char line[120];
+	char part[8];
+	for(int r=0;r<h;r++)
+	{
+		int o=r*per;
+		if(o>=fcQTextN)return;
+		snprintf(&line[0],120,"%06x ",o);
+		int n=StrLen(&line[0]);
+		for(int k=0;k<per;k++)
+		{
+			if(o+k<fcQTextN)snprintf(&part[0],8,"%02x ",fcQText[o+k]&255);
+			else StrCpy(&part[0],"   ",8);
+			StrCpy(&line[n],&part[0],4);
+			n=n+3;
+		}
+		for(int k=0;k<per;k++)
+			if(o+k<fcQTextN)
+			{
+				int c=fcQText[o+k]&255;
+				if((c<32)||(c>126))c='.';
+				line[n]=c;
+				n++;
+			}
+		line[n]=0;
+		FcCut(x,y+r,&line[0],FC_FILE,w);
+	}
+}
+
+// What the quick view of panel p should show now, worked out again only when the
+// other panel's cursor moves to another file.
+void FcQUpdate(int p, char* path, int isDir)
+{
+	char* was=&fcQPath[p*FC_PATH];
+	if(StrCmp(was,path)==0)return;
+	StrCpy(was,path,FC_PATH);
+	int kind=4;
+	if(!isDir)
+	{
+		if(img_is(path))kind=1;
+		else
+		{
+			fcQTextPath[0]=0;
+			FcQLoad(path);
+			kind=2;
+			if(fcQTextN<0)kind=5;
+			for(int i=0;i<fcQTextN;i++)
+				if(fcQText[i]==0)kind=3;
+		}
+	}
+	fcQKind[p]=kind;
+	if(kind==1)PvOpen(PV_QUICK+p,path);
+	else PvFree(PV_QUICK+p);
+}
+
+void FcDrawQuick(int p, int x, int y, int w, int h)
+{
+	int q=p^1;
+	TvFill(x,y,w,h,' ',FC_BG);
+	char* title=" Quick view ";
+	TvText(x+(w-StrLen(title))/2,y,title,FC_HEAD);
+	for(int k=0;k<w;k++)
+		TvPut(x+k,y+h-2,G_HORZ,FC_FRAME);
+	if(fcCount[q]==0)return;
+	char name[256];
+	char path[FC_PATH];
+	int isDir=FcName(q,fcCur[q],&name[0]);
+	FcJoin(&path[0],FcDirOf(q),&name[0]);
+	FcQUpdate(p,&path[0],isDir);
+	int kind=fcQKind[p];
+	int cy=y+1;
+	int chh=h-3;
+	char info[120];
+	info[0]=0;
+	if(kind==1)
+	{
+		int s=PV_QUICK+p;
+		PvDraw(s,x,cy,w,chh);
+		if(img_state(s)==2)PvInfo(s,&info[0],120);
+	}
+	else if(kind==2)
+	{
+		FcQLoad(&path[0]);
+		FcQText(x,cy,w,chh);
+		StrCpy(&info[0],"text",120);
+	}
+	else if(kind==3)
+	{
+		FcQLoad(&path[0]);
+		FcQHex(x,cy,w,chh);
+		StrCpy(&info[0],"binary",120);
+	}
+	else if(kind==5)
+	{
+		char err[300];
+		fs_error(&err[0],300);
+		FcCut(x+1,cy+1,&err[0],FC_FILE,w-2);
+	}
+	else
+	{
+		char* what="Directory";
+		if(FcIsUp(&name[0]))what="The parent directory";
+		TvText(x+1,cy+1,what,FC_DIR);
+		FcCut(x+1,cy+2,&name[0],FC_DIR,w-2);
+	}
+	// the name and what it is, on the mini status line
+	char foot[400];
+	if(info[0]!=0)snprintf(&foot[0],400,"%s  %s",&name[0],&info[0]);
+	else StrCpy(&foot[0],&name[0],400);
+	FcCut(x,y+h-1,&foot[0],FC_FILE,w);
+}
+
+void FcQInit()
+{
+	for(int p=0;p<FC_MAXP;p++)
+	{
+		fcQuick[p]=0;
+		fcQPath[p*FC_PATH]=0;
+		fcQKind[p]=0;
+	}
+	fcQTextPath[0]=0;
+	fcQTextN=0;
+}
+
+// Panel p was read again: its files may have changed under the other's quick view.
+void FcQForget(int p)
+{
+	fcQPath[(p^1)*FC_PATH]=0;
+	fcQTextPath[0]=0;
+}
+
+// Turns the quick view of panel p on or off. The other panel takes the keys.
+void FcSetQuick(int p, int on)
+{
+	if(on)
+	{
+		if(fcQuick[p^1])FcSetQuick(p^1,0);
+		fcQuick[p]=1;
+		fcQPath[p*FC_PATH]=0;
+		if(fcActive==p)FcSetActive(p^1);
+	}
+	else
+	{
+		fcQuick[p]=0;
+		fcQPath[p*FC_PATH]=0;
+		PvFree(PV_QUICK+p);
+	}
+	tvDirty=1;
+}
+
 // One entry in a cell w wide. The cursor bar spans the cell.
 void FcCell(int p, int i, int x, int y, int w, int sizeX, int timeX, int cursor)
 {
@@ -518,6 +961,11 @@ void FcColumns(int p, int x, int w, int& sizeX, int& timeX)
 
 void FcDrawPanel(int p, int x, int y, int w, int h)
 {
+	if(fcQuick[p])
+	{
+		FcDrawQuick(p,x,y,w,h);
+		return;
+	}
 	int active=(p==fcActive);
 	char* dir=FcDirOf(p);
 	// the path, its end if it is long
@@ -757,6 +1205,7 @@ int fcJobDone=0;           // 1 finished, 2 aborted
 void FcTickRate()
 {
 	int ms=1000;      // watch the directories for changes
+	if(PvBusy())ms=40;  // pictures being decoded, or animations
 	if(fcJobWin>=0)ms=15;
 	if(ms!=tvTickMs)
 	{
@@ -1030,6 +1479,177 @@ void FcEditorTitle(int win)
 	StrCpy(&t.title[0],&want[0],48);
 }
 
+// ---------------------------------------------------------------- picture windows
+
+#define W_PIC 64
+
+int pvPanel[TV_MAXWIN];      // the panel a picture window came from
+int pvDragX=0;
+int pvDragY=0;
+int pvClickMs=0;
+int pvClickWin=-1;
+
+// The picture window showing this file, or -1.
+int PicFind(char* path)
+{
+	for(int w=0;w<TV_MAXWIN;w++)
+		if(tvWin[w].used&&(tvWin[w].type==W_PIC))
+			if(StrCmp(PvPathOf(w),path)==0)return w;
+	return -1;
+}
+
+// Opens a picture window for a file of panel p.
+int PicOpen(char* path, int p)
+{
+	int win=PicFind(path);
+	if(win>=0)
+	{
+		TvToFront(win);
+		return win;
+	}
+	int w=tvW-4;
+	int h=tvH-3;
+	if(w<20)w=tvW;
+	win=TvNew(W_PIC,"Picture",(tvW-w)/2,1,w,h,WF_RESIZE);
+	if(win<0)
+	{
+		TvMessage("View","Too many windows are open.",0);
+		return -1;
+	}
+	pvPanel[win]=p;
+	PvOpen(win,path);
+	FcSetTitle(win,"Picture: ",path);
+	return win;
+}
+
+void PicDraw(int win)
+{
+	TWin& t=tvWin[win];
+	PvDraw(win,t.x+1,t.y+1,t.w-2,t.h-2);
+	if(img_state(win)!=2)return;
+	char info[120];
+	char s[160];
+	PvInfo(win,&info[0],120);
+	float scale=pvScale[win];
+	if(scale==0.)scale=PvFit(win,t.w-2,(t.h-2)*2);
+	int pct=(int)(100./scale+0.5);
+	if(pvScale[win]==0.)snprintf(&s[0],160," %s  %i%% fit ",&info[0],pct);
+	else snprintf(&s[0],160," %s  %i%% ",&info[0],pct);
+	TvClip(t.x,t.y,t.x+t.w-2,t.y+t.h);
+	TvText(t.x+2,t.y+t.h-1,&s[0],A_WIN_FRAME);
+}
+
+// Space and Backspace: the next or previous picture of the panel, whose cursor
+// follows.
+void PicStep(int win, int dir)
+{
+	int p=pvPanel[win];
+	int c=p/2;
+	if(fcWinOf[c]<0)return;
+	int keep=fcC;
+	FcSelect(c);
+	char name[256];
+	char path[FC_PATH];
+	int k=fcCur[p];
+	int found=-1;
+	while(found<0)
+	{
+		k=k+dir;
+		if((k<0)||(k>=fcCount[p]))break;
+		if(!FcName(p,k,&name[0]))
+		{
+			FcJoin(&path[0],FcDirOf(p),&name[0]);
+			if(img_is(&path[0]))found=k;
+		}
+	}
+	if(found>=0)
+	{
+		fcCur[p]=found;
+		FcClamp(p);
+		PvOpen(win,&path[0]);
+		FcSetTitle(win,"Picture: ",&path[0]);
+	}
+	FcSelect(keep);
+}
+
+int PicKey(int win, int key)
+{
+	TWin& t=tvWin[win];
+	int pw=t.w-2;
+	int ph=(t.h-2)*2;
+	int step=pw/8;
+	if(step<2)step=2;
+	if((key=='+')||(key=='='))PvZoom(win,1.5,pw/2,ph/2,pw,ph);
+	else if(key=='-')PvZoom(win,1./1.5,pw/2,ph/2,pw,ph);
+	else if((key=='0')||(key=='*')||(key=='f'))
+	{
+		pvScale[win]=0.;
+		tvDirty=1;
+	}
+	else if(key=='1')PvSetScale(win,1.,pw/2,ph/2,pw,ph);
+	else if(key=='2')PvSetScale(win,0.5,pw/2,ph/2,pw,ph);
+	else if(key==K_LEFT)PvPan(win,-step,0,pw,ph);
+	else if(key==K_RIGHT)PvPan(win,step,0,pw,ph);
+	else if(key==K_UP)PvPan(win,0,-step,pw,ph);
+	else if(key==K_DOWN)PvPan(win,0,step,pw,ph);
+	else if(key=='r')
+	{
+		img_rotate(win);
+		pvScale[win]=0.;
+		tvDirty=1;
+	}
+	else if((key==' ')||(key==K_PGDN))PicStep(win,1);
+	else if((key==K_BACKSPACE)||(key==K_PGUP))PicStep(win,-1);
+	else return 0;
+	return 1;
+}
+
+int PicMouse(int win, int ev, int x, int y)
+{
+	TWin& t=tvWin[win];
+	int pw=t.w-2;
+	int ph=(t.h-2)*2;
+	int px=x-1;
+	int py=(y-1)*2+1;
+	if(ev==EV_WHEEL)
+	{
+		if(evWheel>0)PvZoom(win,1.25,px,py,pw,ph);
+		else PvZoom(win,1./1.25,px,py,pw,ph);
+		return 1;
+	}
+	if(ev==EV_MDOWN)
+	{
+		if((px<0)||(px>=pw)||(py<0)||(py>=ph))return 0;
+		// a double click shows the pixels one to one there, or the whole picture again
+		int now=term_ms();
+		if((pvClickWin==win)&&(now-pvClickMs<400))
+		{
+			pvClickWin=-1;
+			if(pvScale[win]==0.)PvSetScale(win,1.,px,py,pw,ph);
+			else
+			{
+				pvScale[win]=0.;
+				tvDirty=1;
+			}
+			return 1;
+		}
+		pvClickWin=win;
+		pvClickMs=now;
+		pvDragX=x;
+		pvDragY=y;
+		TvCaptureMouse(win);
+		return 1;
+	}
+	if(ev==EV_MDRAG)
+	{
+		PvPan(win,pvDragX-x,(pvDragY-y)*2,pw,ph);
+		pvDragX=x;
+		pvDragY=y;
+		return 1;
+	}
+	return 0;
+}
+
 // F3: directories are entered, binary files go to the hex viewer, and text opens in a
 // read-only editor window.
 void FcViewPath(char* path)
@@ -1042,6 +1662,11 @@ void FcViewPath(char* path)
 		char err[300];
 		fs_error(&err[0],300);
 		TvMessage("View",&err[0],0);
+		return;
+	}
+	if(img_is(path))
+	{
+		PicOpen(path,fcActive);
 		return;
 	}
 	int binary=0;
@@ -1431,7 +2056,13 @@ int FcKey(int win, int key)
 	int rows=FcRows(p);
 	if(key==K_TAB)
 	{
-		FcSetActive(fcActive^1);
+		if(!fcQuick[fcActive^1])FcSetActive(fcActive^1);
+		return 1;
+	}
+	if(key==K_ALT+'q')
+	{
+		FcSetQuick(fcActive^1,!fcQuick[fcActive^1]);
+		ShowToggles();
 		return 1;
 	}
 	if(key==K_UP)fcCur[p]--;
@@ -1531,6 +2162,7 @@ int FcMouse(int win, int ev, int x, int y)
 	int part=0;
 	int k=FcHit(x,y,p,part);
 	if(p<0)return 1;
+	if(fcQuick[p])return 1;       // the quick view is not a list to click in
 	if(ev==EV_WHEEL)
 	{
 		fcCur[p]=fcCur[p]-evWheel*3;
@@ -1687,13 +2319,14 @@ void ShowToggles()
 	{
 		int it=itemPanel[side];
 		int p=base+side;
-		for(int k=0;k<6;k++)
+		for(int k=0;k<7;k++)
 			tvItem[it+k].hint[0]=0;
-		if(fcBrief[p])StrCpy(&tvItem[it+1].hint[0],"\xe2\x80\xa2",12);
+		if(fcQuick[p])StrCpy(&tvItem[it+2].hint[0],"\xe2\x80\xa2",12);
+		else if(fcBrief[p])StrCpy(&tvItem[it+1].hint[0],"\xe2\x80\xa2",12);
 		else StrCpy(&tvItem[it].hint[0],"\xe2\x80\xa2",12);
-		StrCpy(&tvItem[it+2+(fcSort[p]&3)].hint[0],"\xe2\x80\xa2",12);
-		if(fcSort[p]&4)StrCpy(&tvItem[it+6].hint[0],"on",12);
-		else StrCpy(&tvItem[it+6].hint[0],"off",12);
+		StrCpy(&tvItem[it+3+(fcSort[p]&3)].hint[0],"\xe2\x80\xa2",12);
+		if(fcSort[p]&4)StrCpy(&tvItem[it+7].hint[0],"on",12);
+		else StrCpy(&tvItem[it+7].hint[0],"off",12);
 	}
 }
 
@@ -1778,9 +2411,13 @@ void OpenHelp()
 		"  Alt+I                the other panel shows this directory\n"
 		"  Alt+.                show or hide hidden files\n"
 		"  Ctrl+N               another panel window (up to six)\n"
+		"  Alt+Q                quick view in the other panel: the\n"
+		"                       picture, text or hex dump of the file\n"
+		"                       under the cursor (Left, Right menus)\n"
 		"\n"
 		"Files (the marked ones, or the one under the cursor)\n"
-		"  F3                   view: text read-only, binary in hex\n"
+		"  F3                   view: pictures, text read-only, binary\n"
+		"                       in hex\n"
 		"  F4, Shift+F4         edit, edit a new file\n"
 		"  F5                   copy to the other panel\n"
 		"  F6, Shift+F6         move to the other panel, rename\n"
@@ -1798,6 +2435,17 @@ void OpenHelp()
 		"  Options > Preferences can name the terminal program.\n"
 		"  Command > Open with the desktop: the desktop's own program\n"
 		"  for the file (xdg-open)\n"
+		"\n"
+		"Picture windows\n"
+		"  + -, mouse wheel     zoom in, out\n"
+		"  0 or f, 1, 2         fit the window, pixels 1:1, 2:1\n"
+		"  arrows, drag         move a zoomed picture\n"
+		"  double click         1:1 there, or fit again\n"
+		"  Space, Backspace     the next, previous picture of the panel\n"
+		"  r                    turn a quarter clockwise\n"
+		"  F3, Esc              close\n"
+		"  PNG, JPEG, GIF (animated), WebP (animated), BMP, TGA, PSD,\n"
+		"  HDR and PNM; photos are turned upright by their EXIF data.\n"
 		"\n"
 		"View and edit windows\n"
 		"  F3, Esc              close a view window\n"
@@ -1858,6 +2506,7 @@ void TvAppDraw(int win)
 		DrawViewer(win);
 	}
 	else if(type==W_HEX)HxDraw(win);
+	else if(type==W_PIC)PicDraw(win);
 	else if(type==W_THEME)TeDraw(win);
 	else if(type==W_JOB)DrawJob(win);
 	else if(type==W_ASK)DrawAsk(win);
@@ -1874,7 +2523,7 @@ int TvAppKey(int win, int key)
 		return FcKey(win,key);
 	}
 	// view windows close with F3 or Esc as in MC, and F4 makes them editable
-	if((type==W_HEX)||((type==W_VIEW)&&fcView[win]))
+	if((type==W_HEX)||(type==W_PIC)||((type==W_VIEW)&&fcView[win]))
 	{
 		if((key==K_F3)||(key==K_ESC))
 		{
@@ -1888,6 +2537,7 @@ int TvAppKey(int win, int key)
 		return 1;
 	}
 	if(type==W_VIEW)return ViewerKey(win,key);
+	if(type==W_PIC)return PicKey(win,key);
 	if(type==W_HEX)return HxKey(win,key);
 	if(type==W_THEME)return TeKey(win,key);
 	return 0;
@@ -1912,6 +2562,7 @@ int TvAppMouse(int win, int ev, int x, int y)
 		return 1;
 	}
 	if(type==W_VIEW)return ViewerMouse(win,ev,x,y);
+	if(type==W_PIC)return PicMouse(win,ev,x,y);
 	if(type==W_HEX)return HxMouse(win,ev,x,y);
 	return 0;
 }
@@ -1940,6 +2591,7 @@ void TvAppClosed(int win)
 		free(hxBuf);
 		hxWin=-1;
 	}
+	if(tvWin[win].type==W_PIC)PvFree(win);
 	if(tvWin[win].type==W_FC)
 	{
 		int c=tvWin[win].a;
@@ -1950,6 +2602,7 @@ void TvAppClosed(int win)
 
 void TvAppTick()
 {
+	PvTick();
 	if(fcJobWin>=0)
 	{
 		FcJobTick();
@@ -2146,6 +2799,13 @@ int FcPanelCommand(int cmd)
 	{
 		int q=fcBase+(cmd-CM_PANEL)/10;
 		int a=(cmd-CM_PANEL)%10;
+		if(a==PN_QUICK)
+		{
+			FcSetQuick(q,!fcQuick[q]);
+			ShowToggles();
+			return 1;
+		}
+		if(fcQuick[q]&&((a==PN_FULL)||(a==PN_BRIEF)))FcSetQuick(q,0);
 		if(a==PN_FULL)fcBrief[q]=0;
 		else if(a==PN_BRIEF)fcBrief[q]=1;
 		else if(a==PN_REVERSE)fcSort[q]=fcSort[q]^4;
@@ -2224,6 +2884,7 @@ int PanelMenu(char* title, int p)
 	int base=CM_PANEL+p*10;
 	TvMenuItem("~F~ull listing","",base+PN_FULL,0);
 	TvMenuItem("~B~rief listing","",base+PN_BRIEF,0);
+	TvMenuItem("~Q~uick view","",base+PN_QUICK,0);
 	TvMenuItem("Sort by ~n~ame","",base+PN_NAME,0);
 	TvMenuItem("Sort by ~e~xtension","",base+PN_EXT,0);
 	TvMenuItem("Sort by ~s~ize","",base+PN_SIZE,0);
@@ -2237,6 +2898,11 @@ int main(int argc, pchar* argv)
 	if(!TvStart(CM_QUIT))return 1;
 	EdInit();
 	FcInitState();
+	PvInit();
+	FcQInit();
+#ifdef TV_GFX
+	pvAspect=2.*GFX_CW/GFX_CH;
+#endif
 	char left[FC_PATH];
 	char right[FC_PATH];
 	StrCpy(&left[0],".",FC_PATH);

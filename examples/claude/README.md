@@ -153,8 +153,9 @@ mouse and Ctrl+Q always work.
 
 Panel windows in the manner of Midnight Commander, built from `../tui`: its
 desktop, editor, hex viewer, theme editor and dialogs, and `term_dl.so` for the
-file system. Build `../tui/build_so.sh` once (and `../opengl/build_so.sh` for the
-OpenGL versions), then from this folder run `Scinc t2fc.cpp [left [right]]` in a
+file system. Build `../tui/build_so.sh` and this folder's `build_so.sh` (the
+picture decoder `img_dl.so`) once (and `../opengl/build_so.sh` for the OpenGL
+versions), then from this folder run `Scinc t2fc.cpp [left [right]]` in a
 terminal. `t2fc_gfx.cpp`, `t2fc_raster.cpp`, `t2fc_small.cpp`, `t2fc_gl.cpp` and
 `t2fc_gl_small.cpp` show the same thing in a graphic or OpenGL window, as tvdemo's
 files of those names do. F1 shows every key.
@@ -163,7 +164,8 @@ files of those names do. F1 shows every key.
 |------|--------------|
 | Tab, Enter, Backspace, letters | Other panel, enter a directory, the parent, jump to a name |
 | Insert, right click, `+` `-` `*` | Mark, mark by pattern, unmark by pattern, invert |
-| F3, F4, Shift+F4 | View (text read-only, binary in hex), edit, edit a new file |
+| F3, F4, Shift+F4 | View (pictures, text read-only, binary in hex), edit, edit a new file |
+| Alt+Q | Quick view in the other panel: the picture, text or hex dump of the file under the cursor |
 | F5, F6, Shift+F6, F7, F8 | Copy, move, rename, make a directory, delete; with progress, Cancel, and questions before replacing |
 | F2, Alt+Enter, Enter on an executable | Run a program (see below) |
 | Ctrl+N | Another panel window (up to six), each with its own directories and modes |
@@ -171,8 +173,20 @@ files of those names do. F1 shows every key.
 | Ctrl+U, Alt+I, Ctrl+R, Alt+. | Swap panels, other panel here, reread, hidden files |
 
 Clicking a column title sorts by it; the Left and Right menus choose full or
-brief listings and the sort order, and Command > Compare directories marks the
-files that differ.
+brief listings, quick view and the sort order, and Command > Compare directories
+marks the files that differ.
+
+**Pictures.** F3 on a picture opens a picture window, and quick view shows the
+picture under the other panel's cursor. They are drawn as tvdemo's Mandelbrot is,
+two pixels a character cell with half blocks, in 24-bit colour where the terminal
+has it, in every backend. `img_dl.so` (`img_dl.cpp`) decodes them on threads of
+its own, so the panels never wait for a big file: PNG, JPEG (turned upright by its
+EXIF orientation), GIF and WebP (both animated), BMP, TGA, PSD, HDR and PNM, with
+[stb_image](https://github.com/nothings/stb) (public domain, `stb_image.h` here)
+and libwebp when it is installed. Shrinking averages all the pixels a cell
+covers; clear parts show a checkerboard. In the window, `+` `-` or the wheel
+zoom, `0` fits, `1` shows pixels 1:1, arrows or dragging move, Space and
+Backspace go to the next and previous picture of the panel, and `r` turns it.
 
 **Running programs.** In a terminal, t2fc gives the terminal to the program, as MC
 does: the desktop steps aside, the program runs with the real screen and keyboard
