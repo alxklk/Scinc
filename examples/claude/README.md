@@ -188,6 +188,18 @@ covers; clear parts show a checkerboard. In the window, `+` `-` or the wheel
 zoom, `0` fits, `1` shows pixels 1:1, arrows or dragging move, Space and
 Backspace go to the next and previous picture of the panel, and `r` turns it.
 
+**Colours over ssh.** tui uses 24-bit colour when `COLORTERM` says the terminal
+has it, but ssh does not pass `COLORTERM` on by default. So when it is missing,
+term_dl asks the terminal itself, which works through ssh too: the 24-bit DECRQSS
+echo (xterm, kitty, foot, WezTerm...), the terminal's name from XTVERSION (VTE
+terminals such as xfce4-terminal and GNOME Terminal never answer the first) and
+DA2. Inside tmux those questions reach tmux, which turns 24-bit colours into 256
+unless it knows the terminal around it has them, so there tui asks tmux for its
+client's features instead and looks for `RGB`. tmux 3.4 does not add `RGB` for
+VTE terminals by itself, even with `COLORTERM` set: put
+`set -as terminal-features ',xterm*:RGB'` in `~/.tmux.conf` and attach again.
+`TV_COLORS=24` or `TV_COLORS=256` overrides the guess.
+
 **Running programs.** In a terminal, t2fc gives the terminal to the program, as MC
 does: the desktop steps aside, the program runs with the real screen and keyboard
 (Ctrl+C reaches only the program), and a key brings the desktop back. A graphic

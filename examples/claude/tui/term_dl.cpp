@@ -156,12 +156,155 @@ static int term_ms()
 	return (int)duration_cast<milliseconds>(steady_clock::now()-start).count();
 }
 
-// 1 if the terminal says it shows 24-bit colours, as COLORTERM tells programs.
+// Asks the terminal itself whether it shows 24-bit colours. COLORTERM says so on
+// the machine the terminal runs on, but ssh passes only TERM, LANG and LC_* by
+// default, so over ssh the answer has to come through the terminal: the replies
+// travel back like keys. Three questions, then DA1, which every terminal answers,
+// so that the wait ends as soon as that answer is in:
+//   DECRQSS of an SGR with a 24-bit colour: xterm, kitty, foot, WezTerm, mintty...
+//     echo the colour back when they keep it
+//   XTVERSION: the terminal's name, as VTE(7600) for xfce4-terminal, GNOME
+//     Terminal and other VTE ones, which never answer the first question
+//   DA2: older VTE (and kitty) give a version of 4000 or more
+// Anything else read meanwhile (keys typed early) is kept for term_read.
+// Inside tmux the terminal questions reach tmux, not the terminal around it, and
+// tmux passes 24-bit colours on only when it knows that terminal has them: its
+// client's features then include RGB (set -as terminal-features ',xterm*:RGB').
+// tmux is asked about the client this program's pane is shown on.
+static int tmuxTrueColor()
+{
+	FILE* f=popen("tmux display-message -p '#{client_termfeatures}' 2>/dev/null","r");
+	if(!f)return 0;
+	char buf[512];
+	std::string out;
+	while(fgets(buf,sizeof buf,f))out+=buf;
+	pclose(f);
+	size_t i=0;
+	while(i<out.size())
+	{
+		size_t e=out.find_first_of(",\n",i);
+		if(e==std::string::npos)e=out.size();
+		if(out.compare(i,e-i,"RGB")==0)return 1;
+		i=e+1;
+	}
+	return 0;
+}
+
+static int probeTrueColor()
+{
+	const char* term=getenv("TERM");
+	if(term&&(!strcmp(term,"linux")||!strcmp(term,"dumb")))return 0;
+	termios saved;
+	bool own=!rawActive;
+	if(own)
+	{
+		if(tcgetattr(0,&saved))return 0;
+		termios raw=saved;
+		cfmakeraw(&raw);
+		if(tcsetattr(0,TCSANOW,&raw))return 0;
+	}
+	const char* ask="\x1b[0m\x1b[48;2;1;2;3m\x1bP$qm\x1b\\\x1b[0m\x1b[>0q\x1b[>c\x1b[c";
+	if(write(1,ask,strlen(ask))<0){}
+	std::string in;
+	int start=0;
+	{
+		using namespace std::chrono;
+		auto t0=steady_clock::now();
+		while(true)
+		{
+			int left=1500-(int)duration_cast<milliseconds>(steady_clock::now()-t0).count();
+			if(left<=0)break;
+			pollfd pf;
+			pf.fd=0;
+			pf.events=POLLIN;
+			pf.revents=0;
+			if(poll(&pf,1,left)<=0)break;
+			char buf[256];
+			int n=read(0,buf,sizeof buf);
+			if(n<=0)break;
+			in.append(buf,n);
+			// done once the DA1 answer, ESC [ ? ... c, is in
+			size_t d=in.find("\x1b[?",start);
+			if((d!=std::string::npos)&&(in.find('c',d)!=std::string::npos))break;
+		}
+	}
+	if(own)tcsetattr(0,TCSANOW,&saved);
+	int yes=0;
+	std::string rest;
+	size_t i=0;
+	while(i<in.size())
+	{
+		if(in[i]!=0x1b)
+		{
+			rest+=in[i];
+			i++;
+			continue;
+		}
+		// a DCS reply runs to ST (ESC \), a CSI reply to its final letter
+		if((i+1<in.size())&&(in[i+1]=='P'))
+		{
+			size_t e=in.find("\x1b\\",i+2);
+			if(e==std::string::npos)e=in.size();
+			std::string body=in.substr(i+2,e-i-2);
+			if((body.compare(0,3,"1$r")==0)&&((body.find("48:2")!=std::string::npos)||(body.find("48;2")!=std::string::npos)))yes=1;
+			if(body.compare(0,2,">|")==0)
+			{
+				const char* names[]={"VTE","kitty","WezTerm","foot","iTerm2","XTerm","Konsole","contour","ghostty","mintty","alacritty","Alacritty"};
+				for(const char* nm : names)
+					if(body.find(nm)!=std::string::npos)yes=1;
+			}
+			i=e+2;
+			continue;
+		}
+		if((i+2<in.size())&&(in[i+1]=='[')&&((in[i+2]=='>')||(in[i+2]=='?')))
+		{
+			size_t e=i+3;
+			while((e<in.size())&&((in[e]==';')||((in[e]>='0')&&(in[e]<='9'))))e++;
+			if((e<in.size())&&(in[e]=='c'))
+			{
+				if(in[i+2]=='>')
+				{
+					int a=0;
+					int b=0;
+					sscanf(in.c_str()+i+3,"%d;%d",&a,&b);
+					if(((a==1)||(a==61)||(a==65))&&(b>=4000))yes=1;
+				}
+				i=e+1;
+				continue;
+			}
+		}
+		rest+=in[i];
+		i++;
+	}
+	// what was typed meanwhile goes back in front of the input
+	if(!rest.empty())
+	{
+		std::string keep=rest+std::string((char*)readBuf+readPos,readHave-readPos);
+		if(keep.size()>sizeof(readBuf))keep.resize(sizeof(readBuf));
+		memcpy(readBuf,keep.data(),keep.size());
+		readPos=0;
+		readHave=(int)keep.size();
+	}
+	return yes;
+}
+
+// 1 if the terminal shows 24-bit colours: TV_COLORS=24 or 256 decides, else
+// tmux's answer inside tmux, else COLORTERM, else the terminal is asked
+// (probeTrueColor), once.
 static int term_truecolor()
 {
+	static int known=-1;
+	if(known>=0)return known;
+	const char* force=getenv("TV_COLORS");
+	if(force&&!strcmp(force,"24"))return known=1;
+	if(force&&!strcmp(force,"256"))return known=0;
+	// in tmux, COLORTERM may be left over from the terminal tmux was started in
+	if(getenv("TMUX"))return known=tmuxTrueColor();
 	const char* c=getenv("COLORTERM");
-	if(!c)return 0;
-	return (strcasecmp(c,"truecolor")==0)||(strcasecmp(c,"24bit")==0);
+	if(c&&((strcasecmp(c,"truecolor")==0)||(strcasecmp(c,"24bit")==0)))return known=1;
+	if(!isatty(0)||!isatty(1))return known=0;
+	known=probeTrueColor();
+	return known;
 }
 
 // ---------------------------------------------------------------- directory listing
