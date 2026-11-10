@@ -60,4 +60,20 @@
 [[scinc::dynlink(TERM_DL,"run_terminal_wrapper")]]int run_terminal(char* out, int max);
 [[scinc::dynlink(TERM_DL,"run_quote_wrapper")]]void run_quote(char* s, char* out, int max);
 
+// The desktop's clipboard, through wl-copy/wl-paste, xclip or xsel. clip_set returns
+// 1 if a clipboard program took the text, 2 if it was sent to the terminal (OSC 52,
+// for ssh and tmux), 0 if neither; clip_get returns the length read, -1 if there is
+// no clipboard to read, -2 if the text was longer than max.
+[[scinc::dynlink(TERM_DL,"clip_set_wrapper")]]int clip_set(char* s, int n);
+[[scinc::dynlink(TERM_DL,"clip_get_wrapper")]]int clip_get(char* out, int max);
+
+// Counting what a directory holds, on a thread: dir_scan starts it in slot 0..15 for
+// at most limitMs; dir_scan_info(slot,k) reads k 0 state (0 none, 1 running, 2 done,
+// 3 stopped at the limit, 4 unreadable), 1 files, 2 dirs, 3 other, 4 KiB, 5 ms,
+// 6 unreadable dirs, 7 8 9 direct files, dirs, other, 10 those complete.
+[[scinc::dynlink(TERM_DL,"dir_scan_wrapper")]]int dir_scan(int slot, char* path, int limitMs);
+[[scinc::dynlink(TERM_DL,"dir_scan_stop_wrapper")]]void dir_scan_stop(int slot);
+[[scinc::dynlink(TERM_DL,"dir_scan_info_wrapper")]]int dir_scan_info(int slot, int k);
+[[scinc::dynlink(TERM_DL,"dir_scan_bytes_wrapper")]]void dir_scan_bytes(int slot, char* out, int max);
+
 #endif // TERM_H

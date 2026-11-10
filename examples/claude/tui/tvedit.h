@@ -25,6 +25,8 @@
 #define CM_FINDNEXT 161
 #define CM_GOTO 162
 #define CM_MATCH 163
+#define CM_MARKSEL 164   // start or stop selecting with the plain cursor keys (as mc's F3)
+#define CM_MARKBLK 165   // the same for a block of columns (Shift+F3)
 
 #define VW_POOL 4000000
 #define VW_MAXLINES 100000
@@ -539,6 +541,10 @@ struct TEdit
 	int sel;             // set if the text between ax,ay and the cursor is selected
 	int ax;
 	int ay;
+	int block;           // the selection is a block of columns, bac..bcc, lines ay..cy
+	int bac;             // its columns: the anchor's and the cursor's, which may lie
+	int bcc;             // past the end of their lines
+	int mark;            // the cursor keys select as if Shift were held: 1, or 2 a block
 	int ro;              // read-only
 	int crlf;            // lines end in CR LF
 	int ver;             // the id of the undo record the text is at
@@ -565,6 +571,8 @@ char edTail[4100];
 char edIndent[4100];
 char* edClip;
 int edClipN=0;
+int edClipBlock=0;   // what was last copied here is a block: its lines go in a column
+int edClipSum=0;     // and its checksum, to tell if the desktop's clipboard still holds it
 int edUntitled=0;
 int edDrag=0;       // what a captured mouse is doing: 1 scroll thumb, 2 selecting
 float edClickTime=0.;
@@ -1047,6 +1055,8 @@ void EdSetCursor(int win, int y, int x)
 	e.cy=y;
 	e.cx=x;
 	e.sel=0;
+	e.block=0;
+	e.mark=0;
 	e.want=-1;
 }
 
@@ -1440,6 +1450,12 @@ void EdSelRange(TEdit& e)
 void EdMoveTo(int win, int y, int x, int extend)
 {
 	TEdit& e=ed[win];
+	if(e.block)
+	{
+		// a block goes on as a plain selection from the same corner
+		e.block=0;
+		e.ax=EdByteAt(tvWin[win].c+e.ay,e.bac);
+	}
 	if(extend)
 	{
 		if(!e.sel)
@@ -1557,8 +1573,184 @@ void EdSelectWord(int win)
 	e.ax=a;
 	e.cx=b;
 	e.sel=1;
+	e.block=0;
 	e.want=-1;
 	EdReveal(win);
+}
+
+// ---------------------------------------------------------------- block selection
+
+int edBY1=0;     // a block's lines and columns, set by EdBlockRange
+int edBY2=0;
+int edBC1=0;
+int edBC2=0;
+
+void EdBlockRange(TEdit& e)
+{
+	edBY1=e.ay;
+	edBY2=e.cy;
+	if(edBY1>edBY2)
+	{
+		edBY1=e.cy;
+		edBY2=e.ay;
+	}
+	edBC1=e.bac;
+	edBC2=e.bcc;
+	if(edBC1>edBC2)
+	{
+		edBC1=e.bcc;
+		edBC2=e.bac;
+	}
+}
+
+// Alt+Shift with a cursor key: the cursor moves by screen columns, past line ends
+// too, and the block from where it started to here is selected.
+int EdBlockKey(int win, int key)
+{
+	TWin& t=tvWin[win];
+	TEdit& e=ed[win];
+	int rows=t.h-2;
+	int col=EdCol(t.c+e.cy,e.cx);
+	if(e.sel&&e.block)col=e.bcc;
+	int y=e.cy;
+	if(key==K_UP)y--;
+	else if(key==K_DOWN)y++;
+	else if(key==K_PGUP)y=y-rows;
+	else if(key==K_PGDN)y=y+rows;
+	else if(key==K_LEFT)col--;
+	else if(key==K_RIGHT)col++;
+	else if(key==K_HOME)col=0;
+	else if(key==K_END)col=EdCol(t.c+e.cy,vwLen[t.c+e.cy]);
+	else return 0;
+	if(!(e.sel&&e.block))
+	{
+		e.ay=e.cy;
+		e.bac=EdCol(t.c+e.cy,e.cx);
+		e.ax=e.cx;
+	}
+	if(y<0)y=0;
+	if(y>=t.d)y=t.d-1;
+	if(col<0)col=0;
+	e.sel=1;
+	e.block=1;
+	e.bcc=col;
+	e.cy=y;
+	e.cx=EdByteAt(t.c+y,col);
+	e.want=col;
+	e.lastKind=0;
+	EdReveal(win);
+	return 1;
+}
+
+// The bytes of line y within the block's columns, as edB1..edB2.
+int edB1=0;
+int edB2=0;
+
+void EdBlockBytes(TWin& t, int y)
+{
+	edB1=EdByteAt(t.c+y,edBC1);
+	edB2=EdByteAt(t.c+y,edBC2);   // a tab the block starts inside goes with it,
+}                                 // one it ends inside stays
+
+int EdSum(char* s, int n)
+{
+	int h=7;
+	for(int i=0;i<n;i++)
+		h=(h*31+(s[i]&255))&0xFFFFFF;
+	return h+n*0x1000000;
+}
+
+// Copies the block, its lines joined by line ends. 0 if it is too large.
+int EdBlockCopy(int win)
+{
+	TWin& t=tvWin[win];
+	TEdit& e=ed[win];
+	EdBlockRange(e);
+	int n=0;
+	for(int y=edBY1;y<=edBY2;y++)
+	{
+		EdBlockBytes(t,y);
+		int len=edB2-edB1;
+		if(n+len+1>ED_CLIPMAX)
+		{
+			TvMessage("Copy","The selection is too large for the clipboard.",0);
+			return 0;
+		}
+		int p=vwLine[t.c+y];
+		for(int k=0;k<len;k++)
+			edClip[n+k]=vwText[p+edB1+k];
+		n=n+len;
+		if(y<edBY2)
+		{
+			edClip[n]=10;
+			n++;
+		}
+	}
+	edClipN=n;
+	edClipBlock=1;
+	edClipSum=EdSum(edClip,n);
+	clip_set(edClip,n);
+	return 1;
+}
+
+// Takes the block's columns out of its lines; the cursor goes to its top left.
+int EdBlockDelete(int win)
+{
+	TWin& t=tvWin[win];
+	TEdit& e=ed[win];
+	EdBlockRange(e);
+	for(int y=edBY1;y<=edBY2;y++)
+	{
+		EdBlockBytes(t,y);
+		if(edB2>edB1)
+			if(!EdDelete(win,y,edB1,y,edB2))return 0;
+	}
+	int x=EdByteAt(t.c+edBY1,edBC1);
+	EdSetCursor(win,edBY1,x);
+	return 1;
+}
+
+// Puts the lines of s (n bytes) one below the other at the cursor's column, with
+// spaces after short lines and new lines at the end of the text as needed.
+int EdBlockPaste(int win, char* s, int n)
+{
+	TWin& t=tvWin[win];
+	TEdit& e=ed[win];
+	int col=EdCol(t.c+e.cy,e.cx);
+	int y0=e.cy;
+	int y=y0;
+	int i=0;
+	char pad[4100];
+	while(i<=n)
+	{
+		int j=i;
+		while((j<n)&&(s[j]!=10))j++;
+		if(y>=t.d)
+		{
+			int last=t.d-1;
+			char nl[2];
+			nl[0]=10;
+			nl[1]=0;
+			if(!EdInsert(win,last,vwLen[t.c+last],&nl[0],1))return 0;
+		}
+		int w=EdCol(t.c+y,vwLen[t.c+y]);
+		int at=EdByteAt(t.c+y,col);
+		if((w<col)&&(j>i))
+		{
+			int k=col-w;
+			if(k>4000)k=4000;
+			for(int q=0;q<k;q++)
+				pad[q]=' ';
+			if(!EdInsert(win,y,vwLen[t.c+y],&pad[0],k))return 0;
+			at=vwLen[t.c+y];
+		}
+		if(j>i)
+			if(!EdInsert(win,y,at,&s[i],j-i))return 0;
+		y++;
+		i=j+1;
+	}
+	EdSetCursor(win,y0,EdByteAt(t.c+y0,col));
+	return 1;
 }
 
 // ---------------------------------------------------------------- edits with the cursor
@@ -1591,6 +1783,7 @@ int EdDeleteSel(int win)
 {
 	TEdit& e=ed[win];
 	if(!e.sel)return 1;
+	if(e.block)return EdBlockDelete(win);
 	EdSelRange(e);
 	if(!EdDelete(win,edY1,edX1,edY2,edX2))return 0;
 	EdSetCursor(win,edY1,edX1);
@@ -1838,6 +2031,11 @@ void EdCopy(int win)
 	TWin& t=tvWin[win];
 	TEdit& e=ed[win];
 	if(!e.sel)return;
+	if(e.block)
+	{
+		EdBlockCopy(win);
+		return;
+	}
 	EdSelRange(e);
 	int n=EdTextLen(t,edY1,edX1,edY2,edX2);
 	if(n>ED_CLIPMAX)
@@ -1847,6 +2045,30 @@ void EdCopy(int win)
 	}
 	EdGetText(t,edY1,edX1,edY2,edX2,edClip);
 	edClipN=n;
+	edClipBlock=0;
+	// and to the desktop's clipboard, for other programs; edClip stays for when
+	// there is none
+	clip_set(edClip,n);
+}
+
+// Paste takes the desktop's clipboard when there is one, else what was copied here.
+// 0 if the clipboard text is too large.
+int EdClipFetch()
+{
+	int n=clip_get(edClip,ED_CLIPMAX);
+	if(n==-2)
+	{
+		edClipN=0;
+		TvMessage("Paste","The clipboard text is too large.",0);
+		return 0;
+	}
+	if(n>=0)
+	{
+		edClipN=n;
+		if(edClipBlock)
+			if(EdSum(edClip,n)!=edClipSum)edClipBlock=0;
+	}
+	return 1;
 }
 
 // ---------------------------------------------------------------- opening and saving
@@ -1882,6 +2104,10 @@ void EdResetWindow(int win)
 	e.cy=0;
 	e.want=-1;
 	e.sel=0;
+	e.block=0;
+	e.mark=0;
+	e.bac=0;
+	e.bcc=0;
 	e.ax=0;
 	e.ay=0;
 	e.ro=0;
@@ -2272,6 +2498,7 @@ void EdSelectFound(int win)
 	e.cy=edFoundY;
 	e.cx=edFoundX+StrLen(&edFind[0]);
 	e.sel=1;
+	e.block=0;
 	e.want=-1;
 	e.lastKind=0;
 	EdReveal(win);
@@ -2502,6 +2729,63 @@ void EdPutCell(int x, int y, int c, int at)
 	TvPut(x,y,c,at);
 }
 
+// The selection, when it is part of one line, and where it occurs again in the line
+// being drawn: those places are marked in edSameAt.
+char edSame[256];
+int edSameN=0;
+int edSameAt[4100];
+
+void EdSameText(TWin& t, TEdit& e)
+{
+	edSameN=0;
+	if(!e.sel||e.block)return;
+	if(edY1!=edY2)return;
+	int n=edX2-edX1;
+	if((n<=0)||(n>255))return;
+	int p=vwLine[t.c+edY1]+edX1;
+	int blank=1;
+	for(int k=0;k<n;k++)
+	{
+		int c=vwText[p+k];
+		edSame[k]=c;
+		if((c!=' ')&&(c!=9))blank=0;
+	}
+	if(blank)return;
+	edSameN=n;
+}
+
+// Marks in edSameAt the bytes of line i inside an occurrence of edSame.
+int EdSameLine(int i)
+{
+	if(edSameN==0)return 0;
+	int len=vwLen[i];
+	if(len>4096)len=4096;
+	int p=vwLine[i];
+	int any=0;
+	for(int k=0;k<len;k++)
+		edSameAt[k]=0;
+	int x=0;
+	while(x+edSameN<=len)
+	{
+		int ok=1;
+		for(int k=0;k<edSameN;k++)
+			if(vwText[p+x+k]!=edSame[k])
+			{
+				ok=0;
+				break;
+			}
+		if(ok)
+		{
+			for(int k=0;k<edSameN;k++)
+				edSameAt[x+k]=1;
+			any=1;
+			x=x+edSameN;
+		}
+		else x++;
+	}
+	return any;
+}
+
 void DrawViewer(int win)
 {
 	TWin& t=tvWin[win];
@@ -2513,6 +2797,9 @@ void DrawViewer(int win)
 	int x0=t.x+1+g;
 	int front=(TvTop()==win);
 	if(e.sel)EdSelRange(e);
+	int blk=e.sel&&e.block;
+	if(blk)EdBlockRange(e);
+	EdSameText(t,e);
 	edBmY=-1;
 	edBmY2=-1;
 	if(front)EdFindBrackets(win);
@@ -2531,7 +2818,9 @@ void DrawViewer(int win)
 		int start=vwLine[i];
 		int selA=-1;
 		int selB=-1;
-		if(e.sel)
+		int inBlk=blk&&(k>=edBY1)&&(k<=edBY2);
+		int same=EdSameLine(i);
+		if(e.sel&&!blk)
 			if((k>=edY1)&&(k<=edY2))
 			{
 				selA=0;
@@ -2548,6 +2837,7 @@ void DrawViewer(int win)
 			{
 				curRow=j+cr-sub;
 				curCol=EdCol(i,e.cx)-EdCol(i,edRowAt[cr])-t.b;
+				if(blk)curCol=e.bcc-EdCol(i,edRowAt[cr])-t.b;
 			}
 		}
 		if(g>0)
@@ -2583,7 +2873,11 @@ void DrawViewer(int win)
 				int off=p-start;
 				int at=HL_TEXT;
 				if(t.f)at=hlAt[off];
+				// the selected text where it occurs again
+				if(same&&(off<4096))
+					if(edSameAt[off]==1)at=A_ED_MATCH;
 				if((off>=selA)&&(off<selB))at=AT_SELECT;
+				if(inBlk&&(col>=edBC1)&&(col<edBC2))at=AT_SELECT;
 				if((k==edBmY)&&(off==edBmX))
 				{
 					at=A_ED_FOUND;
@@ -2600,6 +2894,13 @@ void DrawViewer(int win)
 							if(col>=base)TvPut(x0+col-base,t.y+1+j,' ',at);
 							col++;
 						}
+					else if(inBlk)
+						while(col<next)
+						{
+							// a block may cover part of a tab
+							if((col>=base)&&(col>=edBC1)&&(col<edBC2))TvPut(x0+col-base,t.y+1+j,' ',AT_SELECT);
+							col++;
+						}
 					col=next;
 				}
 				else
@@ -2614,6 +2915,17 @@ void DrawViewer(int win)
 			if(r==edRowN-1)
 				if((selB>vwLen[i])&&(col>=base))
 					TvPut(x0+col-base,t.y+1+j,' ',AT_SELECT);
+			// and a block goes on past the line's end
+			if(inBlk&&(r==edRowN-1))
+			{
+				int c=col;
+				if(c<edBC1)c=edBC1;
+				while((c<edBC2)&&(c-base<cols))
+				{
+					if(c>=base)TvPut(x0+c-base,t.y+1+j,' ',AT_SELECT);
+					c++;
+				}
+			}
 			j++;
 		}
 		sub=0;
@@ -2644,8 +2956,12 @@ void DrawViewer(int win)
 	{
 		TvVBar(t.x+t.w-1,t.y+1,rows,t.a,mxTop,A_ED_SCROLL);
 		char pos[40];
-		snprintf(&pos[0],40," %i:%i ",e.cy+1,EdCol(t.c+e.cy,e.cx)+1);
+		int pc=EdCol(t.c+e.cy,e.cx);
+		if(blk)pc=e.bcc;
+		snprintf(&pos[0],40," %i:%i ",e.cy+1,pc+1);
 		int after=TvText(t.x+3,t.y+t.h-1,&pos[0],A_WIN_FRAME);
+		if(e.mark==1)after=TvText(after,t.y+t.h-1,"Selecting ",A_WIN);
+		if(e.mark==2)after=TvText(after,t.y+t.h-1,"Selecting a block ",A_WIN);
 		if(e.ro)TvText(after,t.y+t.h-1,"Read only ",A_WIN);
 	}
 	if(EdModified(win))
@@ -2722,6 +3038,23 @@ int EdNavKey(int win, int key)
 	int ctrl=evMod&MOD_CTRL;
 	int rows=t.h-2;
 	int i=t.c+e.cy;
+	// after F3 the keys select without Shift, for terminals that keep Shift+Up and
+	// the like for themselves
+	if(e.mark==1)shift=1;
+	if((shift&&(evMod&MOD_ALT))||(e.mark==2))
+	{
+		if(key==K_PGUP)
+		{
+			t.a=t.a-rows;
+			ViewerClamp(t);
+		}
+		if(key==K_PGDN)
+		{
+			t.a=t.a+rows;
+			ViewerClamp(t);
+		}
+		return EdBlockKey(win,key);
+	}
 	if(key==K_UP)
 		EdMoveLines(win,-1,shift);
 	else if(key==K_DOWN)
@@ -2848,6 +3181,13 @@ int ViewerKey(int win, int key)
 {
 	TEdit& e=ed[win];
 	if(EdNavKey(win,key))return 1;
+	if(key==K_ESC)
+		if(e.mark)
+		{
+			e.mark=0;
+			return 1;
+		}
+	e.mark=0;
 	if(e.ro)
 		return (key==K_ENTER)||(key==K_TAB)||(key==K_BTAB)||(key==K_BACKSPACE)||(key==K_DEL)||((key>=32)&&(key<127));
 	if(key==K_BACKSPACE)EdEraseBack(win);
@@ -2893,6 +3233,9 @@ void EdMouseTo(int win, int x, int y, int extend)
 {
 	TWin& t=tvWin[win];
 	TEdit& e=ed[win];
+	// while selecting with F3 a click moves the selection's end there
+	if(e.mark==1)extend=1;
+	if(e.mark==2)e.mark=0;
 	int col=x-1-EdGutter(t);
 	if(col<0)col=0;
 	e.want=-1;
@@ -3029,11 +3372,30 @@ int EdCommand(int cmd)
 		EdNewFile("");
 		return 1;
 	}
-	if((cmd<CM_SAVE)||(cmd>CM_MATCH))return 0;
+	if((cmd<CM_SAVE)||(cmd>CM_MARKBLK))return 0;
 	int win=TvTop();
 	if(win<0)return 1;
 	if(tvWin[win].type!=W_VIEW)return 1;
 	TEdit& e=ed[win];
+	if((cmd==CM_MARKSEL)||(cmd==CM_MARKBLK))
+	{
+		int want=1;
+		if(cmd==CM_MARKBLK)want=2;
+		// a second press stops, and the selection stays; the first starts afresh
+		if(e.mark==want)e.mark=0;
+		else
+		{
+			if(e.sel)
+			{
+				if(e.block)e.cx=EdByteAt(tvWin[win].c+e.cy,e.bcc);
+				e.sel=0;
+				e.block=0;
+			}
+			e.mark=want;
+		}
+		return 1;
+	}
+	e.mark=0;
 	if(cmd==CM_SAVE)EdSave(win);
 	else if(cmd==CM_SAVEAS)
 	{
@@ -3049,6 +3411,7 @@ int EdCommand(int cmd)
 		e.cy=t.d-1;
 		e.cx=vwLen[t.c+t.d-1];
 		e.sel=(t.d>1)||(e.cx>0);
+		e.block=0;
 		e.want=-1;
 		e.lastKind=0;
 		EdReveal(win);
@@ -3077,7 +3440,17 @@ int EdCommand(int cmd)
 	}
 	else if(cmd==CM_CUT)
 	{
-		if(e.sel)
+		if(e.sel&&e.block)
+		{
+			if(EdBlockCopy(win))
+			{
+				EdNewGroup(e);
+				if(!EdDeleteSel(win))EdShowErr();
+				EdNewGroup(e);
+				EdAfterEdit(win);
+			}
+		}
+		else if(e.sel)
 		{
 			EdCopy(win);
 			EdSelRange(e);
@@ -3093,7 +3466,18 @@ int EdCommand(int cmd)
 	}
 	else if(cmd==CM_PASTE)
 	{
-		if(edClipN>0)
+		if(!EdClipFetch())return 1;
+		if((edClipN>0)&&edClipBlock)
+		{
+			// a copied block goes in as a block, at the cursor's column
+			EdNewGroup(e);
+			int ok=EdDeleteSel(win);
+			if(ok)ok=EdBlockPaste(win,edClip,edClipN);
+			if(!ok)EdShowErr();
+			EdNewGroup(e);
+			EdAfterEdit(win);
+		}
+		else if(edClipN>0)
 		{
 			EdNewGroup(e);
 			if(!EdPutText(win,edClip,edClipN))EdShowErr();

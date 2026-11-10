@@ -13,6 +13,11 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <thread>
+#include <unordered_set>
 #include <dirent.h>
 #include <fcntl.h>
 #include <fnmatch.h>
@@ -1727,6 +1732,478 @@ static void run_quote(const char* s, char* out, int max)
 	copyOut(out,max,q);
 }
 
+// ---------------------------------------------------------------- the desktop's clipboard
+
+// Runs argv[0] from PATH with in (n bytes) on its stdin, and collects its stdout in
+// out if out is given, for at most ms milliseconds. Returns its exit status, or -1
+// if it could not run or took too long. A clipboard program that stays behind to
+// serve the text (xclip, wl-copy) gets /dev/null for its output, so it never holds
+// the pipe or the terminal.
+static int clipRun(const char* const* argv, const char* in, int n, std::string* out, int ms)
+{
+	int inP[2];
+	int outP[2];
+	if(pipe(inP))
+		return -1;
+	if(pipe(outP))
+	{
+		close(inP[0]);
+		close(inP[1]);
+		return -1;
+	}
+	pid_t pid=fork();
+	if(pid<0)
+	{
+		close(inP[0]);
+		close(inP[1]);
+		close(outP[0]);
+		close(outP[1]);
+		return -1;
+	}
+	if(pid==0)
+	{
+		int null=open("/dev/null",O_RDWR);
+		dup2(inP[0],0);
+		if(out)
+			dup2(outP[1],1);
+		else if(null>=0)
+			dup2(null,1);
+		if(null>=0)
+			dup2(null,2);
+		closeExtra();
+		setsid();
+		signal(SIGPIPE,SIG_DFL);
+		execvp(argv[0],(char* const*)argv);
+		_exit(127);
+	}
+	close(inP[0]);
+	close(outP[1]);
+	struct sigaction ign;
+	struct sigaction oldPipe;
+	memset(&ign,0,sizeof(ign));
+	ign.sa_handler=SIG_IGN;
+	sigaction(SIGPIPE,&ign,&oldPipe);
+	fcntl(inP[1],F_SETFL,O_NONBLOCK);
+	int wfd=inP[1];
+	int rfd=outP[0];
+	if(n<=0)
+	{
+		close(wfd);
+		wfd=-1;
+	}
+	int sent=0;
+	auto start=std::chrono::steady_clock::now();
+	int timedOut=0;
+	while(wfd>=0||rfd>=0)
+	{
+		int left=ms-(int)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();
+		if(left<=0)
+		{
+			timedOut=1;
+			break;
+		}
+		pollfd p[2];
+		int np=0;
+		if(wfd>=0)
+		{
+			p[np].fd=wfd;
+			p[np].events=POLLOUT;
+			p[np].revents=0;
+			np++;
+		}
+		if(rfd>=0)
+		{
+			p[np].fd=rfd;
+			p[np].events=POLLIN;
+			p[np].revents=0;
+			np++;
+		}
+		int r=poll(p,np,left);
+		if(r<0&&errno==EINTR)
+			continue;
+		if(r<=0)
+		{
+			timedOut=1;
+			break;
+		}
+		for(int i=0;i<np;i++)
+		{
+			if(!p[i].revents)
+				continue;
+			if(p[i].fd==wfd)
+			{
+				ssize_t w=write(wfd,in+sent,n-sent);
+				if(w>0)
+					sent+=w;
+				if((w<0&&errno!=EAGAIN&&errno!=EINTR)||sent>=n)
+				{
+					close(wfd);
+					wfd=-1;
+				}
+			}
+			else
+			{
+				char buf[65536];
+				ssize_t got=read(rfd,buf,sizeof(buf));
+				if(got>0)
+				{
+					if(out)
+						out->append(buf,got);
+				}
+				else if(got==0||(errno!=EAGAIN&&errno!=EINTR))
+				{
+					close(rfd);
+					rfd=-1;
+				}
+			}
+		}
+	}
+	if(wfd>=0)
+		close(wfd);
+	if(rfd>=0)
+		close(rfd);
+	sigaction(SIGPIPE,&oldPipe,0);
+	int st=0;
+	if(timedOut)
+	{
+		kill(pid,SIGKILL);
+		while(waitpid(pid,&st,0)<0&&errno==EINTR)
+			;
+		return -1;
+	}
+	// the program has closed its output; it may still be finishing
+	for(int i=0;i<200;i++)
+	{
+		pid_t r=waitpid(pid,&st,WNOHANG);
+		if(r==pid)
+			return WIFEXITED(st)?WEXITSTATUS(st):-1;
+		if(r<0&&errno!=EINTR)
+			return -1;
+		usleep(5000);
+	}
+	kill(pid,SIGKILL);
+	while(waitpid(pid,&st,0)<0&&errno==EINTR)
+		;
+	return -1;
+}
+
+static int inPath(const std::string& prog);
+
+// Which clipboard program this desktop has: 1 wl-copy/wl-paste (Wayland), 2 xclip,
+// 3 xsel (X11), 0 none.
+static int clipTool()
+{
+	const char* w=getenv("WAYLAND_DISPLAY");
+	const char* x=getenv("DISPLAY");
+	if(w&&*w&&inPath("wl-copy")&&inPath("wl-paste"))
+		return 1;
+	if(x&&*x)
+	{
+		if(inPath("xclip"))
+			return 2;
+		if(inPath("xsel"))
+			return 3;
+	}
+	return 0;
+}
+
+static const char b64[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+// Puts n bytes of s on the desktop's clipboard. Returns 1 if a clipboard program
+// took it, 2 if it went to the terminal as an OSC 52 sequence (over ssh, in tmux
+// with set-clipboard on, and in terminals that allow it), 0 if neither.
+static int clip_set(const char* s, int n)
+{
+	int tool=clipTool();
+	int r=-1;
+	if(tool==1)
+	{
+		const char* a[]={"wl-copy",0};
+		r=clipRun(a,s,n,0,3000);
+	}
+	else if(tool==2)
+	{
+		const char* a[]={"xclip","-selection","clipboard","-i",0};
+		r=clipRun(a,s,n,0,3000);
+	}
+	else if(tool==3)
+	{
+		const char* a[]={"xsel","-b","-i",0};
+		r=clipRun(a,s,n,0,3000);
+	}
+	if(r==0)
+		return 1;
+	if(!rawActive||n>100000)
+	{
+		noteError("No clipboard program (wl-copy, xclip or xsel) could take the text");
+		return 0;
+	}
+	std::string seq="\x1b]52;c;";
+	for(int i=0;i<n;i+=3)
+	{
+		unsigned v=(unsigned char)s[i]<<16;
+		if(i+1<n)
+			v|=(unsigned char)s[i+1]<<8;
+		if(i+2<n)
+			v|=(unsigned char)s[i+2];
+		seq+=b64[(v>>18)&63];
+		seq+=b64[(v>>12)&63];
+		seq+=(i+1<n)?b64[(v>>6)&63]:'=';
+		seq+=(i+2<n)?b64[v&63]:'=';
+	}
+	seq+="\x07";
+	fflush(stdout);
+	size_t at=0;
+	while(at<seq.size())
+	{
+		ssize_t w=write(1,seq.data()+at,seq.size()-at);
+		if(w<0&&errno==EINTR)
+			continue;
+		if(w<=0)
+			break;
+		at+=w;
+	}
+	return 2;
+}
+
+// Reads the desktop's clipboard into out (up to max bytes), with CR LF made LF.
+// Returns its length, -1 if there is no clipboard program to ask or it failed (as
+// when the clipboard is empty), or -2 if the text was longer than max (out then
+// holds its start).
+static int clip_get(char* out, int max)
+{
+	int tool=clipTool();
+	std::string got;
+	int r=-1;
+	if(tool==1)
+	{
+		const char* a[]={"wl-paste","-n",0};
+		r=clipRun(a,0,0,&got,3000);
+	}
+	else if(tool==2)
+	{
+		const char* a[]={"xclip","-selection","clipboard","-o",0};
+		r=clipRun(a,0,0,&got,3000);
+	}
+	else if(tool==3)
+	{
+		const char* a[]={"xsel","-b","-o",0};
+		r=clipRun(a,0,0,&got,3000);
+	}
+	if(r!=0)
+	{
+		noteError("The desktop's clipboard could not be read");
+		return -1;
+	}
+	int o=0;
+	for(size_t i=0;i<got.size();i++)
+	{
+		if(got[i]=='\r'&&i+1<got.size()&&got[i+1]=='\n')
+			continue;
+		if(o>=max)
+			return -2;
+		out[o++]=got[i];
+	}
+	return o;
+}
+
+// ---------------------------------------------------------------- counting what a directory holds
+
+// A scan walks a directory tree on a thread of its own: files, subdirectories, other
+// entries and the bytes of the files, staying on the directory's file system (as
+// du -x) and not following symbolic links. A file with several hard links counts
+// once. It stops at its time limit, or when the slot is given another directory;
+// a scan stuck on a slow disk is simply left behind.
+struct DirScan
+{
+	std::atomic<int> cancel{0};
+	std::atomic<int> state{1};   // 1 running, 2 done, 3 stopped at the time limit, 4 error
+	std::atomic<long long> files{0};
+	std::atomic<long long> dirs{0};
+	std::atomic<long long> other{0};
+	std::atomic<long long> bytes{0};
+	std::atomic<long long> denied{0};   // directories that could not be read
+	std::atomic<int> topFiles{0};
+	std::atomic<int> topDirs{0};
+	std::atomic<int> topOther{0};
+	std::atomic<int> topDone{0};
+	std::atomic<int> ms{0};
+};
+
+#define SCAN_SLOTS 16
+static std::shared_ptr<DirScan> scans[SCAN_SLOTS];
+
+static void scanRun(std::shared_ptr<DirScan> sc, std::string root, int limitMs)
+{
+	auto start=std::chrono::steady_clock::now();
+	auto elapsed=[&](){return (int)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();};
+	struct stat rs;
+	if(lstat(root.c_str(),&rs)||!S_ISDIR(rs.st_mode))
+	{
+		sc->state=4;
+		return;
+	}
+	dev_t dev=rs.st_dev;
+	std::unordered_set<unsigned long long> seen;   // inodes with several links
+	std::vector<std::string> todo;
+	todo.push_back(root);
+	int top=1;
+	int count=0;
+	while(!todo.empty())
+	{
+		std::string dir=todo.back();
+		todo.pop_back();
+		DIR* d=opendir(dir.c_str());
+		if(!d)
+		{
+			if(top)
+			{
+				sc->state=4;
+				return;
+			}
+			sc->denied++;
+			continue;
+		}
+		int fd=dirfd(d);
+		while(dirent* e=readdir(d))
+		{
+			if(sc->cancel)
+				break;
+			if(!strcmp(e->d_name,".")||!strcmp(e->d_name,".."))
+				continue;
+			struct stat st;
+			if(fstatat(fd,e->d_name,&st,AT_SYMLINK_NOFOLLOW))
+				continue;
+			if(S_ISDIR(st.st_mode))
+			{
+				sc->dirs++;
+				if(top)
+					sc->topDirs++;
+				if(st.st_dev==dev)
+				{
+					std::string sub=dir;
+					if(sub.empty()||sub.back()!='/')
+						sub+='/';
+					todo.push_back(sub+e->d_name);
+				}
+			}
+			else if(S_ISREG(st.st_mode))
+			{
+				sc->files++;
+				if(top)
+					sc->topFiles++;
+				int count1=1;
+				if(st.st_nlink>1)
+				{
+					unsigned long long key=((unsigned long long)st.st_dev<<40)^(unsigned long long)st.st_ino;
+					if(!seen.insert(key).second)
+						count1=0;
+				}
+				if(count1)
+					sc->bytes+=st.st_size;
+			}
+			else
+			{
+				sc->other++;
+				if(top)
+					sc->topOther++;
+			}
+			if(((++count)&255)==0)
+			{
+				int now=elapsed();
+				sc->ms=now;
+				if(now>limitMs)
+					sc->cancel=2;
+			}
+		}
+		closedir(d);
+		if(top)
+			sc->topDone=1;
+		top=0;
+		if(sc->cancel)
+			break;
+		int now=elapsed();
+		sc->ms=now;
+		if(now>limitMs)
+			sc->cancel=2;
+		if(sc->cancel)
+			break;
+	}
+	sc->ms=elapsed();
+	sc->state=(sc->cancel==2)?3:(sc->cancel?3:2);
+}
+
+// Starts counting what path holds in slot (0..15), for at most limitMs, dropping
+// any scan the slot had. Returns 1 if it started.
+static int dir_scan(int slot, const char* path, int limitMs)
+{
+	if(slot<0||slot>=SCAN_SLOTS)
+		return 0;
+	if(scans[slot])
+		scans[slot]->cancel=1;
+	auto sc=std::make_shared<DirScan>();
+	scans[slot]=sc;
+	try
+	{
+		std::thread(scanRun,sc,std::string(path),limitMs).detach();
+	}
+	catch(...)
+	{
+		sc->state=4;
+		return 0;
+	}
+	return 1;
+}
+
+static void dir_scan_stop(int slot)
+{
+	if(slot<0||slot>=SCAN_SLOTS||!scans[slot])
+		return;
+	scans[slot]->cancel=1;
+	scans[slot].reset();
+}
+
+static int sat(long long v)
+{
+	return v>INT_MAX?INT_MAX:(int)v;
+}
+
+// What the scan in slot found so far: k 0 its state (0 none, 1 running, 2 done,
+// 3 stopped at the time limit, 4 the directory could not be read), 1 files,
+// 2 directories, 3 other entries, 4 KiB in the files (rounded up), 5 milliseconds
+// spent, 6 directories that could not be read, 7 8 9 the files, directories and
+// other entries directly in it, 10 whether those three are complete.
+static int dir_scan_info(int slot, int k)
+{
+	if(slot<0||slot>=SCAN_SLOTS||!scans[slot])
+		return 0;
+	DirScan& s=*scans[slot];
+	switch(k)
+	{
+	case 0: return s.state;
+	case 1: return sat(s.files);
+	case 2: return sat(s.dirs);
+	case 3: return sat(s.other);
+	case 4: return sat((s.bytes+1023)/1024);
+	case 5: return s.ms;
+	case 6: return sat(s.denied);
+	case 7: return s.topFiles;
+	case 8: return s.topDirs;
+	case 9: return s.topOther;
+	case 10: return s.topDone;
+	}
+	return 0;
+}
+
+// The bytes in the files, written out ("123456789"), as int cannot hold them all.
+static void dir_scan_bytes(int slot, char* out, int max)
+{
+	long long b=0;
+	if(slot>=0&&slot<SCAN_SLOTS&&scans[slot])
+		b=scans[slot]->bytes;
+	copyOut(out,max,std::to_string(b));
+}
+
 extern "C" int term_open_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_open);return 0;}
 extern "C" int term_close_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_close);return 0;}
 extern "C" int term_read_wrapper(ScincVM* s, void*){ScincBoundCall(s,term_read);return 0;}
@@ -1772,3 +2249,9 @@ extern "C" int run_detached_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_deta
 extern "C" int run_has_display_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_has_display);return 0;}
 extern "C" int run_terminal_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_terminal);return 0;}
 extern "C" int run_quote_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_quote);return 0;}
+extern "C" int clip_set_wrapper(ScincVM* s, void*){ScincBoundCall(s,clip_set);return 0;}
+extern "C" int clip_get_wrapper(ScincVM* s, void*){ScincBoundCall(s,clip_get);return 0;}
+extern "C" int dir_scan_wrapper(ScincVM* s, void*){ScincBoundCall(s,dir_scan);return 0;}
+extern "C" int dir_scan_stop_wrapper(ScincVM* s, void*){ScincBoundCall(s,dir_scan_stop);return 0;}
+extern "C" int dir_scan_info_wrapper(ScincVM* s, void*){ScincBoundCall(s,dir_scan_info);return 0;}
+extern "C" int dir_scan_bytes_wrapper(ScincVM* s, void*){ScincBoundCall(s,dir_scan_bytes);return 0;}

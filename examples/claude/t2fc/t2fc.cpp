@@ -134,6 +134,8 @@ int fcBase=0;
 int fcActive=0;
 int fcHidden=0;
 int fcLynx=0;              // Left and Right leave and enter directories, as in lynx
+int fcQDirs=1;             // quick view counts what a directory holds
+#define FC_QSCAN_MS 3000   // and gives up after this long
 char fcDir[12288];          // FC_MAXP paths of FC_PATH
 int fcCount[FC_MAXP];
 int fcCur[FC_MAXP];
@@ -971,6 +973,7 @@ int fcQTextN=0;
 char fcQTextPath[FC_PATH];
 char fcQArcPath[FC_PATH];   // the archive whose tree quick view shows
 int fcQArcN=0;
+int fcQScanSeen[FC_MAXP];   // the scan state at the last draw, to draw again when it changes
 
 // Reads the start of a file into fcQText, unless it is there already.
 void FcQLoad(char* path)
@@ -1075,6 +1078,146 @@ void FcQUpdate(int p, char* path, int isDir)
 	fcQKind[p]=kind;
 	if(kind==1)PvOpen(PV_QUICK+p,path);
 	else PvFree(PV_QUICK+p);
+	// a directory is counted on a thread of term_dl's, as long as that takes; not
+	// the parent (which holds this one and more), nor one inside an archive
+	int scan=0;
+	if((kind==4)&&fcQDirs&&!fcInArc[p^1])
+	{
+		int n=StrLen(path);
+		scan=1;
+		if((n>=3)&&(path[n-1]=='.')&&(path[n-2]=='.')&&(path[n-3]=='/'))scan=0;
+	}
+	if(scan)dir_scan(p,path,FC_QSCAN_MS);
+	else dir_scan_stop(p);
+	fcQScanSeen[p]=-1;
+	FcTickRate();
+}
+
+// Sizes as people read them: 512 bytes, 12.3 MiB.
+void FcQSize(int kib, char* bytes, char* out, int max)
+{
+	float v=kib;
+	if(kib<=1)snprintf(out,max,"%s bytes",bytes);
+	else if(kib<1024)
+	{
+		// exact: below a MiB the bytes fit in an int
+		int b=0;
+		for(int i=0;bytes[i]!=0;i++)
+			b=b*10+bytes[i]-'0';
+		float k=b;
+		snprintf(out,max,"%.1f KiB (%s bytes)",k/1024.,bytes);
+	}
+	else if(kib<1048576)snprintf(out,max,"%.1f MiB (%s bytes)",v/1024.,bytes);
+	else if(kib<1073741824)snprintf(out,max,"%.1f GiB (%s bytes)",v/1048576.,bytes);
+	else snprintf(out,max,"%.1f TiB (%s bytes)",v/1073741824.,bytes);
+}
+
+// "1 file", "3 files"
+void FcQCount(char* out, int max, int n, char* one, char* many)
+{
+	if(n==1)snprintf(out,max,"1 %s",one);
+	else snprintf(out,max,"%d %s",n,many);
+}
+
+// "3 files, 1 folder", with ", 2 other" when there are other entries.
+void FcQCounts(char* out, int max, int files, int dirs, int other)
+{
+	char f[40];
+	char d[40];
+	FcQCount(&f[0],40,files,"file","files");
+	FcQCount(&d[0],40,dirs,"folder","folders");
+	if(other>0)snprintf(out,max,"%s, %s, %d other",&f[0],&d[0],other);
+	else snprintf(out,max,"%s, %s",&f[0],&d[0]);
+}
+
+// What the scan of the directory in quick view p found: the entries directly in it,
+// and all that is under it, with the bytes of its files.
+void FcQDir(int p, int x, int y, int w, int h, char* info)
+{
+	int st=dir_scan_info(p,0);
+	fcQScanSeen[p]=st;
+	if(st==0)return;
+	char line[300];
+	if(st==4)
+	{
+		char err[200];
+		fs_error(&err[0],200);
+		FcCut(x,y,&err[0],FC_FILE,w);
+		return;
+	}
+	int r=0;
+	if(dir_scan_info(p,10))
+	{
+		char c[120];
+		FcQCounts(&c[0],120,dir_scan_info(p,7),dir_scan_info(p,8),dir_scan_info(p,9));
+		snprintf(&line[0],300,"Holds     %s",&c[0]);
+		FcCut(x,y+r,&line[0],FC_FILE,w);
+		r++;
+	}
+	if(r<h)
+	{
+		char* lead="In all    ";
+		if(st==3)lead="At least  ";
+		char c[120];
+		FcQCounts(&c[0],120,dir_scan_info(p,1),dir_scan_info(p,2),dir_scan_info(p,3));
+		snprintf(&line[0],300,"%s%s",lead,&c[0]);
+		FcCut(x,y+r,&line[0],FC_FILE,w);
+		r++;
+	}
+	char bytes[40];
+	char size[100];
+	dir_scan_bytes(p,&bytes[0],40);
+	FcQSize(dir_scan_info(p,4),&bytes[0],&size[0],100);
+	if(r<h)
+	{
+		snprintf(&line[0],300,"Size      %s",&size[0]);
+		FcCut(x,y+r,&line[0],FC_FILE,w);
+		r++;
+	}
+	r++;
+	int denied=dir_scan_info(p,6);
+	if(st==1)StrCpy(&line[0],"Counting...",300);
+	else if(st==3)snprintf(&line[0],300,"Stopped after %d s: there is more",FC_QSCAN_MS/1000);
+	else line[0]=0;
+	if(r<h)
+	{
+		FcCut(x,y+r,&line[0],FC_FILE,w);
+		r++;
+	}
+	if((denied>0)&&(r<h))
+	{
+		snprintf(&line[0],300,"%d folders could not be read",denied);
+		FcCut(x,y+r,&line[0],FC_FILE,w);
+	}
+	// in short, for the mini status line
+	char kb[40];
+	StrCpy(&kb[0],&size[0],40);
+	int cut=0;
+	while((kb[cut]!=0)&&(kb[cut]!='('))cut++;
+	if((kb[cut]=='(')&&(cut>0))kb[cut-1]=0;
+	char nf[40];
+	FcQCount(&nf[0],40,dir_scan_info(p,1),"file","files");
+	snprintf(info,120,"%s, %s",&nf[0],&kb[0]);
+	if(st==3)snprintf(info,120,"at least %s, %s",&nf[0],&kb[0]);
+	if(st==1)snprintf(info,120,"counting...");
+}
+
+// A scan running or just finished: quick view draws again.
+int FcQScanBusy()
+{
+	int busy=0;
+	for(int p=0;p<FC_MAXP;p++)
+		if(fcQuick[p]&&(fcQKind[p]==4))
+		{
+			int st=dir_scan_info(p,0);
+			if(st==1)
+			{
+				busy=1;
+				tvDirty=1;
+			}
+			if(st!=fcQScanSeen[p])tvDirty=1;
+		}
+	return busy;
 }
 
 void FcQArc(char* path, int x, int y, int w, int h, char* info);
@@ -1130,6 +1273,7 @@ void FcDrawQuick(int p, int x, int y, int w, int h)
 		if(FcIsUp(&name[0]))what="The parent directory";
 		TvText(x+1,cy+1,what,FC_DIR);
 		FcCut(x+1,cy+2,&name[0],FC_DIR,w-2);
+		if(chh>4)FcQDir(p,x+1,cy+4,w-2,chh-4,&info[0]);
 	}
 	// the name and what it is, on the mini status line
 	char foot[400];
@@ -1146,6 +1290,7 @@ void FcQInit()
 		fcQuick[p]=0;
 		fcQPath[p*FC_PATH]=0;
 		fcQKind[p]=0;
+		fcQScanSeen[p]=0;
 	}
 	fcQTextPath[0]=0;
 	fcQTextN=0;
@@ -1173,6 +1318,7 @@ void FcSetQuick(int p, int on)
 		fcQuick[p]=0;
 		fcQPath[p*FC_PATH]=0;
 		PvFree(PV_QUICK+p);
+		dir_scan_stop(p);
 	}
 	tvDirty=1;
 }
@@ -1494,6 +1640,7 @@ void FcTickRate()
 {
 	int ms=1000;      // watch the directories for changes
 	if(PvBusy())ms=40;  // pictures being decoded, or animations
+	if(FcQScanBusy())ms=100;   // a directory being counted
 	if(fcJobWin>=0)ms=15;
 	if(ms!=tvTickMs)
 	{
@@ -2451,13 +2598,13 @@ void FcRunIn(char* cmd, char* dir)
 		return;
 	}
 	char qdir[2100];
-	char script[3400];
-	char quoted[4000];
-	char full[4300];
+	char script[6000];
+	char quoted[8000];
+	char full[8300];
 	run_quote(dir,&qdir[0],2100);
-	snprintf(&script[0],3400,"cd %s || exit; %s; s=$?; echo; echo \"[exit code $s] Press Enter to close this window\"; read x",&qdir[0],cmd);
-	run_quote(&script[0],&quoted[0],4000);
-	snprintf(&full[0],4300,"%s sh -c %s",&term[0],&quoted[0]);
+	snprintf(&script[0],6000,"cd %s || exit; (%s\n); s=$?; echo; echo \"[exit code $s] Press Enter to close this window\"; read x",&qdir[0],cmd);
+	run_quote(&script[0],&quoted[0],8000);
+	snprintf(&full[0],8300,"%s sh -c %s",&term[0],&quoted[0]);
 	if(!run_detached(&full[0],dir))
 	{
 		char err[300];
@@ -2491,6 +2638,103 @@ void FcRunCursor()
 	snprintf(&rel[0],262,"./%s",&name[0]);
 	run_quote(&rel[0],&cmd[0],600);
 	FcRunIn(&cmd[0],FcDirOf(p));
+}
+
+// The run dialog: FcAsk with two check boxes for capturing the output.
+int fcRunOut=0;
+int fcRunErr=0;
+
+int FcRunAsk(char* prompt, char* init, char* out)
+{
+	int w=64;
+	if(w>tvW-2)w=tvW-2;
+	int win=TvNewCentered(W_ASK,"Run",w,11,WF_DIALOG);
+	if(win<0)return 0;
+	StrCpy(&fcPrompt[0],prompt,300);
+	fcAskIn=TvAdd(win,C_INPUT,3,3,w-6,1,"",0);
+	StrCpy(&tvCtl[fcAskIn].text[0],init,200);
+	tvCtl[fcAskIn].val=StrLen(&tvCtl[fcAskIn].text[0]);
+	if(fcAskAtStart)tvCtl[fcAskIn].val=0;
+	fcAskAtStart=0;
+	tvCtl[fcAskIn].top=0;
+	int co=TvAdd(win,C_CHECK,3,5,w-6,1,"Capture program std~o~ut to a new file",0);
+	int ce=TvAdd(win,C_CHECK,3,6,w-6,1,"Capture program std~e~rr to a new file",0);
+	tvCtl[co].val=0;
+	tvCtl[ce].val=0;
+	int bx=(w-26)/2;
+	int b=TvAdd(win,C_BUTTON,bx,8,12,2,"O~K~",CM_OK);
+	tvCtl[b].isDefault=1;
+	TvAdd(win,C_BUTTON,bx+14,8,12,2,"Cancel",CM_CANCEL);
+	tvWin[win].focus=fcAskIn;
+	int res=TvExec(win);
+	StrCpy(out,&tvCtl[fcAskIn].text[0],FC_PATH);
+	fcRunOut=tvCtl[co].val;
+	fcRunErr=tvCtl[ce].val;
+	TvClose(win);
+	if(res!=CM_OK)return 0;
+	if(out[0]==0)return 0;
+	return 1;
+}
+
+// 1 if something by that name is in dir (a file, a directory, a dangling link).
+int FcNameTaken(char* dir, char* name)
+{
+	char path[FC_PATH];
+	FcJoin(&path[0],dir,name);
+	if(fs_size(&path[0])>=0)return 1;
+	if(fs_isdir(&path[0]))return 1;
+	return 0;
+}
+
+// Names for captured output that nothing in dir has yet: the program's name (the
+// command's first word, without its directory) with .stdout and .stderr, and -2,
+// -3 and so on before them when those are taken.
+void FcCaptureNames(char* cmd, char* dir, char* outName, char* errName)
+{
+	char prog[64];
+	int i=0;
+	while((cmd[i]==' ')||(cmd[i]==9))i++;
+	int start=i;
+	while((cmd[i]!=0)&&(cmd[i]!=' ')&&(cmd[i]!=9))
+	{
+		if(cmd[i]=='/')start=i+1;
+		i++;
+	}
+	int o=0;
+	for(int k=start;(k<i)&&(o<40);k++)
+	{
+		int c=cmd[k];
+		int ok=0;
+		if((c>='a')&&(c<='z'))ok=1;
+		if((c>='A')&&(c<='Z'))ok=1;
+		if((c>='0')&&(c<='9'))ok=1;
+		if((c=='_')||(c=='-')||(c=='+'))ok=1;
+		if((c=='.')&&(o>0))ok=1;
+		if(ok)
+		{
+			prog[o]=c;
+			o++;
+		}
+	}
+	prog[o]=0;
+	if(o==0)StrCpy(&prog[0],"run",64);
+	for(int n=1;n<10000;n++)
+	{
+		if(n==1)
+		{
+			snprintf(outName,100,"%s.stdout",&prog[0]);
+			snprintf(errName,100,"%s.stderr",&prog[0]);
+		}
+		else
+		{
+			snprintf(outName,100,"%s-%d.stdout",&prog[0],n);
+			snprintf(errName,100,"%s-%d.stderr",&prog[0],n);
+		}
+		int taken=0;
+		if(fcRunOut&&FcNameTaken(dir,outName))taken=1;
+		if(fcRunErr&&FcNameTaken(dir,errName))taken=1;
+		if(!taken)return;
+	}
 }
 
 // F2 or Alt+Enter: a command typed in a dialog, run in the active panel's directory.
@@ -2531,8 +2775,36 @@ void FcRunDialog()
 		}
 	}
 	snprintf(&prompt[0],300,"Run in %s:",FcDirOf(p));
-	if(!FcAsk("Run",&prompt[0],&init[0],&typed[0]))return;
-	FcRunIn(&typed[0],FcDirOf(p));
+	if(!FcRunAsk(&prompt[0],&init[0],&typed[0]))return;
+	if(!fcRunOut&&!fcRunErr)
+	{
+		FcRunIn(&typed[0],FcDirOf(p));
+		return;
+	}
+	// the output goes to new files: the shell's noclobber (set -C) refuses to write
+	// over one that appeared in the meantime
+	char dir[FC_PATH];
+	StrCpy(&dir[0],FcDirOf(p),FC_PATH);
+	char outName[100];
+	char errName[100];
+	char qo[300];
+	char qe[300];
+	char redir[700];
+	char full[2900];
+	FcCaptureNames(&typed[0],&dir[0],&outName[0],&errName[0]);
+	run_quote(&outName[0],&qo[0],300);
+	run_quote(&errName[0],&qe[0],300);
+	if(fcRunOut&&fcRunErr)snprintf(&redir[0],700,"exec >%s 2>%s",&qo[0],&qe[0]);
+	else if(fcRunOut)snprintf(&redir[0],700,"exec >%s",&qo[0]);
+	else snprintf(&redir[0],700,"exec 2>%s",&qe[0]);
+	snprintf(&full[0],2900,"set -C; %s; %s",&redir[0],&typed[0]);
+	FcRunIn(&full[0],&dir[0]);
+	// the cursor goes to the new file
+	if(fcActive==p)
+	{
+		if(fcRunOut)FcLoad(p,&dir[0],&outName[0]);
+		else FcLoad(p,&dir[0],&errName[0]);
+	}
 }
 
 // Opens the entry with the desktop's application for it (xdg-open), without waiting.
@@ -2884,6 +3156,8 @@ void PrefsLoad(char* left, char* right)
 	edWrap=(v[8]!=0);
 	fcLynx=0;
 	if(k>=10)fcLynx=(v[9]!=0);
+	fcQDirs=1;
+	if(k>=11)fcQDirs=(v[10]!=0);
 	// the directories, one a line, then the terminal command
 	for(int d=0;d<3;d++)
 	{
@@ -2912,8 +3186,8 @@ void PrefsLoad(char* left, char* right)
 void PrefsSave()
 {
 	char buf[2200];
-	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
-		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
+	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
+		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQDirs,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -2962,7 +3236,7 @@ void ShowToggles()
 
 void RunPrefs()
 {
-	int win=TvNewCentered(W_PREFS,"Preferences",50,17,WF_DIALOG);
+	int win=TvNewCentered(W_PREFS,"Preferences",50,18,WF_DIALOG);
 	if(win<0)return;
 	TvAdd(win,C_LABEL,3,2,10,1,"~T~heme",0);
 	char names[200];
@@ -2977,13 +3251,15 @@ void RunPrefs()
 	tvCtl[wr].val=edWrap;
 	int ly=TvAdd(win,C_CHECK,2,7,46,1,"L~y~nx-like motion: Left goes up, Right in",0);
 	tvCtl[ly].val=fcLynx;
-	TvAdd(win,C_LABEL,3,9,40,1,"Te~r~minal for F2 in a graphic window",0);
-	int term=TvAdd(win,C_INPUT,3,10,44,1,"",0);
+	int qd=TvAdd(win,C_CHECK,2,8,46,1,"~Q~uick view counts what a folder holds",0);
+	tvCtl[qd].val=fcQDirs;
+	TvAdd(win,C_LABEL,3,10,40,1,"Te~r~minal for F2 in a graphic window",0);
+	int term=TvAdd(win,C_INPUT,3,11,44,1,"",0);
 	StrCpy(&tvCtl[term].text[0],&fcTermCmd[0],200);
 	tvCtl[term].val=StrLen(&fcTermCmd[0]);
-	int ok=TvAdd(win,C_BUTTON,11,13,12,2,"O~K~",CM_OK);
+	int ok=TvAdd(win,C_BUTTON,11,14,12,2,"O~K~",CM_OK);
 	tvCtl[ok].isDefault=1;
-	TvAdd(win,C_BUTTON,26,13,12,2,"Cancel",CM_CANCEL);
+	TvAdd(win,C_BUTTON,26,14,12,2,"Cancel",CM_CANCEL);
 	tvWin[win].focus=th;
 	int res=TvExec(win);
 	if(res==CM_OK)
@@ -2993,6 +3269,13 @@ void RunPrefs()
 		edLineNums=tvCtl[ln].val;
 		edWrap=tvCtl[wr].val;
 		fcLynx=tvCtl[ly].val;
+		if(tvCtl[qd].val!=fcQDirs)
+		{
+			fcQDirs=tvCtl[qd].val;
+			// quick views look again
+			for(int q=0;q<FC_MAXP;q++)
+				fcQPath[q*FC_PATH]=0;
+		}
 		StrCpy(&fcTermCmd[0],&tvCtl[term].text[0],200);
 		if(h!=fcHidden)
 		{
@@ -3046,9 +3329,11 @@ void OpenHelp()
 		"  Left, Right          with Options > Lynx-like motion: the\n"
 		"                       parent, into a directory or archive\n"
 		"  Ctrl+N               another panel window (up to six)\n"
-		"  Alt+Q                quick view in the other panel: the\n"
+		"  Ctrl+Q, Alt+Q        quick view in the other panel: the\n"
 		"                       picture, text or hex dump of the file\n"
-		"                       under the cursor (Left, Right menus)\n"
+		"                       under the cursor (Left, Right menus);\n"
+		"                       for a folder what it holds, counted\n"
+		"                       for up to 3 s\n"
 		"\n"
 		"Files (the marked ones, or the one under the cursor)\n"
 		"  F3                   view: pictures, text read-only, binary\n"
@@ -3097,15 +3382,24 @@ void OpenHelp()
 		"  F2, Ctrl+S           save (F2 runs a command in the panels)\n"
 		"  Ctrl+Z, Ctrl+Y       undo, redo\n"
 		"  Ctrl+X, Ctrl+C, Ctrl+V   cut, copy, paste\n"
+		"  Shift+arrows, Home, End, PgUp, PgDn   select;\n"
+		"                       with Ctrl, by words\n"
+		"  Alt+Shift+arrows ...  select a block of columns; it is\n"
+		"                       cut, copied, deleted and pasted as one\n"
+		"  F3, Shift+F3         start selecting (a block): the cursor\n"
+		"                       keys select without Shift until F3\n"
+		"                       again, for terminals that keep\n"
+		"                       Shift+Up and the like for themselves\n"
+		"  Text selected within a line is lit where else it occurs.\n"
 		"  Ctrl+F, Ctrl+L       find, find next; Ctrl+R replace\n"
 		"  Ctrl+G               go to a line\n"
-		"  Ctrl+W               close\n"
+		"  Ctrl+W, Esc Esc      close\n"
 		"\n"
 		"These are the keys at first: Options > Keyboard changes\n"
 		"them, and t2fc.keys keeps the changes.\n"
 		"\n"
 		"Desktop\n"
-		"  F10, Alt+letter      the menus\n"
+		"  F9, Alt+letter       the menus\n"
 		"  Alt+1..9             a window by number\n"
 		"  1..9 a b c on the menu bar  click one to go to that window;\n"
 		"                       up to 12 windows, besides dialogs\n"
@@ -3113,7 +3407,7 @@ void OpenHelp()
 		"  Alt+N                the Windows menu: pick one to go to it\n"
 		"  double click a title zoom the window, or put it back\n"
 		"  Shift+F10            the context menu\n"
-		"  Alt+X                quit\n";
+		"  F10, Alt+X           quit\n";
 	char line[80];
 	int o=0;
 	int i=0;
@@ -3161,6 +3455,9 @@ void TvAppDraw(int win)
 	else if(type==W_PREFS)DrawPrefs(win);
 }
 
+int fcEscWin=-1;    // the edit window Esc was last pressed in, and when
+int fcEscMs=0;
+
 int TvAppKey(int win, int key)
 {
 	TWin& t=tvWin[win];
@@ -3179,7 +3476,25 @@ int TvAppKey(int win, int key)
 			return 1;
 		}
 	}
-	if(type==W_VIEW)return ViewerKey(win,key);
+	// an edit window closes with Esc pressed twice, asking about unsaved changes
+	if(type==W_VIEW)
+	{
+		if((key==K_ESC)&&!ed[win].mark)
+		{
+			int now=term_ms();
+			if((fcEscWin==win)&&(now-fcEscMs<600))
+			{
+				fcEscWin=-1;
+				if(TvAppCanClose(win))TvClose(win);
+				return 1;
+			}
+			fcEscWin=win;
+			fcEscMs=now;
+			return 1;
+		}
+		fcEscWin=-1;
+		return ViewerKey(win,key);
+	}
 	if(type==W_PIC)return PicKey(win,key);
 	if(type==W_ARC)return ArcKey(win,key);
 	if(type==W_HEX)return HxKey(win,key);
@@ -3568,7 +3883,7 @@ void FcKeys()
 	TvKeyContext(W_HEX,TV_ST_ALL,"Hex view");
 	TvKeyContext(W_ARC,TV_ST_ALL,"Archive windows");
 
-	TvKeyCmd(TV_ST_ALL,CM_QUIT,"Quit",K_ALT+'x',17,0);
+	TvKeyCmd(TV_ST_ALL,CM_QUIT,"Quit",K_F10,K_ALT+'x',0);
 	TvKeyCmd(TV_ST_ALL,CM_HELP,"Help",K_F1,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_NEWPANELS,"New panels",14,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_CLOSE,"Close the window",23,0,0);
@@ -3601,7 +3916,7 @@ void FcKeys()
 	TvKeyCmd(W_FC,CM_PARENT,"Parent directory",K_BACKSPACE,0,0);
 	TvKeyCmd(W_FC,CM_SWAP,"Swap panels",21,0,0);
 	TvKeyCmd(W_FC,CM_SAMEDIR,"Other panel here",K_ALT+'i',0,0);
-	TvKeyCmd(W_FC,CM_QUICKOTHER,"Quick view",K_ALT+'q',0,0);
+	TvKeyCmd(W_FC,CM_QUICKOTHER,"Quick view",17,K_ALT+'q',0);
 	TvKeyCmd(W_FC,CM_HIDDEN,"Hidden files",K_ALT+'.',0,0);
 	TvKeyCmd(W_FC,CM_REREAD,"Reread",18,0,0);
 	TvKeyCmd(W_FC,CM_COMPARE,"Compare directories",0,0,0);
@@ -3617,6 +3932,8 @@ void FcKeys()
 	TvKeyCmd(W_VIEW,CM_COPY,"Copy",3,0,0);
 	TvKeyCmd(W_VIEW,CM_PASTE,"Paste",22,0,0);
 	TvKeyCmd(W_VIEW,CM_SELALL,"Select all",1,0,0);
+	TvKeyCmd(W_VIEW,CM_MARKSEL,"Start or stop selecting",K_F3,0,0);
+	TvKeyCmd(W_VIEW,CM_MARKBLK,"Start or stop selecting a block",K_F3+TV_KSHIFT,0,0);
 	TvKeyCmd(W_VIEW,CM_FIND,"Find",6,0,0);
 	TvKeyCmd(W_VIEW,CM_FINDNEXT,"Find next",12,0,0);
 	TvKeyCmd(W_VIEW,CM_REPLACE,"Replace",18,0,0);
@@ -3662,6 +3979,7 @@ int PanelMenu(char* title, int p)
 
 int main(int argc, pchar* argv)
 {
+	tvMenuKey=K_F9;   // as in Midnight Commander: F9 the menus, F10 quits
 	if(!TvStart(CM_QUIT))return 1;
 	EdInit();
 	FcInitState();
@@ -3719,6 +4037,8 @@ int main(int argc, pchar* argv)
 	TvMenuItem("~C~opy","",CM_COPY,0);
 	TvMenuItem("~P~aste","",CM_PASTE,0);
 	TvMenuItem("Select ~a~ll","",CM_SELALL,0);
+	TvMenuItem("Start/stop selectin~g~","",CM_MARKSEL,0);
+	TvMenuItem("Select a ~b~lock","",CM_MARKBLK,0);
 	TvMenuLine();
 	TvMenuItem("~F~ind...","",CM_FIND,0);
 	TvMenuItem("Find ~n~ext","",CM_FINDNEXT,0);
@@ -3775,6 +4095,8 @@ int main(int argc, pchar* argv)
 	TvMenuItem("~C~opy","",CM_COPY,0);
 	TvMenuItem("~P~aste","",CM_PASTE,0);
 	TvMenuItem("Select ~a~ll","",CM_SELALL,0);
+	TvMenuItem("Start/stop selectin~g~","",CM_MARKSEL,0);
+	TvMenuItem("Select a ~b~lock","",CM_MARKBLK,0);
 	TvMenuLine();
 	TvMenuItem("~F~ind...","",CM_FIND,0);
 	TvMenuItem("~G~o to line...","",CM_GOTO,0);
@@ -3828,7 +4150,7 @@ int main(int argc, pchar* argv)
 	TvStatusAdd("~Enter~ OK",0,K_ENTER);
 	TvStatusAdd("~Esc~ Cancel",0,K_ESC);
 	TvStatusFor(TV_ST_ALL);
-	TvStatusAdd("~F10~ Menu",CM_MENU,0);
+	TvStatusAdd("~F9~ Menu",CM_MENU,0);
 	TvStatusCmd("Quit",CM_QUIT);
 
 	int first=FcOpen(&left[0],&right[0],-1);

@@ -1262,6 +1262,7 @@ void OpenHelp()
 		"  Ctrl+F, Ctrl+L           find, find next\n"
 		"  Ctrl+R, Ctrl+G           replace, go to line\n"
 		"  Shift+arrows, Home, End  select\n"
+		"  Alt+Shift+arrows         select a block of columns\n"
 		"  Ctrl+arrows              move by word\n"
 		"  Ctrl+Home, Ctrl+End      start, end of the file\n"
 		"  Tab, Shift+Tab           indent, unindent the selected lines\n"

@@ -1292,6 +1292,7 @@ TCtl tvCtl[TV_MAXCTL];
 int tvZ[TV_MAXWIN];  // back to front
 int tvNZ=0;
 int tvRunning=1;
+int tvMenuKey=K_F10; // opens the menu bar; a program may set another key before TvStart
 int tvTickMs=0;      // set above 0 for a TvAppTick timer, for animation and games
 int tvNextTick=0;
 int tvLastInput=0;   // term_ms() of the last key, click or paste, for a screen saver
@@ -2710,7 +2711,12 @@ int TvKeyReserved(int chord, char* why, int max)
 {
 	why[0]=0;
 	if(chord==K_ESC)snprintf(why,max,"Esc closes dialogs and menus");
-	else if(chord==K_F10)snprintf(why,max,"F10 opens the menus");
+	else if(chord==tvMenuKey)
+	{
+		char nm[32];
+		TvKeyName(tvMenuKey,&nm[0],32);
+		snprintf(why,max,"%s opens the menus",&nm[0]);
+	}
 	else if((chord==K_F10+TV_KSHIFT)||(chord==K_MENU))snprintf(why,max,"it opens the context menu");
 	else if((chord>K_ALT+'0')&&(chord<=K_ALT+'9'))snprintf(why,max,"Alt+1..9 go to the windows");
 	else if((chord>K_ALT)&&(chord<K_ALT+128))
@@ -3145,6 +3151,8 @@ void ReadPaste()
 	evType=EV_PASTE;
 }
 
+int tvEscHeld=0;   // an ESC already read starts the next key
+
 void DecodeCSI()
 {
 	int c=term_read(50);
@@ -3154,6 +3162,7 @@ void DecodeCSI()
 		return;
 	}
 	int p=ReadParam(c);
+	int semi=(c==';');
 	evMod=0;
 	if(c==';')
 	{
@@ -3179,6 +3188,25 @@ void DecodeCSI()
 	if(c=='D')evKey=K_LEFT;
 	if(c=='H')evKey=K_HOME;
 	if(c=='F')evKey=K_END;
+	// ESC [2D: the modifier as the only number, as some terminals send it
+	if((evKey!=0)&&!semi&&(p>=2)&&(p<=16))evMod=p-1;
+	// rxvt: ESC [a..d are Shift with the arrows
+	if((c>='a')&&(c<='d'))
+	{
+		if(c=='a')evKey=K_UP;
+		if(c=='b')evKey=K_DOWN;
+		if(c=='c')evKey=K_RIGHT;
+		if(c=='d')evKey=K_LEFT;
+		evMod=MOD_SHIFT;
+	}
+	// rxvt: ESC [5$ is Shift+PgUp, ESC [5^ Ctrl+PgUp, ESC [5@ both
+	if((c=='$')||(c=='^')||(c=='@'))
+	{
+		if(c=='$')evMod=MOD_SHIFT;
+		if(c=='^')evMod=MOD_CTRL;
+		if(c=='@')evMod=MOD_SHIFT|MOD_CTRL;
+		c='~';
+	}
 	if(c=='Z')evKey=K_BTAB;
 	// F1..F4 with a modifier: ESC [1;2S is Shift+F4
 	if((c>='P')&&(c<='S'))evKey=K_F1+c-'P';
@@ -3241,7 +3269,13 @@ void TvReadEvent(int timeoutMs)
 	evType=EV_NONE;
 	evMod=0;
 	evUtfN=0;
-	int c=term_read(timeoutMs);
+	int c=-1;
+	if(tvEscHeld)
+	{
+		c=27;
+		tvEscHeld=0;
+	}
+	else c=term_read(timeoutMs);
 	if(c<0)return;
 	if(c==27)
 	{
@@ -3251,6 +3285,13 @@ void TvReadEvent(int timeoutMs)
 			evType=EV_KEY;
 			evKey=K_ESC;
 		}
+		else if(n==27)
+		{
+			// Esc, and at once the next key's sequence: not Alt+Esc
+			evType=EV_KEY;
+			evKey=K_ESC;
+			tvEscHeld=1;
+		}
 		else if(n=='[')
 			DecodeCSI();
 		else if(n=='O')
@@ -3258,6 +3299,18 @@ void TvReadEvent(int timeoutMs)
 			int k=term_read(50);
 			evType=EV_KEY;
 			evKey=0;
+			// ESC O2D: a modifier before the key
+			if((k>='2')&&(k<='9'))
+			{
+				evMod=k-'1';
+				k=term_read(50);
+			}
+			// rxvt: ESC Oa..d are Ctrl with the arrows
+			if((k>='a')&&(k<='d'))
+			{
+				evMod=MOD_CTRL;
+				k=k-32;
+			}
 			if((k>='P')&&(k<='S'))evKey=K_F1+k-'P';
 			if(k=='A')evKey=K_UP;
 			if(k=='B')evKey=K_DOWN;
@@ -3531,6 +3584,20 @@ int TvCtlKey(int win, int key)
 				for(int i=c.val;i<=len-gone;i++)
 					c.text[i]=c.text[i+gone];
 			}
+			return 1;
+		}
+		if(key==22)
+		{
+			// Ctrl+V: the desktop clipboard's first line
+			char clip[200];
+			int n=clip_get(&clip[0],198);
+			if(n==-2)n=198;
+			int k=0;
+			while((k<n)&&(clip[k]!=10)&&(clip[k]!=13))k++;
+			// not cutting a UTF-8 character in two
+			if(k==198)
+				while((k>0)&&((clip[k]&192)==128))k--;
+			if(k>0)TvInputInsert(c,&clip[0],k);
 			return 1;
 		}
 		if(evUtfN>0)
@@ -3988,7 +4055,7 @@ void TvMenuKey(int key)
 	}
 	if((key==K_RIGHT)&&(tvItem[tvMenu[menuOpen].first+menuSel].sub>=0))TvOpenSub();
 	else if(key==K_ESC)TvCloseMenu();
-	else if(key==K_F10)TvCloseMenu();
+	else if((key==tvMenuKey)||(key==K_F10))TvCloseMenu();
 	else if(tvMenu[menuOpen].popup&&((key==K_LEFT)||(key==K_RIGHT))){}
 	else if(key==K_LEFT)TvOpenMenu((menuOpen+TvBarCount()-1)%TvBarCount());
 	else if(key==K_RIGHT)TvOpenMenu((menuOpen+1)%TvBarCount());
@@ -4415,7 +4482,7 @@ void TvKey()
 			else if(tvDeskPopup>=0)TvOpenPopup(tvDeskPopup,-1,-1);
 			return;
 		}
-		if(key==K_F10)
+		if((key==tvMenuKey)&&!(evMod&MOD_SHIFT))
 		{
 			TvOpenMenu(0);
 			return;
