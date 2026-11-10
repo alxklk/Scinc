@@ -95,6 +95,7 @@ int gfxCurY=-1;
 int gfxCtrl=0;
 int gfxAlt=0;
 int gfxShift=0;
+int gfxEatChar=0;    // the key event was the keypad's + - * with a modifier: drop its character
 int gfxComboSent=0;  // the key event already gave this Alt or Ctrl combination
 int gfxBtn=-1;       // the mouse button held, or -1
 int gfxMX=0;
@@ -615,6 +616,12 @@ int GfxSpecialKey(int code)
 		return K_TAB;
 	}
 	if((code>=KEYCODE_F1)&&(code<=KEYCODE_F12))return K_F1+code-KEYCODE_F1;
+	if(gfxShift||gfxAlt||gfxCtrl)
+	{
+		if(code==KEYCODE_GR_ADD)return K_KPADD;
+		if(code==KEYCODE_GR_SUB)return K_KPSUB;
+		if(code==KEYCODE_GR_MUL)return K_KPMUL;
+	}
 	return 0;
 }
 
@@ -654,6 +661,7 @@ void GfxEvent(SScincEvent& e)
 		{
 			evType=EV_KEY;
 			evKey=k;
+			if((k>=K_KPADD)&&(k<=K_KPMUL))gfxEatChar=1;
 			if(gfxShift)evMod=evMod|MOD_SHIFT;
 			if(gfxAlt)evMod=evMod|MOD_ALT;
 			if(gfxCtrl)evMod=evMod|MOD_CTRL;
@@ -684,6 +692,11 @@ void GfxEvent(SScincEvent& e)
 	if(t=='CHAR')
 	{
 		int c=e.x;
+		if(gfxEatChar)
+		{
+			gfxEatChar=0;
+			if((c=='+')||(c=='-')||(c=='*'))return;
+		}
 		if(gfxAlt||gfxCtrl)
 		{
 			// X sends no key code for Alt+letter, and none for any letter under

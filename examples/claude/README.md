@@ -165,6 +165,7 @@ files of those names do. F1 shows every key.
 |------|--------------|
 | Tab, Enter, Backspace, letters | Other panel, enter a directory, the parent; typing starts a quick search: a box on the panel's bottom line, and the cursor on the next name that starts with what is typed (Backspace takes a letter back; Esc, a cursor key, a click or a command ends it; Preferences sets whether case matters) |
 | Insert, right click, `+` `-` `*` | Mark, mark by pattern, unmark by pattern, invert |
+| Shift+keypad `+`/`-`, Alt+`+`/`-` | Mark or unmark the files with the extension (after the last dot) of the one under the cursor; case matters as Preferences > Case-sensitive file search says |
 | F3, F4, Shift+F4 | View (pictures, text read-only, binary in hex), edit, edit a new file |
 | Ctrl+Q, Alt+Q | Quick view in the other panel: the picture, text or hex dump of the file under the cursor; for a folder, how many files and folders it holds and their size, counted in the background for up to 5 s (Options > Preferences sets the seconds; 0 turns it off) |
 | F5, Shift+F5, F6, Shift+F6, F7, F8 | Copy, copy in the same directory under a new name, move, rename, make a directory, delete; with progress, Cancel, and questions before replacing |

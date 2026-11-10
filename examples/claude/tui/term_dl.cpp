@@ -43,7 +43,7 @@ static void restore()
 	if(!rawActive)
 		return;
 	rawActive=0;
-	static const char leave[]="\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?7h\x1b[?25h\x1b[0m\x1b[?1049l";
+	static const char leave[]="\x1b>\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?7h\x1b[?25h\x1b[0m\x1b[?1049l";
 	ssize_t ignored=write(1,leave,sizeof(leave)-1);
 	(void)ignored;
 	tcsetattr(0,TCSAFLUSH,&savedMode);

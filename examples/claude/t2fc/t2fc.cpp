@@ -86,7 +86,9 @@ typedef char* pchar;
 #define CM_MARK 645
 #define CM_COPYAS 646  // Shift+F5: copy in the same directory under a name typed
 #define CM_COPYPATH 647 // Ctrl+C, Ctrl+Insert: the path, or the marked names, to the clipboard
-#define FC_CMD1 649
+#define CM_MARKEXT 648  // Shift+keypad +: mark the files with the extension of the one under the cursor
+#define CM_UNMARKEXT 649 // Shift+keypad -: unmark them
+#define FC_CMD1 659
 
 #define PN_FULL 0
 #define PN_BRIEF 1
@@ -3041,6 +3043,55 @@ void FcMarkGroup(int v)
 	LsMarkMatch(v,&typed[0],v==0);
 }
 
+int FcQSMatch(char* name, char* pre, int n);
+
+// Where a name's extension starts: after its last dot, or at its end if it has none.
+int FcExtAt(char* name)
+{
+	int at=-1;
+	int i=0;
+	while(name[i]!=0)
+	{
+		if(name[i]=='.')at=i+1;
+		i++;
+	}
+	if(at<0)return i;
+	return at;
+}
+
+// Marks (v 1) or unmarks (v 0) the files whose extension is that of the file under
+// the cursor; upper and lower case are told apart as for the quick search.
+void FcMarkExt(int v)
+{
+	int p=fcActive;
+	if(fcCount[p]==0)return;
+	char name[256];
+	if(FcName(p,fcCur[p],&name[0]))return;   // a directory has no extension here
+	char ext[256];
+	int e=FcExtAt(&name[0]);
+	int noExt=1;
+	if(e>0)
+		if(name[e-1]=='.')noExt=0;
+	StrCpy(&ext[0],&name[e],256);
+	int n=StrLen(&ext[0]);
+	for(int i=0;i<fcCount[p];i++)
+	{
+		if(FcName(p,i,&name[0]))continue;
+		int a=FcExtAt(&name[0]);
+		int dot=0;
+		if(a>0)dot=(name[a-1]=='.');
+		int same=0;
+		if(noExt)same=!dot;
+		else if(dot&&(StrLen(&name[a])==n))same=FcQSMatch(&name[a],&ext[0],n);
+		if(same)
+		{
+			FcUse(p);
+			LsMark(i,v);
+		}
+	}
+	tvDirty=1;
+}
+
 void FcSwap()
 {
 	char a[FC_PATH];
@@ -3529,7 +3580,7 @@ void RunPrefs()
 	tvCtl[wr].val=edWrap;
 	int ly=TvAdd(win,C_CHECK,2,7,46,1,"L~y~nx-like motion: Left goes up, Right in",0);
 	tvCtl[ly].val=fcLynx;
-	int qc=TvAdd(win,C_CHECK,2,8,46,1,"Quick ~s~earch tells upper from lower case",0);
+	int qc=TvAdd(win,C_CHECK,2,8,46,1,"Case-~s~ensitive file search",0);
 	tvCtl[qc].val=fcQSCase;
 	TvAdd(win,C_LABEL,3,9,38,1,"~Q~uick view folder count, s (0 off)",0);
 	int qd=TvAdd(win,C_INPUT,41,9,6,1,"",0);
@@ -3618,6 +3669,8 @@ void OpenHelp()
 		"  Backspace            the parent directory\n"
 		"  Insert, right click  mark an entry; + - * mark by a pattern,\n"
 		"                       unmark by one, invert the marks\n"
+		"  Shift+keypad + -,    mark, unmark the files with the\n"
+		"  Alt++ Alt+-          extension of the one under the cursor\n"
 		"  typing               quick search: the cursor goes to the\n"
 		"                       next name starting with what is typed\n"
 		"                       (Backspace one back); Esc, a cursor\n"
@@ -4047,6 +4100,8 @@ int FcPanelCommand(int cmd)
 	else if(cmd==CM_DELETE)FcDelete();
 	else if(cmd==CM_HEXVIEW)FcHex();
 	else if(cmd==CM_SELGROUP)FcMarkGroup(1);
+	else if(cmd==CM_MARKEXT)FcMarkExt(1);
+	else if(cmd==CM_UNMARKEXT)FcMarkExt(0);
 	else if(cmd==CM_UNSELGROUP)FcMarkGroup(0);
 	else if(cmd==CM_INVERT)
 	{
@@ -4232,6 +4287,8 @@ void FcKeys()
 	TvKeyCmd(W_FC,CM_HEXVIEW,"Hex view",0,0,0);
 	TvKeyCmd(W_FC,CM_MARK,"Mark",K_INS,0,0);
 	TvKeyCmd(W_FC,CM_SELGROUP,"Select group",'+',0,0);
+	TvKeyCmd(W_FC,CM_MARKEXT,"Mark the files with this extension",K_KPADD+TV_KSHIFT,K_ALT+'+',0);
+	TvKeyCmd(W_FC,CM_UNMARKEXT,"Unmark the files with this extension",K_KPSUB+TV_KSHIFT,K_ALT+'-',0);
 	TvKeyCmd(W_FC,CM_UNSELGROUP,"Unselect group",'-',0,0);
 	TvKeyCmd(W_FC,CM_INVERT,"Invert selection",'*',0,0);
 	TvKeyCmd(W_FC,CM_PARENT,"Parent directory",K_BACKSPACE,0,0);
@@ -4335,6 +4392,8 @@ int main(int argc, pchar* argv)
 	TvMenuItem("~H~ex view","",CM_HEXVIEW,0);
 	TvMenuLine();
 	TvMenuItem("~S~elect group...","",CM_SELGROUP,0);
+	TvMenuItem("Select by e~x~tension","",CM_MARKEXT,0);
+	TvMenuItem("Unselect by ex~t~ension","",CM_UNMARKEXT,0);
 	TvMenuItem("~U~nselect group...","",CM_UNSELGROUP,0);
 	TvMenuItem("~I~nvert selection","",CM_INVERT,0);
 	TvMenuLine();

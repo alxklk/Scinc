@@ -49,6 +49,10 @@ int  TvAppStatus(int win);                           // the status line context 
 #define K_DEL 1009
 #define K_BTAB 1010
 #define K_MENU 1011  // the context menu key
+// the keypad's + - * with a modifier held; alone they come as the characters
+#define K_KPADD 1012
+#define K_KPSUB 1013
+#define K_KPMUL 1014
 #define K_F1 1101
 #define K_F2 1102
 #define K_F3 1103
@@ -2436,6 +2440,9 @@ void TvKeyBase(int k, char* out, int max)
 	else if(k==K_DEL)s="Del";
 	else if(k==K_BTAB)s="Shift+Tab";
 	else if(k==K_MENU)s="Menu";
+	else if(k==K_KPADD)s="Keypad+";
+	else if(k==K_KPSUB)s="Keypad-";
+	else if(k==K_KPMUL)s="Keypad*";
 	else if((k>=K_F1)&&(k<=K_F12))
 	{
 		snprintf(out,max,"F%d",k-K_F1+1);
@@ -3492,6 +3499,30 @@ void TvReadEvent(int timeoutMs)
 			{
 				evMod=MOD_CTRL;
 				k=k-32;
+			}
+			// the keypad in application mode: its characters, and + - * with a
+			// modifier as keys of their own
+			int kp=0;
+			if((k>='p')&&(k<='y'))kp='0'+k-'p';
+			if(k=='k')kp='+';
+			if(k=='m')kp='-';
+			if(k=='j')kp='*';
+			if(k=='o')kp='/';
+			if(k=='n')kp='.';
+			if(k=='l')kp=',';
+			if(k=='X')kp='=';
+			if(k=='M')kp=K_ENTER;
+			if(kp!=0)
+			{
+				evKey=kp;
+				if(evMod!=0)
+				{
+					if(kp=='+')evKey=K_KPADD;
+					else if(kp=='-')evKey=K_KPSUB;
+					else if(kp=='*')evKey=K_KPMUL;
+					else evMod=0;
+				}
+				return;
 			}
 			if((k>='P')&&(k<='S'))evKey=K_F1+k-'P';
 			if(k=='A')evKey=K_UP;
@@ -5320,7 +5351,7 @@ void TvInit()
 	if(tvW>TV_MAXW)tvW=TV_MAXW;
 	if(tvH>TV_MAXH)tvH=TV_MAXH;
 	// alternate screen, no autowrap, hidden cursor, mouse buttons and drags in SGR form, bracketed paste
-	OutStr("\x1b[?1049h\x1b[?7l\x1b[?25l\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?2004h\x1b[0m\x1b[2J");
+	OutStr("\x1b[?1049h\x1b[?7l\x1b[?25l\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?2004h\x1b=\x1b[0m\x1b[2J");
 	OutFlush();
 }
 
@@ -5329,7 +5360,7 @@ void TvDone()
 #ifdef TV_GFX
 	return;
 #endif
-	OutStr("\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?7h\x1b[?25h\x1b[0m\x1b[?1049l");
+	OutStr("\x1b>\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?7h\x1b[?25h\x1b[0m\x1b[?1049l");
 	OutFlush();
 	term_close();
 }
@@ -5348,7 +5379,7 @@ void TvResume()
 	return;
 #endif
 	term_open();
-	OutStr("\x1b[?1049h\x1b[?7l\x1b[?25l\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?2004h\x1b[0m\x1b[2J");
+	OutStr("\x1b[?1049h\x1b[?7l\x1b[?25l\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?2004h\x1b=\x1b[0m\x1b[2J");
 	OutFlush();
 	for(int i=0;i<TV_CELLS;i++)
 	{
