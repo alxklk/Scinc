@@ -213,6 +213,24 @@ covers; clear parts show a checkerboard. In the window, `+` `-` or the wheel
 zoom, `0` fits, `1` shows pixels 1:1, arrows or dragging move, Space and
 Backspace go to the next and previous picture of the panel, and `r` turns it.
 
+**Videos.** When `ffmpeg` or else GStreamer (`gst-launch-1.0` and
+`gst-discoverer-1.0`) is installed, MP4, MOV, MKV, WebM, AVI, FLV, WMV, MPEG and
+MPEG-TS files are pictures too, without sound: `img_dl` runs it to decode the
+video scaled down to raw RGBA frames on a pipe (480×360 at 12 frames a second
+in the terminal, 960×540 at 20 in the graphic versions), and a thread of its own
+reads them at the video's pace, each frame becoming the slot's picture in turn.
+Quick view plays them smaller (320×240 at 8) and over again; it stops when the
+cursor moves on. In the picture window `p` or Enter pauses and plays, Left and
+Right go 5 s back and on while the video fits the window, Down and Up a minute,
+`,` and `.` 10 s; the frame line shows the time and length. Seeking starts ffmpeg
+anew from that point. gst-launch cannot start in the middle, so with GStreamer the
+frames up to that point are decoded and skipped (going back starts from the
+beginning); its frames are the whole 480×360 with borders, gst-discoverer finds
+the length and codec beside the playing, and hardware decoders are given the
+lowest rank, since NVIDIA's takes seconds to start. With neither program these
+files are ordinary binary files. `T2FC_VIDEO=ffmpeg`, `gstreamer` or `none` picks
+one.
+
 **Archives.** Enter goes into a zip, tar (plain, gz, bz2, xz, zstd), 7z, rar, iso,
 deb and other archives as into a directory, and `..` leaves it; inside, view, quick
 view, hex view and F5 copy work as anywhere, while editing, moving, deleting and

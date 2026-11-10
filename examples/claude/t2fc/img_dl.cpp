@@ -8,11 +8,17 @@
 // machine without libwebp (it then just cannot show WebP); build_so.sh needs the
 // libwebp headers for it, or leaves WebP out.
 //
+// Videos (MP4, MKV, WebM, AVI, MOV, ...) play through ffmpeg when it is on the PATH,
+// or else GStreamer's gst-launch-1.0: it decodes them scaled down to raw RGBA frames
+// on a pipe, a thread here reads them at the video's pace, and each frame becomes
+// the slot's picture in turn. With neither they are not pictures.
+//
 // Pictures live in numbered slots and are decoded on a thread of their own, so the
 // desktop never waits for a big file: img_open starts it, img_state says when it is
 // ready. A newer img_open on the same slot wins over one still being decoded.
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
@@ -22,7 +28,18 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <fcntl.h>
+#include <signal.h>
+#include <spawn.h>
 #include <strings.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+extern char** environ;
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_NO_STDIO
@@ -101,6 +118,11 @@ struct Slot
 	int cacheKeyI[6]={-1,0,0,0,0,0};
 	double cacheKeyF[4]={0,0,0,0};
 	int version=0;             // bumped by every change to pic
+	std::shared_ptr<struct Video> vid;   // the video playing here
+	int vMaxW=480;             // what img_video_opts set for the next video
+	int vMaxH=360;
+	int vFps=12;
+	bool vLoop=true;
 };
 
 static Slot slots[IMG_SLOTS];
@@ -403,6 +425,594 @@ static void worker(int s)
 	}
 }
 
+// ---------------------------------------------------------------- videos
+
+struct Video
+{
+	std::mutex m;              // after the slot's lock, never the other way round
+	std::condition_variable cv;
+	bool stop=false;
+	bool paused=false;
+	bool atEnd=false;
+	long long seek=-1;         // ms to go to, or -1
+	pid_t pid=0;
+	pid_t probePid=0;          // gst-discoverer, while it runs
+	int probed=0;              // GStreamer: 0 being looked at, 1 a video, -1 none
+	std::string path;
+	int maxW=480;
+	int maxH=360;
+	int fps=12;
+	bool loop=true;
+	// what is known about it
+	long long pos=0;           // ms of the frame shown
+	long long dur=0;           // ms, 0 when unknown
+	int srcW=0;
+	int srcH=0;
+	int shown=0;               // counts the frames shown
+	std::string codec;
+};
+
+// The program that decodes videos: ffmpeg, or else GStreamer's gst-launch-1.0 (with
+// gst-discoverer-1.0 to learn the size and length), or none, when videos are not
+// pictures at all. T2FC_VIDEO=ffmpeg, gstreamer or none picks one.
+#define ENG_NONE 0
+#define ENG_FFMPEG 1
+#define ENG_GST 2
+static int engineState=-1;
+static std::mutex engineLock;
+
+static bool onPath(const char* prog)
+{
+	const char* path=getenv("PATH");
+	if(!path)path="/usr/bin:/bin";
+	std::string all=path;
+	size_t a=0;
+	while(a<=all.size())
+	{
+		size_t b=all.find(':',a);
+		if(b==std::string::npos)b=all.size();
+		std::string f=(b>a?all.substr(a,b-a):std::string("."))+"/"+prog;
+		if(access(f.c_str(),X_OK)==0)return true;
+		a=b+1;
+	}
+	return false;
+}
+
+static int videoEngine()
+{
+	std::lock_guard<std::mutex> lk(engineLock);
+	if(engineState>=0)return engineState;
+	bool ff=onPath("ffmpeg");
+	bool gst=onPath("gst-launch-1.0")&&onPath("gst-discoverer-1.0");
+	const char* want=getenv("T2FC_VIDEO");
+	engineState=ENG_NONE;
+	if(want&&!strcmp(want,"none"))engineState=ENG_NONE;
+	else if(want&&!strcmp(want,"gstreamer"))engineState=gst?ENG_GST:ENG_NONE;
+	else if(want&&!strcmp(want,"ffmpeg"))engineState=ff?ENG_FFMPEG:ENG_NONE;
+	else if(ff)engineState=ENG_FFMPEG;
+	else if(gst)engineState=ENG_GST;
+	return engineState;
+}
+
+// The container of a video, from its first bytes (16 are enough), or nullptr.
+static const char* sniffVideo(const uint8_t* d, size_t n, const char* path)
+{
+	if((n>=12)&&!memcmp(d+4,"ftyp",4))
+	{
+		// ISO media, but HEIF/AVIF pictures and M4A sound are that too
+		static const char* notVideo[]={"heic","heix","heim","heis","mif1","msf1","avif","avis","M4A ","M4B ","M4P ","F4A ","F4B "};
+		for(const char* b : notVideo)
+			if(!memcmp(d+8,b,4))return nullptr;
+		if(!memcmp(d+8,"qt  ",4))return "MOV";
+		return "MP4";
+	}
+	if(hasExt(path,".mka")||hasExt(path,".weba"))return nullptr;   // sound only
+	if((n>=4)&&(d[0]==0x1A)&&(d[1]==0x45)&&(d[2]==0xDF)&&(d[3]==0xA3))return hasExt(path,".webm")?"WebM":"MKV";
+	if((n>=12)&&!memcmp(d,"RIFF",4)&&!memcmp(d+8,"AVI ",4))return "AVI";
+	if((n>=4)&&!memcmp(d,"FLV\x01",4))return "FLV";
+	if((n>=8)&&!memcmp(d,"\x30\x26\xB2\x75\x8E\x66\xCF\x11",8))return "WMV";
+	if((n>=4)&&(d[0]==0)&&(d[1]==0)&&(d[2]==1)&&((d[3]==0xBA)||(d[3]==0xB3)))return "MPEG";
+	if((n>=1)&&(d[0]==0x47)&&(hasExt(path,".ts")||hasExt(path,".m2ts")||hasExt(path,".mts")))return "MPEG-TS";
+	if((n>=4)&&!memcmp(d,"OggS",4)&&hasExt(path,".ogv"))return "Ogg";
+	return nullptr;
+}
+
+static long long nowMs()
+{
+	return std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+// "00:01:23.45" into ms, or -1.
+static long long parseClock(const char* t)
+{
+	int h=0,m=0;
+	double sec=0;
+	if(sscanf(t,"%d:%d:%lf",&h,&m,&sec)!=3)return -1;
+	return (long long)((h*3600+m*60)*1000LL+sec*1000.0+0.5);
+}
+
+// The first "WxH" in a line of ffmpeg's ("1280x720", not "0x31637661").
+static bool parseSize(const std::string& l, int& w, int& h)
+{
+	for(size_t i=0;i+2<l.size();i++)
+	{
+		if((l[i]<'1')||(l[i]>'9'))continue;
+		if((i>0)&&(l[i-1]!=' '))continue;
+		size_t k=i;
+		while((k<l.size())&&isdigit((unsigned char)l[k]))k++;
+		if((k>=l.size())||(l[k]!='x'))continue;
+		size_t j=k+1;
+		if((j>=l.size())||!isdigit((unsigned char)l[j]))continue;
+		while((j<l.size())&&isdigit((unsigned char)l[j]))j++;
+		if((j<l.size())&&(l[j]!=' ')&&(l[j]!=',')&&(l[j]!='['))continue;
+		w=atoi(l.c_str()+i);
+		h=atoi(l.c_str()+k+1);
+		if((w>0)&&(h>0))return true;
+	}
+	return false;
+}
+
+// Starts a program with stdin from /dev/null; out gets its standard output, err its
+// standard error. Returns its pid, 0 if it could not be started.
+// GStreamer's hardware decoders (NVIDIA, VA, V4L2) take seconds to start, which a
+// small picture is not worth: they are made the last choice.
+static const char* gstSoftware=
+	"nvh264dec:0,nvh265dec:0,nvav1dec:0,nvvp8dec:0,nvvp9dec:0,nvmpeg2videodec:0,"
+	"nvmpeg4videodec:0,nvmpegvideodec:0,nvjpegdec:0,"
+	"vah264dec:0,vah265dec:0,vaav1dec:0,vavp8dec:0,vavp9dec:0,vampeg2dec:0,vajpegdec:0,"
+	"vaapih264dec:0,vaapih265dec:0,vaapiav1dec:0,vaapivp8dec:0,vaapivp9dec:0,vaapimpeg2dec:0,"
+	"v4l2h264dec:0,v4l2h265dec:0,v4l2vp8dec:0,v4l2vp9dec:0,v4l2mpeg2dec:0,v4l2mpeg4dec:0";
+
+static pid_t spawnProg(std::vector<std::string>& args, int& out, int& err)
+{
+	int po[2],pe[2];
+	if(pipe2(po,O_CLOEXEC)!=0)return 0;
+	if(pipe2(pe,O_CLOEXEC)!=0)
+	{
+		close(po[0]);
+		close(po[1]);
+		return 0;
+	}
+	std::vector<char*> argv;
+	for(std::string& a : args)argv.push_back((char*)a.c_str());
+	argv.push_back(nullptr);
+	posix_spawn_file_actions_t fa;
+	posix_spawn_file_actions_init(&fa);
+	posix_spawn_file_actions_addopen(&fa,0,"/dev/null",O_RDONLY,0);
+	posix_spawn_file_actions_adddup2(&fa,po[1],1);
+	posix_spawn_file_actions_adddup2(&fa,pe[1],2);
+	pid_t pid=0;
+	// the environment, with gstSoftware for GStreamer
+	std::vector<std::string> envs;
+	std::string rank=std::string("GST_PLUGIN_FEATURE_RANK=")+gstSoftware;
+	for(char** e=environ;*e;e++)
+	{
+		if(!strncmp(*e,"GST_PLUGIN_FEATURE_RANK=",24))
+		{
+			// what is set there wins, so it goes after
+			rank=rank+","+(*e+24);
+			continue;
+		}
+		envs.push_back(*e);
+	}
+	envs.push_back(rank);
+	std::vector<char*> envp;
+	for(std::string& e : envs)envp.push_back((char*)e.c_str());
+	envp.push_back(nullptr);
+	int r=posix_spawnp(&pid,argv[0],&fa,nullptr,argv.data(),envp.data());
+	posix_spawn_file_actions_destroy(&fa);
+	close(po[1]);
+	close(pe[1]);
+	if(r!=0)
+	{
+		close(po[0]);
+		close(pe[0]);
+		return 0;
+	}
+	out=po[0];
+	err=pe[0];
+	return pid;
+}
+
+// Records a started program as the video's, or kills it when the video has stopped.
+static void videoPid(Video& v, pid_t pid)
+{
+	std::lock_guard<std::mutex> lk(v.m);
+	v.pid=pid;
+	if(v.stop&&pid)kill(pid,SIGKILL);
+}
+
+// Reads a line of fd into line, without its end; false at the end of it.
+static bool readLine(int fd, std::string& line)
+{
+	line.clear();
+	char c;
+	while(read(fd,&c,1)==1)
+	{
+		if((c=='\n')||(c=='\r'))
+		{
+			if(line.empty())continue;
+			return true;
+		}
+		line+=c;
+	}
+	return !line.empty();
+}
+
+// ffmpeg from ms start, frames no bigger than maxW*maxH. Reads what it says before
+// the frames: the length, the video stream, and w*h, the size of the frames it
+// sends (0 when it sends none; last is then its last words).
+static pid_t startFfmpeg(Video& v, long long start, int& out, int& err, int& w, int& h, std::string& last)
+{
+	char ss[32];
+	snprintf(ss,sizeof ss,"%.3f",start/1000.0);
+	char vf[256];
+	// square pixels, the frame rate, then no bigger than maxW*maxH
+	snprintf(vf,sizeof vf,"scale=trunc(iw*sar/2)*2:ih,setsar=1,fps=%d,"
+		"scale=w=min(%d\\,iw):h=min(%d\\,ih):force_original_aspect_ratio=decrease:flags=area",
+		v.fps,v.maxW,v.maxH);
+	std::vector<std::string> args={"ffmpeg","-hide_banner","-nostdin","-nostats","-loglevel","info",
+		"-ss",ss,"-i",v.path,"-an","-sn","-dn","-vf",vf,"-pix_fmt","rgba","-f","rawvideo","pipe:1"};
+	pid_t pid=spawnProg(args,out,err);
+	if(!pid)return 0;
+	videoPid(v,pid);
+	std::string line;
+	bool output=false;
+	w=0;
+	h=0;
+	while((w==0)&&readLine(err,line))
+	{
+		size_t at;
+		if((at=line.find("Duration: "))!=std::string::npos)
+		{
+			long long d=parseClock(line.c_str()+at+10);
+			std::lock_guard<std::mutex> lk(v.m);
+			if(d>0)v.dur=d;
+		}
+		if(line.find("Output #0")!=std::string::npos)output=true;
+		if((at=line.find("Video: "))!=std::string::npos)
+		{
+			int a=0,b=0;
+			if(output)
+			{
+				if(parseSize(line,a,b))
+				{
+					w=a;
+					h=b;
+				}
+			}
+			else
+			{
+				std::string codec=line.substr(at+7);
+				size_t e=codec.find_first_of(" ,");
+				if(e!=std::string::npos)codec.resize(e);
+				parseSize(line,a,b);
+				std::lock_guard<std::mutex> lk(v.m);
+				if(v.codec.empty())
+				{
+					v.codec=codec;
+					v.srcW=a;
+					v.srcH=b;
+				}
+			}
+		}
+		last=line;
+	}
+	return pid;
+}
+
+// GStreamer's gst-discoverer-1.0 on the video: its length, codec, size and pixel
+// shape. False when it has no video stream.
+static bool gstDiscover(Video& v)
+{
+	std::vector<std::string> args={"gst-discoverer-1.0",v.path};
+	int out=-1,err=-1;
+	pid_t pid=spawnProg(args,out,err);
+	if(!pid)return false;
+	{
+		std::lock_guard<std::mutex> lk(v.m);
+		v.probePid=pid;
+		if(v.stop)kill(pid,SIGKILL);
+	}
+	close(err);
+	std::string line;
+	bool inVideo=false;
+	bool found=false;
+	int w=0,h=0;
+	long long dur=0;
+	std::string codec;
+	while(readLine(out,line))
+	{
+		size_t at;
+		size_t k=line.find_first_not_of(' ');
+		if(k==std::string::npos)continue;
+		std::string t=line.substr(k);
+		if(!t.compare(0,10,"Duration: "))dur=parseClock(t.c_str()+10);
+		else if(!t.compare(0,7,"video #"))
+		{
+			inVideo=!found;
+			found=true;
+			if(inVideo&&((at=t.find(": "))!=std::string::npos))
+			{
+				codec=t.substr(at+2);
+				size_t e=codec.find(" (");
+				if(e!=std::string::npos)codec.resize(e);
+			}
+		}
+		else if(!t.compare(0,7,"audio #")||!t.compare(0,10,"subtitles #")||!t.compare(0,11,"container #"))inVideo=false;
+		else if(inVideo&&!t.compare(0,7,"Width: "))w=atoi(t.c_str()+7);
+		else if(inVideo&&!t.compare(0,8,"Height: "))h=atoi(t.c_str()+8);
+	}
+	close(out);
+	waitpid(pid,nullptr,0);
+	std::lock_guard<std::mutex> lk(v.m);
+	v.probePid=0;
+	bool ok=found&&(w>0)&&(h>0);
+	v.probed=ok?1:-1;
+	if(ok)
+	{
+		if(dur>0)v.dur=dur;
+		v.codec=codec;
+		v.srcW=w;
+		v.srcH=h;
+	}
+	v.cv.notify_all();
+	return ok;
+}
+
+// gst-discoverer is slow to start (seconds), so it runs beside the playing.
+static void gstProbe(std::shared_ptr<Video> v)
+{
+	gstDiscover(*v);
+}
+
+// gst-launch-1.0 from the start (it cannot seek: the frames before are skipped),
+// w*h frames of fps a second on its standard output, the video fitted in with
+// borders.
+static pid_t startGst(Video& v, int w, int h, int& out, int& err)
+{
+	// gst-launch joins its arguments into one pipeline description: the file name
+	// goes in quotes
+	std::string loc="location=\"";
+	for(char c : v.path)
+	{
+		if((c=='"')||(c=='\\'))loc+='\\';
+		loc+=c;
+	}
+	loc+='"';
+	char caps[200];
+	snprintf(caps,sizeof caps,"video/x-raw,format=RGBA,width=%d,height=%d,framerate=%d/1,pixel-aspect-ratio=1/1",w,h,v.fps);
+	std::vector<std::string> args={"gst-launch-1.0","-q","filesrc",loc,"!","decodebin","!",
+		"videoconvert","!","videoscale","!","videorate","!",caps,"!","fdsink","fd=1"};
+	pid_t pid=spawnProg(args,out,err);
+	if(pid)videoPid(v,pid);
+	return pid;
+}
+
+static bool readAll(int fd, uint8_t* buf, size_t n)
+{
+	size_t got=0;
+	while(got<n)
+	{
+		ssize_t r=read(fd,buf+got,n-got);
+		if(r<0)
+		{
+			if(errno==EINTR)continue;
+			return false;
+		}
+		if(r==0)return false;
+		got+=r;
+	}
+	return true;
+}
+
+// Publishes a frame, or an error, if the video still plays in slot s.
+static bool videoPublish(int s, const std::shared_ptr<Video>& v, std::shared_ptr<Picture> pic, const std::string& err)
+{
+	Slot& sl=slots[s];
+	std::lock_guard<std::mutex> lk(sl.m);
+	if(sl.vid!=v)return false;
+	if(pic)
+	{
+		sl.pic=pic;
+		sl.state=2;
+		sl.err.clear();
+	}
+	else
+	{
+		sl.pic.reset();
+		sl.state=-1;
+		sl.err=err;
+	}
+	sl.version++;
+	return true;
+}
+
+static void videoRun(int s, std::shared_ptr<Video> v)
+{
+	int engine=videoEngine();
+	long long start=0;
+	bool everShown=false;
+	// GStreamer: frames of the whole maxW*maxH, as the size is not known in time
+	int gw=v->maxW&~1;
+	int gh=v->maxH&~1;
+	if(engine==ENG_GST)std::thread(gstProbe,v).detach();
+	int frameMs=1000/v->fps;
+	while(true)
+	{
+		int out=-1,err=-1,w=0,h=0;
+		std::string last;
+		long long t0=start;         // the time of the first frame the program sends
+		pid_t pid=0;
+		if(engine==ENG_GST)
+		{
+			pid=startGst(*v,gw,gh,out,err);
+			w=gw;
+			h=gh;
+			t0=0;
+		}
+		else pid=startFfmpeg(*v,start,out,err,w,h,last);
+		if(!pid)
+		{
+			videoPublish(s,v,nullptr,engine==ENG_GST?"gst-launch-1.0 could not be started.":"ffmpeg could not be started.");
+			return;
+		}
+		fcntl(err,F_SETFL,fcntl(err,F_GETFL)|O_NONBLOCK);
+		long long target=start;     // frames before this are skipped
+		long long wall0=0;          // the frame of time tw0 was shown at wall0
+		long long tw0=-1;
+		int n=0;                    // frames read
+		int shownHere=0;
+		if(w>0)
+		{
+			size_t bytes=(size_t)w*h*4;
+			std::vector<uint8_t> skip;
+			while(true)
+			{
+				long long t=t0+(long long)n*1000/v->fps;
+				bool show=t+frameMs/2>=target;
+				std::shared_ptr<Picture> pic;
+				uint8_t* buf;
+				if(show)
+				{
+					pic=std::make_shared<Picture>();
+					pic->w=w;
+					pic->h=h;
+					pic->frames.resize(1);
+					pic->frames[0].rgba.resize(bytes);
+					pic->frames[0].delay=frameMs;
+					buf=pic->frames[0].rgba.data();
+				}
+				else
+				{
+					skip.resize(bytes);
+					buf=skip.data();
+				}
+				if(!readAll(out,buf,bytes))break;
+				n++;
+				char junk[4096];
+				ssize_t r;
+				while((r=read(err,junk,sizeof junk-1))>0)
+				{
+					junk[r]=0;
+					std::string words(junk);
+					while(!words.empty()&&((words.back()=='\n')||(words.back()=='\r')))words.pop_back();
+					size_t nl=words.find_last_of("\n\r");
+					if(!words.empty())last=nl==std::string::npos?words:words.substr(nl+1);
+				}
+				if(!show)
+				{
+					std::lock_guard<std::mutex> lk(v->m);
+					if(v->stop||((v->seek>=0)&&(v->seek<t)))break;
+					continue;
+				}
+				{
+					std::lock_guard<std::mutex> lk(v->m);
+					pic->format=v->codec;
+					v->pos=t;
+					v->shown++;
+				}
+				if(!videoPublish(s,v,pic,""))break;
+				everShown=true;
+				shownHere++;
+				if(tw0<0)
+				{
+					tw0=t;
+					wall0=nowMs();
+				}
+				// wait for the next frame's time, or a pause, seek or stop
+				long long next=t+frameMs;
+				std::unique_lock<std::mutex> lk(v->m);
+				while(true)
+				{
+					if(v->stop)break;
+					if(v->seek>=0)
+					{
+						// GStreamer goes on reading up to a later time; anything
+						// else starts again from there
+						if((engine==ENG_GST)&&(v->seek>t))
+						{
+							target=v->seek;
+							v->seek=-1;
+							tw0=-1;
+						}
+						break;
+					}
+					if(v->paused)
+					{
+						v->cv.wait(lk);
+						tw0=next;
+						wall0=nowMs();
+						continue;
+					}
+					long long left=wall0+(next-tw0)-nowMs();
+					if(left<=0)break;
+					v->cv.wait_for(lk,std::chrono::milliseconds(left));
+				}
+				if(v->stop||(v->seek>=0))break;
+			}
+		}
+		kill(pid,SIGKILL);
+		close(out);
+		close(err);
+		waitpid(pid,nullptr,0);
+		std::unique_lock<std::mutex> lk(v->m);
+		v->pid=0;
+		if(v->stop)return;
+		if(v->seek>=0)
+		{
+			start=v->seek;
+			v->seek=-1;
+			v->atEnd=false;
+			continue;
+		}
+		if((shownHere==0)&&(!everShown||(start==0)))
+		{
+			// GStreamer: what gst-discoverer says, when it is done
+			if(engine==ENG_GST)
+				v->cv.wait_for(lk,std::chrono::seconds(15),[&]{return v->stop||(v->probed!=0);});
+			if(v->stop)return;
+			lk.unlock();
+			std::string why=last;
+			if(v->codec.empty())why="There is no video in this file.";
+			else if(why.empty())why="No frames came from the video.";
+			videoPublish(s,v,nullptr,why);
+			return;
+		}
+		// the end: again from the start, or stay on the last frame until told
+		if(v->loop)
+		{
+			start=0;
+			continue;
+		}
+		v->paused=true;
+		v->atEnd=true;
+		while(!v->stop&&(v->seek<0)&&v->paused)v->cv.wait(lk);
+		if(v->stop)return;
+		v->atEnd=false;
+		if(v->seek>=0)
+		{
+			start=v->seek;
+			v->seek=-1;
+		}
+		else start=0;
+	}
+}
+
+// Ends the video of a slot whose lock is held.
+static void videoStop(Slot& sl)
+{
+	if(!sl.vid)return;
+	std::shared_ptr<Video> v=sl.vid;
+	sl.vid.reset();
+	std::lock_guard<std::mutex> lk(v->m);
+	v->stop=true;
+	if(v->pid)kill(v->pid,SIGKILL);
+	if(v->probePid)kill(v->probePid,SIGKILL);
+	v->cv.notify_all();
+}
+
 // ---------------------------------------------------------------- the API
 
 // 1 if the file looks like a picture img_open can decode.
@@ -414,7 +1024,7 @@ int img_is(char* path)
 	size_t n=fread(head,1,sizeof head,f);
 	fclose(f);
 	const char* fmt=sniff(head,n,path);
-	if(!fmt)return 0;
+	if(!fmt)return (sniffVideo(head,n,path)&&(videoEngine()!=ENG_NONE))?1:0;
 #ifndef HAVE_WEBP
 	if(!strcmp(fmt,"WebP"))return 0;
 #endif
@@ -426,7 +1036,7 @@ int img_is(char* path)
 int img_sniff(char* head, int n, char* name)
 {
 	const char* fmt=sniff((const uint8_t*)head,n<0?0:(size_t)n,name);
-	if(!fmt)return 0;
+	if(!fmt)return (sniffVideo((const uint8_t*)head,n<0?0:(size_t)n,name)&&(videoEngine()!=ENG_NONE))?1:0;
 #ifndef HAVE_WEBP
 	if(!strcmp(fmt,"WebP"))return 0;
 #endif
@@ -438,12 +1048,38 @@ int img_open(int s, char* path)
 {
 	if(!validSlot(s))return 0;
 	Slot& sl=slots[s];
+	// a video plays through ffmpeg instead
+	uint8_t head[16];
+	size_t hn=0;
+	FILE* f=fopen(path,"rb");
+	if(f)
+	{
+		hn=fread(head,1,sizeof head,f);
+		fclose(f);
+	}
+	bool video=!sniff(head,hn,path)&&sniffVideo(head,hn,path)&&(videoEngine()!=ENG_NONE);
 	std::lock_guard<std::mutex> lk(sl.m);
-	sl.want=path;
-	sl.wantGen++;
+	videoStop(sl);
 	sl.state=1;
 	sl.pic.reset();
 	sl.version++;
+	if(video)
+	{
+		sl.want.clear();
+		sl.wantGen++;
+		if(!sl.busy)sl.doneGen=sl.wantGen;
+		auto v=std::make_shared<Video>();
+		v->path=path;
+		v->maxW=sl.vMaxW;
+		v->maxH=sl.vMaxH;
+		v->fps=sl.vFps;
+		v->loop=sl.vLoop;
+		sl.vid=v;
+		std::thread(videoRun,s,v).detach();
+		return 1;
+	}
+	sl.want=path;
+	sl.wantGen++;
 	if(!sl.busy)
 	{
 		sl.busy=true;
@@ -458,6 +1094,7 @@ void img_free(int s)
 	if(!validSlot(s))return;
 	Slot& sl=slots[s];
 	std::lock_guard<std::mutex> lk(sl.m);
+	videoStop(sl);
 	sl.want.clear();
 	sl.wantGen++;
 	sl.state=0;
@@ -492,7 +1129,10 @@ void img_format(int s, char* buf, int max)
 	copyOut(slots[s].pic?slots[s].pic->format:std::string(),buf,max);
 }
 
-// k: 0 width, 1 height, 2 frames, 3 1 if any pixel is not opaque.
+// k: 0 width, 1 height, 2 frames, 3 1 if any pixel is not opaque. For a video
+// (the frames as ffmpeg sends them, scaled down): 4 1 for a video, 5 the time of
+// the frame shown in ms, 6 the length in ms (0 unknown), 7 1 when paused, 8 counts
+// the frames shown, 9 and 10 the video's own width and height, 11 1 at the end.
 int img_info(int s, int k)
 {
 	if(!validSlot(s))return 0;
@@ -500,6 +1140,21 @@ int img_info(int s, int k)
 	{
 		std::lock_guard<std::mutex> lk(slots[s].m);
 		p=slots[s].pic;
+		if(k>=4)
+		{
+			std::shared_ptr<Video> v=slots[s].vid;
+			if(!v)return 0;
+			std::lock_guard<std::mutex> vl(v->m);
+			if(k==4)return 1;
+			if(k==5)return (int)v->pos;
+			if(k==6)return (int)v->dur;
+			if(k==7)return v->paused?1:0;
+			if(k==8)return v->shown;
+			if(k==9)return v->srcW;
+			if(k==10)return v->srcH;
+			if(k==11)return v->atEnd?1:0;
+			return 0;
+		}
 	}
 	if(!p)return 0;
 	if(k==0)return p->w;
@@ -541,6 +1196,43 @@ void img_rotate(int s)
 	orient(*p,6);
 	sl.pic=p;
 	sl.version++;
+}
+
+// How the next video opened in slot s plays: frames no bigger than maxW*maxH, fps
+// of them a second, and again from the start at the end (loop 1) or not.
+void img_video_opts(int s, int maxW, int maxH, int fps, int loop)
+{
+	if(!validSlot(s))return;
+	Slot& sl=slots[s];
+	std::lock_guard<std::mutex> lk(sl.m);
+	sl.vMaxW=std::max(16,maxW);
+	sl.vMaxH=std::max(16,maxH);
+	sl.vFps=std::min(60,std::max(1,fps));
+	sl.vLoop=loop!=0;
+}
+
+// Controls the video of slot s: op 0 pauses (arg 1) or plays (0), 1 toggles that,
+// 2 goes to arg ms, 3 goes arg ms on (back when negative).
+void img_video_ctl(int s, int op, int arg)
+{
+	if(!validSlot(s))return;
+	Slot& sl=slots[s];
+	std::lock_guard<std::mutex> lk(sl.m);
+	std::shared_ptr<Video> v=sl.vid;
+	if(!v)return;
+	std::lock_guard<std::mutex> vl(v->m);
+	if(op==0)v->paused=arg!=0;
+	else if(op==1)v->paused=!v->paused;
+	else if((op==2)||(op==3))
+	{
+		long long t=arg;
+		if(op==3)t=(v->seek>=0?v->seek:v->pos)+arg;
+		if((v->dur>0)&&(t>v->dur-500))t=v->dur-500;
+		if(t<0)t=0;
+		v->seek=t;
+		v->pos=t;
+	}
+	v->cv.notify_all();
 }
 
 static inline int to15(uint32_t c)
@@ -758,4 +1450,6 @@ extern "C" int img_format_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_format
 extern "C" int img_info_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_info);return 0;}
 extern "C" int img_delay_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_delay);return 0;}
 extern "C" int img_rotate_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_rotate);return 0;}
+extern "C" int img_video_opts_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_video_opts);return 0;}
+extern "C" int img_video_ctl_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_video_ctl);return 0;}
 extern "C" int img_draw_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_draw);return 0;}

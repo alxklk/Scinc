@@ -1,7 +1,7 @@
 // t2fc: a two-panel file manager on the Turbo Vision style desktop of ../tui.
 // Each panel window holds two file panels in the manner of Midnight Commander (Ctrl+N
 // opens another). F3 views a file (text in a read-only editor window, binary in the
-// hex viewer, pictures in a picture window), F4 edits it in the tui editor, F5-F8 copy, move, make directories and
+// hex viewer, pictures and, through ffmpeg or GStreamer, videos in a picture window), F4 edits it in the tui editor, F5-F8 copy, move, make directories and
 // delete, with progress, and F2 or Enter on an executable runs a program: on the
 // terminal itself, or in a new terminal window when t2fc draws in a graphic window.
 // The editor, hex viewer, theme editor and dialogs all come from ../tui.
@@ -715,6 +715,8 @@ int StrCmp(char* a, char* b);
 [[scinc::dynlink(IMG_DL,"img_delay_wrapper")]]int img_delay(int s, int f);
 [[scinc::dynlink(IMG_DL,"img_rotate_wrapper")]]void img_rotate(int s);
 [[scinc::dynlink(IMG_DL,"img_pixels_wrapper")]]int img_pixels(int s, int f, float cx, float cy, float scale, int fullW, int fullH, int ox, int oy, int w, int h, int bg, int* out);
+[[scinc::dynlink(IMG_DL,"img_video_opts_wrapper")]]void img_video_opts(int s, int maxW, int maxH, int fps, int loop);
+[[scinc::dynlink(IMG_DL,"img_video_ctl_wrapper")]]void img_video_ctl(int s, int op, int arg);
 [[scinc::dynlink(IMG_DL,"img_draw_wrapper")]]int img_draw(int s, int f, float cx, float cy, float scale, float aspect, int x0, int y0, int cw, int ch, int* cells, int* attrs, int stride, int clx0, int cly0, int clx1, int cly1, int uphalf, int bg);
 
 #define PV_SLOTS 32
@@ -730,6 +732,7 @@ int pvNext[PV_SLOTS];        // and when the next one is due
 char pvPath[32768];          // PV_SLOTS paths of FC_PATH
 float pvAspect=1.;           // a view pixel's width over its height
 int pvGen[PV_SLOTS];         // counts the pictures opened and turned, for TvPixels
+int pvVid[PV_SLOTS];         // a video's frame count when it was last drawn
 
 void PvInit()
 {
@@ -743,6 +746,7 @@ void PvInit()
 		pvFrame[s]=0;
 		pvNext[s]=0;
 		pvGen[s]=0;
+		pvVid[s]=0;
 		pvPath[s*FC_PATH]=0;
 	}
 }
@@ -793,6 +797,11 @@ void PvOpen(int s, char* path)
 	StrCpy(PvPathOf(s),path,FC_PATH);
 	char local[FC_PATH];
 	FcLocal(path,&local[0]);
+	// videos: smaller and slower in quick view, which loops them; real pixels in a
+	// graphic window
+	if(s>=PV_QUICK)img_video_opts(s,320,240,8,1);
+	else if(TvHasPixels())img_video_opts(s,960,540,20,0);
+	else img_video_opts(s,480,360,12,0);
 	img_open(s,&local[0]);
 	pvUsed[s]=1;
 	pvSeen[s]=-2;
@@ -822,7 +831,10 @@ int PvBusy()
 			int st=img_state(s);
 			if(st==1)return 1;
 			if(st==2)
+			{
 				if(img_info(s,2)>1)return 1;
+				if(img_info(s,4)&&!img_info(s,7))return 1;
+			}
 		}
 	return 0;
 }
@@ -911,11 +923,44 @@ void PvView(int s, int pw, int ph, float& scale, float& cx, float& cy)
 	}
 }
 
-// "PNG 1920x1080", with the frame of an animation.
+// m:ss, or h:mm:ss.
+void PvClock(int ms, char* out, int max)
+{
+	int t=ms/1000;
+	if(t>=3600)snprintf(out,max,"%i:%02i:%02i",t/3600,(t/60)%60,t%60);
+	else snprintf(out,max,"%i:%02i",t/60,t%60);
+}
+
+// "PNG 1920x1080", with the frame of an animation, or the time of a video.
 void PvInfo(int s, char* out, int max)
 {
 	char fmt[16];
 	img_format(s,&fmt[0],16);
+	if(img_info(s,4))
+	{
+		char at[16];
+		char len[16];
+		PvClock(img_info(s,5),&at[0],16);
+		len[0]=0;
+		if(img_info(s,6)>0)
+		{
+			len[0]='/';
+			PvClock(img_info(s,6),&len[1],15);
+		}
+		char* st="";
+		if(img_info(s,11))st=", end";
+		else if(img_info(s,7))st=", paused";
+		int w=img_info(s,9);
+		int h=img_info(s,10);
+		if(w==0)
+		{
+			// not known yet (GStreamer looks it up beside the playing)
+			w=img_info(s,0);
+			h=img_info(s,1);
+		}
+		snprintf(out,max,"%s %ix%i, %s%s%s",&fmt[0],w,h,&at[0],&len[0],st);
+		return;
+	}
 	int n=img_info(s,2);
 	if(n>1)snprintf(out,max,"%s %ix%i, frame %i/%i",&fmt[0],img_info(s,0),img_info(s,1),pvFrame[s]+1,n);
 	else snprintf(out,max,"%s %ix%i",&fmt[0],img_info(s,0),img_info(s,1));
@@ -946,7 +991,7 @@ void PvDraw(int s, int x, int y, int w, int h)
 	{
 		// what the picture looks like now, so that the backend asks for it only
 		// when that changes
-		int key=pvGen[s]*7919+pvFrame[s]*104729+(int)(pvCX[s]*8.)*31+(int)(pvCY[s]*8.)*1009+(int)(pvScale[s]*1000000.);
+		int key=pvGen[s]*7919+pvFrame[s]*104729+img_info(s,8)*15485863+(int)(pvCX[s]*8.)*31+(int)(pvCY[s]*8.)*1009+(int)(pvScale[s]*1000000.);
 		TvPixels(s,x,y,w,h,key);
 		return;
 	}
@@ -981,7 +1026,14 @@ void PvTick()
 			if(st==2)
 			{
 				int n=img_info(s,2);
-				if((n>1)&&(now>=pvNext[s]))
+				if(img_info(s,4))
+				{
+					// a video: a new frame, or a new time
+					int f=img_info(s,8)*2+img_info(s,7);
+					if(f!=pvVid[s])tvDirty=1;
+					pvVid[s]=f;
+				}
+				else if((n>1)&&(now>=pvNext[s]))
 				{
 					if(pvNext[s]!=0)pvFrame[s]=(pvFrame[s]+1)%n;
 					pvNext[s]=now+img_delay(s,pvFrame[s]);
@@ -2054,7 +2106,10 @@ void FcEditorTitle(int win)
 #define CM_PICNEXT 665
 #define CM_PICPREV 666
 #define CM_PICTURN 667
-#define CM_PIC1 667
+#define CM_PICPLAY 668        // videos: pause or play
+#define CM_PICFWD 669         // 10 s on
+#define CM_PIC1 669
+#define CM_PICBACK 673        // 10 s back
 #define CM_VIEWEDIT 670
 
 int pvPanel[TV_MAXWIN];      // the panel a picture window came from
@@ -2106,7 +2161,10 @@ void PicDraw(int win)
 	PvInfo(win,&info[0],120);
 	float scale=pvScale[win];
 	if(scale==0.)scale=PvFit(win,(t.w-2)*TvCellPxW(),(t.h-2)*TvCellPxH());
-	int pct=(int)(100./scale+0.5);
+	float px=100./scale;
+	// a video comes scaled down: the size against its own
+	if(img_info(win,4)&&(img_info(win,9)>0))px=px*img_info(win,0)/img_info(win,9);
+	int pct=(int)(px+0.5);
 	if(pvScale[win]==0.)snprintf(&s[0],160," %s  %i%% fit ",&info[0],pct);
 	else snprintf(&s[0],160," %s  %i%% ",&info[0],pct);
 	TvClip(t.x,t.y,t.x+t.w-2,t.y+t.h);
@@ -2154,6 +2212,17 @@ int PicKey(int win, int key)
 	int step=pw/8;
 	if(step<2)step=2;
 	// the other keys are commands of the keyboard map (PicCommand)
+	if(img_info(win,4)&&(pvScale[win]==0.))
+	{
+		// a video that fits the window: the arrows go back and on in it
+		if(key==K_LEFT)img_video_ctl(win,3,-5000);
+		else if(key==K_RIGHT)img_video_ctl(win,3,5000);
+		else if(key==K_DOWN)img_video_ctl(win,3,-60000);
+		else if(key==K_UP)img_video_ctl(win,3,60000);
+		else return 0;
+		tvDirty=1;
+		return 1;
+	}
 	if(key==K_LEFT)PvPan(win,-step,0,pw,ph);
 	else if(key==K_RIGHT)PvPan(win,step,0,pw,ph);
 	else if(key==K_UP)PvPan(win,0,-step,pw,ph);
@@ -2176,7 +2245,10 @@ void PicCommand(int win, int cmd)
 	}
 	else if(cmd==CM_PIC1X)PvSetScale(win,1.,pw/2,ph/2,pw,ph);
 	else if(cmd==CM_PIC2X)PvSetScale(win,0.5,pw/2,ph/2,pw,ph);
-	else if(cmd==CM_PICTURN)
+	else if(cmd==CM_PICPLAY)img_video_ctl(win,1,0);
+	else if(cmd==CM_PICFWD)img_video_ctl(win,3,10000);
+	else if(cmd==CM_PICBACK)img_video_ctl(win,3,-10000);
+	else if((cmd==CM_PICTURN)&&!img_info(win,4))
 	{
 		img_rotate(win);
 		pvGen[win]++;
@@ -3734,6 +3806,13 @@ void OpenHelp()
 		"  F3, Esc              close\n"
 		"  PNG, JPEG, GIF (animated), WebP (animated), BMP, TGA, PSD,\n"
 		"  HDR and PNM; photos are turned upright by their EXIF data.\n"
+		"  Videos (MP4, MKV, WebM, AVI, MOV, ...) play through ffmpeg,\n"
+		"  or else GStreamer, when installed, without sound:\n"
+		"  p, Enter             pause, play (at the end: again)\n"
+		"  Left, Right          5 s back, on (when the video fits)\n"
+		"  Down, Up             a minute back, on\n"
+		"  , .                  10 s back, on\n"
+		"  Quick view plays them smaller, again and again.\n"
 		"\n"
 		"View and edit windows\n"
 		"  F3, Esc              close a view window\n"
@@ -4176,7 +4255,7 @@ void TvAppCommand(int cmd)
 	// a command ends a quick search
 	if(fcQS>=0)FcQSEnd();
 	int top=TvTop();
-	if((cmd>=CM_PIC0)&&(cmd<=CM_PIC1))
+	if(((cmd>=CM_PIC0)&&(cmd<=CM_PIC1))||(cmd==CM_PICBACK))
 	{
 		if(top>=0)
 			if(tvWin[top].type==W_PIC)PicCommand(top,cmd);
@@ -4328,6 +4407,9 @@ void FcKeys()
 	TvKeyCmd(W_PIC,CM_PICNEXT,"Next picture",' ',K_PGDN,0);
 	TvKeyCmd(W_PIC,CM_PICPREV,"Previous picture",K_BACKSPACE,K_PGUP,0);
 	TvKeyCmd(W_PIC,CM_PICTURN,"Turn clockwise",'r',0,0);
+	TvKeyCmd(W_PIC,CM_PICPLAY,"Video: pause, play",'p',K_ENTER,0);
+	TvKeyCmd(W_PIC,CM_PICFWD,"Video: 10 s on",'.','>',0);
+	TvKeyCmd(W_PIC,CM_PICBACK,"Video: 10 s back",',','<',0);
 	TvKeyCmd(W_PIC,CM_CLOSE,"Close",K_F3,0,0);
 
 	TvKeyCmd(W_HEX,CM_GOTO,"Go to offset",'g',7,0);
@@ -4518,6 +4600,7 @@ int main(int argc, pchar* argv)
 	TvStatusCmd("Next",CM_PICNEXT);
 	TvStatusCmd("Prev",CM_PICPREV);
 	TvStatusCmd("Turn",CM_PICTURN);
+	TvStatusCmd("Play",CM_PICPLAY);
 	TvStatusCmd("Close",CM_CLOSE);
 	TvStatusFor(W_HEX);
 	TvStatusCmd("Go to",CM_GOTO);
