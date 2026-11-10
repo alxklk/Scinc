@@ -9,6 +9,11 @@
 // temporary file for the programs that need a real one (arc_temp), the whole tree of
 // an archive for the archive window (arc_tree, arc_row), and a copy job that takes
 // files and directories out, a step at a time (arc_job_*), answered as fs_job is.
+//
+// Listing a big compressed archive means reading all of it, which can take a long
+// time: arc_prepare reads its index on a thread of its own, arc_progress tells how
+// far it got and arc_cancel stops it, so the program can wait without freezing. The
+// other calls read an index they need at once, as before.
 #include <algorithm>
 #include <cerrno>
 #include <climits>
@@ -17,8 +22,12 @@
 #include <cstring>
 #include <ctime>
 #include <chrono>
+#include <atomic>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 #include <dlfcn.h>
@@ -55,6 +64,7 @@ static time_t (*pMtime)(archive_entry*);
 static unsigned (*pFiletype)(archive_entry*);
 static unsigned (*pPerm)(archive_entry*);
 static const char* (*pSymlink)(archive_entry*);
+static long long (*pFilterBytes)(archive*,int);   // may be missing; only for progress
 static int libState=0;
 
 static std::string lastError;
@@ -81,11 +91,28 @@ static bool libLoad()
 	pFiletype=(unsigned(*)(archive_entry*))dlsym(h,"archive_entry_filetype");
 	pPerm=(unsigned(*)(archive_entry*))dlsym(h,"archive_entry_perm");
 	pSymlink=(const char*(*)(archive_entry*))dlsym(h,"archive_entry_symlink");
+	pFilterBytes=(long long(*)(archive*,int))dlsym(h,"archive_filter_bytes");
 	if(!pReadNew||!pFilterAll||!pFormatAll||!pOpenFile||!pNextHeader||!pReadData||!pReadFree||
 		!pErrorString||!pPathname||!pSize||!pMtime||!pFiletype||!pPerm||!pSymlink)
 		return false;
 	libState=1;
 	return true;
+}
+
+// An archive reader, or 0 with err saying why. libLoad must have succeeded.
+static archive* openReader(const std::string& file, std::string& err)
+{
+	archive* a=pReadNew();
+	pFilterAll(a);
+	pFormatAll(a);
+	if(pOpenFile(a,file.c_str(),65536)!=AR_OK)
+	{
+		const char* e=pErrorString(a);
+		err=std::string("Cannot read the archive: ")+(e?e:"unknown format");
+		pReadFree(a);
+		return 0;
+	}
+	return a;
 }
 
 static archive* openArchive(const std::string& file)
@@ -95,17 +122,7 @@ static archive* openArchive(const std::string& file)
 		lastError="Archives need libarchive (libarchive.so.13), which this machine does not have.";
 		return 0;
 	}
-	archive* a=pReadNew();
-	pFilterAll(a);
-	pFormatAll(a);
-	if(pOpenFile(a,file.c_str(),65536)!=AR_OK)
-	{
-		const char* e=pErrorString(a);
-		lastError=std::string("Cannot read the archive: ")+(e?e:"unknown format");
-		pReadFree(a);
-		return 0;
-	}
-	return a;
+	return openReader(file,lastError);
 }
 
 // ---------------------------------------------------------------- paths
@@ -254,29 +271,29 @@ static void addEntry(AIndex* x, const AEnt& en)
 	x->e.push_back(en);
 }
 
-static AIndex* indexOf(const std::string& file)
+// An index being read on a thread of its own (arc_prepare). The thread has its own
+// reference, so one that is no longer wanted can finish (or notice cancel) by itself.
+struct ARead
 {
-	struct stat st;
-	if(stat(file.c_str(),&st))
-	{
-		lastError="Cannot read the archive";
-		return 0;
-	}
-	for(size_t i=0;i<cache.size();i++)
-		if(cache[i]->file==file)
-		{
-			AIndex* x=cache[i];
-			if(x->mt==st.st_mtime&&x->sz==st.st_size)
-			{
-				cache.erase(cache.begin()+i);
-				cache.push_back(x);
-				return x;
-			}
-			delete x;
-			cache.erase(cache.begin()+i);
-			break;
-		}
-	archive* a=openArchive(file);
+	std::string file;
+	time_t mt=0;
+	off_t sz=0;
+	std::atomic<bool> cancel{false};
+	std::atomic<int> entries{0};
+	std::atomic<long long> done{0};      // bytes of the file read so far
+	std::atomic<int> state{1};           // 1 reading, 2 read, -1 failed
+	std::chrono::steady_clock::time_point start;
+	AIndex* result=0;                    // set before state turns 2
+	std::string err;                     // set before state turns -1
+};
+
+static std::shared_ptr<ARead> bg;      // the latest arc_prepare's
+
+// Reads an archive's index; r, when given, gets the progress and can cancel it.
+// Returns 0 with err saying why when it cannot.
+static AIndex* readIndex(const std::string& file, const struct stat& st, ARead* r, std::string& err)
+{
+	archive* a=openReader(file,err);
 	if(!a)return 0;
 	AIndex* x=new AIndex;
 	x->file=file;
@@ -286,9 +303,21 @@ static AIndex* indexOf(const std::string& file)
 	x->files=0;
 	x->dirs=0;
 	archive_entry* en;
-	int r;
-	while((r=pNextHeader(a,&en))==AR_OK||r==AR_WARN)
+	int res;
+	while((res=pNextHeader(a,&en))==AR_OK||res==AR_WARN)
 	{
+		if(r)
+		{
+			if(r->cancel)
+			{
+				pReadFree(a);
+				delete x;
+				err="Cancelled";
+				return 0;
+			}
+			r->entries=(int)x->e.size();
+			if(pFilterBytes)r->done=pFilterBytes(a,-1);
+		}
 		const char* name=pPathname(en);
 		if(!name&&pPathnameUtf8)name=pPathnameUtf8(en);
 		if(!name)continue;
@@ -303,10 +332,10 @@ static AIndex* indexOf(const std::string& file)
 		if(t==S_IFLNK&&pSymlink(en))e.link=pSymlink(en);
 		addEntry(x,e);
 	}
-	if(r!=AR_EOF&&x->e.empty())
+	if(res!=AR_EOF&&x->e.empty())
 	{
 		const char* m=pErrorString(a);
-		lastError=std::string("Cannot read the archive: ")+(m?m:"");
+		err=std::string("Cannot read the archive: ")+(m?m:"");
 		pReadFree(a);
 		delete x;
 		return 0;
@@ -321,12 +350,100 @@ static AIndex* indexOf(const std::string& file)
 			x->bytes+=e.size;
 		}
 	}
+	return x;
+}
+
+static void readThread(std::shared_ptr<ARead> r)
+{
+	struct stat st;
+	st.st_mtime=r->mt;
+	st.st_size=r->sz;
+	std::string err;
+	AIndex* x=readIndex(r->file,st,r.get(),err);
+	if(x)
+	{
+		r->result=x;
+		r->state=2;
+	}
+	else
+	{
+		r->err=err;
+		r->state=-1;
+	}
+}
+
+static void cacheAdd(AIndex* x)
+{
 	cache.push_back(x);
 	if(cache.size()>6)
 	{
 		delete cache[0];
 		cache.erase(cache.begin());
 	}
+}
+
+// The index of a fresh cached copy of the archive, or 0.
+static AIndex* cached(const std::string& file, const struct stat& st)
+{
+	for(size_t i=0;i<cache.size();i++)
+		if(cache[i]->file==file)
+		{
+			AIndex* x=cache[i];
+			if(x->mt==st.st_mtime&&x->sz==st.st_size)
+			{
+				cache.erase(cache.begin()+i);
+				cache.push_back(x);
+				return x;
+			}
+			delete x;
+			cache.erase(cache.begin()+i);
+			break;
+		}
+	return 0;
+}
+
+// The background read of this very archive, if there is one.
+static bool bgIs(const std::string& file, const struct stat& st)
+{
+	return bg&&bg->file==file&&bg->mt==st.st_mtime&&bg->sz==st.st_size;
+}
+
+// Takes a finished background read into the cache.
+static AIndex* bgAdopt()
+{
+	AIndex* x=bg->result;
+	bg->result=0;
+	bg.reset();
+	cacheAdd(x);
+	return x;
+}
+
+static AIndex* indexOf(const std::string& file)
+{
+	struct stat st;
+	if(stat(file.c_str(),&st))
+	{
+		lastError="Cannot read the archive";
+		return 0;
+	}
+	AIndex* x=cached(file,st);
+	if(x)return x;
+	if(!libLoad())
+	{
+		lastError="Archives need libarchive (libarchive.so.13), which this machine does not have.";
+		return 0;
+	}
+	if(bgIs(file,st))
+	{
+		// being read already: wait for it rather than read it twice
+		while(bg->state==1)
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		if(bg->state==2)return bgAdopt();
+		lastError=bg->err;
+		return 0;
+	}
+	x=readIndex(file,st,0,lastError);
+	if(x)cacheAdd(x);
 	return x;
 }
 
@@ -371,6 +488,81 @@ static archive* openAt(AIndex* x, const std::string& inner)
 	lastError="The file is gone from the archive";
 	pReadFree(a);
 	return 0;
+}
+
+// ---------------------------------------------------------------- reading in the background
+
+// For a path in an archive, makes sure its index is there: 1 when it is (or the path
+// is not in an archive), 0 while it is being read on a thread of its own (started
+// here; ask again), -1 when it cannot be read (arc_error says why).
+static int arc_prepare(const char* path)
+{
+	std::string file;
+	std::string inner;
+	if(!split(path,file,inner))return 1;
+	struct stat st;
+	if(stat(file.c_str(),&st))
+	{
+		lastError="Cannot read the archive";
+		return -1;
+	}
+	if(cached(file,st))return 1;
+	if(!libLoad())
+	{
+		lastError="Archives need libarchive (libarchive.so.13), which this machine does not have.";
+		return -1;
+	}
+	if(bgIs(file,st))
+	{
+		int state=bg->state;
+		if(state==1)return 0;
+		if(state==2)
+		{
+			bgAdopt();
+			return 1;
+		}
+		lastError=bg->err;
+		return -1;
+	}
+	// one at a time: another archive's read stops
+	if(bg)bg->cancel=true;
+	bg=std::make_shared<ARead>();
+	bg->file=file;
+	bg->mt=st.st_mtime;
+	bg->sz=st.st_size;
+	bg->start=std::chrono::steady_clock::now();
+	std::thread(readThread,bg).detach();
+	return 0;
+}
+
+// How far the background read has got: "12345 entries, 3 s" into out, and the share
+// of the file read in thousandths, or -1 when that is not known (or none is read).
+static int arc_progress(char* out, int max)
+{
+	out[0]=0;
+	if(!bg||bg->state!=1)return -1;
+	int secs=(int)std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now()-bg->start).count();
+	char buf[80];
+	snprintf(buf,sizeof buf,"%d entries, %d s",(int)bg->entries,secs);
+	copyOut(out,max,buf);
+	if(!pFilterBytes||bg->sz<=0)return -1;
+	long long d=bg->done;
+	int k=(int)(d*1000/bg->sz);
+	return k<0?0:(k>1000?1000:k);
+}
+
+// Stops the background read of the archive path is in (any, for ""), and forgets it.
+static void arc_cancel(const char* path)
+{
+	if(!bg)return;
+	if(path[0])
+	{
+		std::string file;
+		std::string inner;
+		if(!split(path,file,inner)||file!=bg->file)return;
+	}
+	bg->cancel=true;
+	bg.reset();
 }
 
 // ---------------------------------------------------------------- what a path is
@@ -1430,6 +1622,9 @@ static void arc_job_name(int k, char* out, int max)
 
 // ---------------------------------------------------------------- Scinc bindings
 
+extern "C" int arc_prepare_wrapper(ScincVM* s, void*){ScincBoundCall(s,arc_prepare);return 0;}
+extern "C" int arc_progress_wrapper(ScincVM* s, void*){ScincBoundCall(s,arc_progress);return 0;}
+extern "C" int arc_cancel_wrapper(ScincVM* s, void*){ScincBoundCall(s,arc_cancel);return 0;}
 extern "C" int arc_where_wrapper(ScincVM* s, void*){ScincBoundCall(s,arc_where);return 0;}
 extern "C" int arc_is_wrapper(ScincVM* s, void*){ScincBoundCall(s,arc_is);return 0;}
 extern "C" int arc_isdir_wrapper(ScincVM* s, void*){ScincBoundCall(s,arc_isdir);return 0;}

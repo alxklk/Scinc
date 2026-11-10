@@ -239,7 +239,11 @@ sizes and times: Enter views a file or shows a directory in the panel, F5 copies
 it out. `arc_dl.so` (`arc_dl.cpp`, built by `build_so.sh`) does this apart from
 term_dl, with libarchive opened at run time (`libarchive.so.13`); files the
 picture decoder or editor must open are taken out to a temporary directory that
-goes when t2fc ends. Options > Lynx-like motion makes Left and Right leave and
+goes when t2fc ends. Listing a big compressed archive means reading all of it, so
+the list is read on a thread of `arc_dl`'s own (`arc_prepare`): one not read
+within 0.3 s gets a dialog with the entries so far, how much of the file is read,
+and Cancel, and quick view shows the same without waiting, and stops the reading
+when the cursor moves on. Options > Lynx-like motion makes Left and Right leave and
 enter directories and archives.
 
 **Colours over ssh.** tui uses 24-bit colour when `COLORTERM` says the terminal

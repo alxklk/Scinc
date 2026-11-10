@@ -15,9 +15,19 @@
 #ifndef SCGL_H
 #define SCGL_H
 
+// Scinc's preprocessor knows neither #if defined() nor #elif, and loses track of an
+// #ifdef nested in a skipped block, so the modes are told apart by flat #ifdefs.
 #ifdef __SCINC__
+#define SCGL_USER_SIDE
+#endif
+#ifdef SCGL_NATIVE_APP
+#define SCGL_USER_SIDE
+#endif
+
+#ifdef SCGL_USER_SIDE
 
 typedef float* FLOATV;
+#ifdef __SCINC__
 // The library's path, relative to the program's folder: a program elsewhere
 // defines SCGL_DL before including this, e.g. "../opengl/scgl_dl".
 #ifndef SCGL_DL
@@ -25,6 +35,12 @@ typedef float* FLOATV;
 #endif
 #define NAME(name) #name"_wrapper"
 #define WRAP(rettype, name, args, ...) [[scinc::dynlink(SCGL_DL, NAME(name) )]]rettype name args;
+#endif
+#ifdef SCGL_NATIVE_APP
+// A native build of a Scinc program (as t2fc-native) links scgl_dl.cpp in, built
+// with SCGL_NATIVE_IMPL: each function is scgl_<name> there.
+#define WRAP(rettype, name, args, ...) extern "C" rettype name args __asm__("scgl_" #name);
+#endif
 
 // ---- key codes returned by glwGetKey()/accepted by glwKeyDown() ----
 // Printable keys are their ASCII code ('a', '1', ' ' ...).
@@ -191,6 +207,14 @@ typedef const double* FLOATV;
 
 #endif
 
+#ifdef SCGL_NATIVE_IMPL
+// scgl_dl.cpp linked into a native program (SCGL_NATIVE_APP there): the functions
+// themselves, as scgl_<name>. Scinc float is double, in the native program too.
+#undef WRAP
+#define WRAP(rettype, name, args, ...) extern "C" rettype scgl_##name args __VA_ARGS__
+#define float double
+#endif
+
 // ============================ window / input ============================
 // glwMultisample(n) before glwInit asks for n-sample anti-aliasing (falls
 // back to none if unsupported).
@@ -353,5 +377,9 @@ WRAP(void, glUniform1fv,       (int loc, int count, FLOATV v), {count = glw_fv_c
 WRAP(void, glUniform3fv,       (int loc, int count, FLOATV v), {count = glw_fv_count(count, 3); p_glUniform3fv(loc, count, glw_fvn(v, count * 3));})
 WRAP(void, glUniform4fv,       (int loc, int count, FLOATV v), {count = glw_fv_count(count, 4); p_glUniform4fv(loc, count, glw_fvn(v, count * 4));})
 WRAP(void, glUniformMatrix4fv, (int loc, FLOATV m), {p_glUniformMatrix4fv(loc, 1, GL_FALSE, glw_fvn(m, 16));})
+
+#ifdef SCGL_NATIVE_IMPL
+#undef float
+#endif
 
 #endif // SCGL_H

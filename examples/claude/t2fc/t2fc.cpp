@@ -16,8 +16,10 @@
 #include <stdio.h>
 #define TERM_DL "../tui/term_dl"
 #define TVAPPS_TOOLS                       // only the hex viewer and the theme editor
+#ifndef TE_FILE                           // the native build (t2fc-native) keeps them elsewhere
 #define TE_FILE "../tui/tvthemes.cfg"      // the themes are shared with tvdemo
 #define TE_OLDFILE "../tui/tvtheme.cfg"
+#endif
 #define TVAPP_DRAW
 #define TVAPP_KEY
 #define TVAPP_MOUSE
@@ -44,6 +46,7 @@ typedef char* pchar;
 #define W_JOB 61
 #define W_ASK 62
 #define W_PREFS 63
+#define W_ARCWAIT 66
 
 #define CM_QUIT 500
 #define CM_HELP 501
@@ -100,9 +103,11 @@ typedef char* pchar;
 #define PN_QUICK 7
 
 #define FC_PATH 1024
+#ifndef CFG_FILE
 #define CFG_FILE "t2fc.cfg"
 #define KEYS_FILE "t2fc.keys"
 #define HIST_FILE "t2fc.hist"
+#endif
 // input histories (tv.h TvInputHistory); the editor has 14..16
 #define H_RUN 1
 #define H_TARGET 2     // copy and move targets
@@ -270,6 +275,9 @@ int FcTopC()
 [[scinc::dynlink(ARC_DL,"arc_marked_wrapper")]]int arc_marked(int i);
 [[scinc::dynlink(ARC_DL,"arc_mark_match_wrapper")]]int arc_mark_match(int v, char* pattern, int dirsToo);
 [[scinc::dynlink(ARC_DL,"arc_mark_info_wrapper")]]int arc_mark_info(char* out, int max);
+[[scinc::dynlink(ARC_DL,"arc_prepare_wrapper")]]int arc_prepare(char* path);
+[[scinc::dynlink(ARC_DL,"arc_progress_wrapper")]]int arc_progress(char* out, int max);
+[[scinc::dynlink(ARC_DL,"arc_cancel_wrapper")]]void arc_cancel(char* path);
 [[scinc::dynlink(ARC_DL,"arc_tree_wrapper")]]int arc_tree(int id, char* path);
 [[scinc::dynlink(ARC_DL,"arc_row_wrapper")]]int arc_row(int id, int i, int k, char* out, int max);
 [[scinc::dynlink(ARC_DL,"arc_summary_wrapper")]]void arc_summary(int id, char* out, int max);
@@ -497,9 +505,19 @@ void FcClamp(int p)
 
 // Lists a directory in panel p with selectName under the cursor if it is there.
 // Returns 0, keeping the panel as it was, if the directory cannot be read.
+int FcArcReady(char* path);
+int fcArcCancelled=0;      // the last FcArcReady was cancelled: say nothing more
+int fcArcWin=-1;           // the dialog waiting for an archive's index, or -1
+char fcArcWaitPath[FC_PATH];
+int fcArcBar=-1;
+int fcQArcWait=0;          // quick view waits for an archive's index
+char fcQArcWaitPath[FC_PATH];
+
+
 int FcLoad(int p, char* path, char* selectName)
 {
 	char resolved[FC_PATH];
+	if(!FcArcReady(path))return 0;
 	FcUse(p);
 	fs_sort(fcSort[p]);
 	arc_sort(fcSort[p]);
@@ -599,8 +617,9 @@ void FcGoUp(int p)
 
 void FcChangeDir(int p, char* path)
 {
+	fcArcCancelled=0;
 	if(!FcLoad(p,path,""))
-		TvMessage("Error","Cannot read this directory.",0);
+		if(!fcArcCancelled)TvMessage("Error","Cannot read this directory.",0);
 }
 
 // ---------------------------------------------------------------- drawing the panels
@@ -1322,6 +1341,14 @@ void FcDrawQuick(int p, int x, int y, int w, int h)
 	int chh=h-3;
 	char info[120];
 	info[0]=0;
+	if(fcQArcWait&&((kind!=6)||(StrCmp(&path[0],&fcQArcWaitPath[0])!=0)))
+	{
+		// the cursor left the archive quick view waited for: no more reading it,
+		// unless a panel waits for it too
+		if((fcArcWin<0)||(StrCmp(&fcQArcWaitPath[0],&fcArcWaitPath[0])!=0))arc_cancel(&fcQArcWaitPath[0]);
+		fcQArcWait=0;
+		FcTickRate();
+	}
 	if(kind==1)
 	{
 		int s=PV_QUICK+p;
@@ -1748,6 +1775,8 @@ void FcTickRate()
 	if(PvBusy())ms=40;  // pictures being decoded, or animations
 	if(FcQScanBusy())ms=100;   // a directory being counted
 	if(fcJobWin>=0)ms=15;
+	if(fcArcWin>=0)ms=100;      // an archive being read
+	if(fcQArcWait)if(ms>200)ms=200;
 	if(ms!=tvTickMs)
 	{
 		tvTickMs=ms;
@@ -1834,6 +1863,71 @@ void FcJobTick()
 	}
 	else if(r==0)fcJobDone=1;
 	if(fcJobDone)tvWin[fcJobWin].result=CM_OK;
+}
+
+// Reading a big archive's list of files can take long (a compressed tar is read
+// through to the end): arc_dl reads it on a thread of its own, and meanwhile a dialog
+// shows how far it got, with Cancel. Returns 1 when the index is there (or the path
+// is not in an archive, or it cannot be read: the caller then hears why), 0 when
+// cancelled.
+int FcArcReady(char* path)
+{
+	if(fcArcWin>=0)return 1;       // already waiting: whatever asks now reads at once
+	if(FcArcWhere(path)==0)return 1;
+	if(arc_prepare(path)!=0)return 1;
+	// most archives are read in a moment: no dialog for those
+	int until=term_ms()+300;
+	while(term_ms()<until)
+	{
+		Wait(0.02);
+		if(arc_prepare(path)!=0)return 1;
+	}
+	int w=60;
+	if(w>tvW-2)w=tvW-2;
+	int win=TvNewCentered(W_ARCWAIT,"Archive",w,10,WF_DIALOG);
+	if(win<0)return 1;
+	StrCpy(&fcArcWaitPath[0],path,FC_PATH);
+	fcArcBar=TvAdd(win,C_PROGRESS,3,5,w-6,1,"",0);
+	tvCtl[fcArcBar].count=1000;
+	TvAdd(win,C_BUTTON,(w-12)/2,7,12,2,"Cancel",CM_CANCEL);
+	fcArcWin=win;
+	FcTickRate();
+	int res=TvExec(win);
+	TvClose(win);
+	fcArcWin=-1;
+	FcTickRate();
+	if(res==CM_OK)return 1;
+	arc_cancel(path);
+	fcArcCancelled=1;
+	return 0;
+}
+
+void DrawArcWait(int win)
+{
+	TWin& t=tvWin[win];
+	char file[FC_PATH];
+	char inner[FC_PATH];
+	char line[120];
+	arc_where(&fcArcWaitPath[0],&file[0],FC_PATH,&inner[0],FC_PATH);
+	TvText(t.x+3,t.y+2,"Reading the list of files of",A_DLG);
+	int w=t.w-6;
+	int cols=TvCols(&file[0]);
+	int i=0;
+	if(cols>w)
+		for(int k=0;k<cols-w;k++)
+			TvUtf8(&file[0],i);
+	TvTextN(t.x+3,t.y+3,&file[i],A_DLG,w);
+	int k=arc_progress(&line[0],120);
+	TvText(t.x+3,t.y+4,&line[0],A_DLG);
+	tvCtl[fcArcBar].used=k>=0;
+	if(k>=0)tvCtl[fcArcBar].val=k;
+}
+
+// The tick while the dialog waits: done when the index is there, or failed.
+void FcArcWaitTick()
+{
+	if(arc_prepare(&fcArcWaitPath[0])!=0)tvWin[fcArcWin].result=CM_OK;
+	tvDirty=1;
 }
 
 // Runs the job fs_job_start planned, in a dialog with progress bars and Cancel.
@@ -2491,6 +2585,8 @@ int ArcOpen(char* path)
 		TvMessage("Archive","Six archive windows are open already.",0);
 		return -1;
 	}
+	fcArcCancelled=0;
+	if(!FcArcReady(path))return -1;
 	int n=arc_tree(id,path);
 	if(n<0)
 	{
@@ -2696,6 +2792,33 @@ void FcQArc(char* path, int x, int y, int w, int h, char* info)
 {
 	if(StrCmp(&fcQArcPath[0],path)!=0)
 	{
+		// never waits: a big archive is read in the background meanwhile, and the
+		// tick draws again until it is there
+		int r=arc_prepare(path);
+		if(r==0)
+		{
+			if(!fcQArcWait)
+			{
+				fcQArcWait=1;
+				StrCpy(&fcQArcWaitPath[0],path,FC_PATH);
+				FcTickRate();
+			}
+			char line[120];
+			int k=arc_progress(&line[0],120);
+			TvText(x+1,y+1,"Reading the archive...",FC_FILE);
+			FcCut(x+1,y+2,&line[0],FC_FILE,w-2);
+			if(k>=0)
+			{
+				snprintf(&line[0],120,"%i%%",k/10);
+				TvText(x+1,y+3,&line[0],FC_FILE);
+			}
+			return;
+		}
+		if(fcQArcWait)
+		{
+			fcQArcWait=0;
+			FcTickRate();
+		}
 		fcQArcN=arc_tree(7,path);
 		StrCpy(&fcQArcPath[0],path,FC_PATH);
 	}
@@ -3785,6 +3908,9 @@ void OpenHelp()
 		"                       copies it out\n"
 		"  In an archive, view, quick view, hex view and F5 copy work;\n"
 		"  nothing can be edited, moved, deleted or run there.\n"
+		"  A big archive is read in the background: a dialog shows\n"
+		"  how far, and Esc or Cancel stops it; quick view shows the\n"
+		"  same without waiting.\n"
 		"\n"
 		"Running programs\n"
 		"  F2, Alt+Enter        run a command in this directory; it\n"
@@ -3891,6 +4017,7 @@ void TvAppDraw(int win)
 	else if(type==W_ARC)ArcDraw(win);
 	else if(type==W_THEME)TeDraw(win);
 	else if(type==W_JOB)DrawJob(win);
+	else if(type==W_ARCWAIT)DrawArcWait(win);
 	else if(type==W_ASK)DrawAsk(win);
 	else if(type==W_PREFS)DrawPrefs(win);
 }
@@ -4012,6 +4139,15 @@ void TvAppClosed(int win)
 
 void TvAppTick()
 {
+	if(fcArcWin>=0)
+	{
+		// nothing else while an archive is read for a panel: the panels are not
+		// to be reloaded in the middle of loading one
+		FcArcWaitTick();
+		PvTick();
+		return;
+	}
+	if(fcQArcWait)tvDirty=1;    // quick view shows how far the reading got
 	PvTick();
 	FcCapCheck();
 	if(fcJobWin>=0)
