@@ -28,6 +28,11 @@
 #define CM_MARKSEL 164   // start or stop selecting with the plain cursor keys (as mc's F3)
 #define CM_MARKBLK 165   // the same for a block of columns (Shift+F3)
 
+// the input histories the editor's dialogs use (tv.h has 1..16; programs take the low ones)
+#define ED_HIST_FIND 14
+#define ED_HIST_REPL 15
+#define ED_HIST_LINE 16
+
 #define VW_POOL 4000000
 #define VW_MAXLINES 100000
 #define ED_MAXLINE 4000
@@ -2632,6 +2637,7 @@ void RunFind(int win, int replacing)
 	TvAdd(dlg,C_LABEL,3,2,10,1,"~F~ind:",0);
 	int inFind=TvAdd(dlg,C_INPUT,14,2,38,1,&edFind[0],0);
 	tvCtl[inFind].val=StrLen(&edFind[0]);
+	TvInputHistory(inFind,ED_HIST_FIND);
 	int inRepl=-1;
 	int row=4;
 	if(replacing)
@@ -2639,6 +2645,7 @@ void RunFind(int win, int replacing)
 		TvAdd(dlg,C_LABEL,3,4,10,1,"~W~ith:",0);
 		inRepl=TvAdd(dlg,C_INPUT,14,4,38,1,&edRepl[0],0);
 		tvCtl[inRepl].val=StrLen(&edRepl[0]);
+		TvInputHistory(inRepl,ED_HIST_REPL);
 		row=6;
 	}
 	int boxCase=TvAdd(dlg,C_CHECK,3,row,24,1,"Match ~c~ase",0);
@@ -2665,6 +2672,12 @@ void RunFind(int win, int replacing)
 	{
 		StrCpy(&edFind[0],&tvCtl[inFind].text[0],200);
 		if(replacing)StrCpy(&edRepl[0],&tvCtl[inRepl].text[0],200);
+		// Replace all ends with CM_YES, which does not keep the history itself
+		if(res==CM_YES)
+		{
+			TvHistAdd(ED_HIST_FIND,&edFind[0]);
+			TvHistAdd(ED_HIST_REPL,&edRepl[0]);
+		}
 		edCase=tvCtl[boxCase].val;
 		edWhole=tvCtl[boxWhole].val;
 	}
@@ -2692,6 +2705,7 @@ void RunGoto(int win)
 	if(dlg<0)return;
 	TvAdd(dlg,C_LABEL,3,2,10,1,"~L~ine:",0);
 	int in=TvAdd(dlg,C_INPUT,11,2,20,1,"",0);
+	TvInputHistory(in,ED_HIST_LINE);
 	int b=TvAdd(dlg,C_BUTTON,5,5,12,2,"O~K~",CM_OK);
 	tvCtl[b].isDefault=1;
 	TvAdd(dlg,C_BUTTON,19,5,12,2,"Cancel",CM_CANCEL);

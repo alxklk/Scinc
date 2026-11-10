@@ -1282,6 +1282,8 @@ struct TCtl
 	int group;
 	int virt;   // a list asks TvAppListItem for its items
 	int count;  // the item count of a virtual list
+	int hist;   // an input's history list (TvInputHistory), 0 for none
+	int hpos;   // the entry it shows, -1 for what was being typed
 	char text[200];
 };
 
@@ -1289,10 +1291,159 @@ TWin tvWin[TV_MAXWIN];
 int tvWinDirty[TV_MAXWIN];  // set by the program for a window with unsaved changes;
                             // the window list marks it with *
 TCtl tvCtl[TV_MAXCTL];
+
+// ---------------------------------------------------------------- input history
+
+// Lists 1..TV_HISTS of what was typed in inputs, newest first. An input given one
+// with TvInputHistory goes through it with Up and Down; what an input holds when its
+// modal dialog ends with CM_OK goes to the front of the list.
+#define TV_HISTS 16
+#define TV_HISTN 20
+char tvHist[64000];       // TV_HISTS*TV_HISTN entries of 200
+int tvHistN[TV_HISTS];
+char tvHistDraft[200];    // what was typed before Up went into the history
+
+char* TvHistAt(int id, int k)
+{
+	return &tvHist[((id-1)*TV_HISTN+k)*200];
+}
+
+int TvSameText(char* a, char* b)
+{
+	int i=0;
+	while(a[i]==b[i])
+	{
+		if(a[i]==0)return 1;
+		i++;
+	}
+	return 0;
+}
+
+void TvHistAdd(int id, char* text)
+{
+	if((id<1)||(id>TV_HISTS))return;
+	if(text[0]==0)return;
+	int n=tvHistN[id-1];
+	// an entry already there moves to the front
+	int at=n;
+	for(int k=0;k<n;k++)
+		if(TvSameText(TvHistAt(id,k),text))at=k;
+	if(at==n)
+	{
+		if(n<TV_HISTN)n++;
+		at=n-1;
+	}
+	for(int k=at;k>0;k--)
+		StrCpy(TvHistAt(id,k),TvHistAt(id,k-1),200);
+	StrCpy(TvHistAt(id,0),text,200);
+	tvHistN[id-1]=n;
+}
+
+void TvInputHistory(int ctl, int id)
+{
+	if(ctl<0)return;
+	tvCtl[ctl].hist=id;
+	tvCtl[ctl].hpos=-1;
+}
+
+void TvComboOpen(int id);
+
+// Up and Down in input id with a history, and Alt+Down or F4 for its list. Returns 1
+// if the key was used.
+int TvHistKey(int id, int key)
+{
+	TCtl& c=tvCtl[id];
+	if((c.hist<1)||(c.hist>TV_HISTS))return 0;
+	if((key==K_F4)||((key==K_DOWN)&&(evMod&(MOD_ALT|MOD_CTRL))))
+	{
+		TvComboOpen(id);
+		return 1;
+	}
+	int n=tvHistN[c.hist-1];
+	int to=c.hpos;
+	if(key==K_UP)to++;
+	else if(key==K_DOWN)to--;
+	else return 0;
+	if((to>=n)||(to<-1))return 1;
+	if(c.hpos==-1)StrCpy(&tvHistDraft[0],&c.text[0],200);
+	if(to==-1)StrCpy(&c.text[0],&tvHistDraft[0],200);
+	else StrCpy(&c.text[0],TvHistAt(c.hist,to),200);
+	c.hpos=to;
+	c.val=StrLen(&c.text[0]);
+	c.top=0;
+	return 1;
+}
+
+// The inputs of a dialog that ended with OK give their text to their histories.
+void TvHistKeep(int win)
+{
+	for(int i=0;i<TV_MAXCTL;i++)
+		if(tvCtl[i].used)
+			if((tvCtl[i].win==win)&&(tvCtl[i].type==C_INPUT)&&(tvCtl[i].hist>0))
+				TvHistAdd(tvCtl[i].hist,&tvCtl[i].text[0]);
+}
+
+// The histories as lines "id<TAB>text", oldest first so that loading keeps the order.
+int TvHistSave(char* path)
+{
+	if(!fs_save_begin(path))return 0;
+	int ok=1;
+	char line[220];
+	for(int id=1;id<=TV_HISTS;id++)
+		for(int k=tvHistN[id-1]-1;k>=0;k--)
+		{
+			snprintf(&line[0],220,"%d\t%s\n",id,TvHistAt(id,k));
+			if(ok)ok=fs_save_write(&line[0],StrLen(&line[0]));
+		}
+	return fs_save_end(ok);
+}
+
+void TvHistLoad(char* path)
+{
+	char* buf=malloc(TV_HISTS*TV_HISTN*220+16);
+	int n=fs_load(path,buf,TV_HISTS*TV_HISTN*220);
+	if(n<=0)
+	{
+		free(buf);
+		return;
+	}
+	buf[n]=0;
+	int i=0;
+	char text[200];
+	while(i<n)
+	{
+		int id=0;
+		while((buf[i]>='0')&&(buf[i]<='9'))
+		{
+			id=id*10+buf[i]-'0';
+			i++;
+		}
+		int o=0;
+		if(buf[i]==9)
+		{
+			i++;
+			while((i<n)&&(buf[i]!=10))
+			{
+				if(o<199)
+				{
+					text[o]=buf[i];
+					o++;
+				}
+				i++;
+			}
+		}
+		text[o]=0;
+		while((i<n)&&(buf[i]!=10))i++;
+		i++;
+		TvHistAdd(id,&text[0]);
+	}
+	free(buf);
+}
 int tvZ[TV_MAXWIN];  // back to front
 int tvNZ=0;
 int tvRunning=1;
 int tvMenuKey=K_F10; // opens the menu bar; a program may set another key before TvStart
+int tvKeyGrab=-1;    // a window whose TvAppKey gets keys before the keyboard map, or -1
 int tvTickMs=0;      // set above 0 for a TvAppTick timer, for animation and games
 int tvNextTick=0;
 int tvLastInput=0;   // term_ms() of the last key, click or paste, for a screen saver
@@ -1468,6 +1619,8 @@ int TvAdd(int win, int type, int x, int y, int w, int h, char* text, int cmd)
 	c.group=0;
 	c.virt=0;
 	c.count=0;
+	c.hist=0;
+	c.hpos=-1;
 	StrCpy(&c.text[0],text,200);
 	if(TvFocusable(type))
 		if(tvWin[win].focus<0)tvWin[win].focus=id;
@@ -1510,6 +1663,8 @@ void TvItemAt(char* s, int n, char* out, int max)
 
 int TvListCount(TCtl& c)
 {
+	// an input's drop-down list is its history
+	if((c.type==C_INPUT)&&(c.hist>0))return tvHistN[c.hist-1];
 	if(c.virt)return c.count;
 	return TvItemCount(&c.text[0]);
 }
@@ -1551,7 +1706,8 @@ void TvKeysDrawInfo(int win);
 void TvCtlItem(int id, int k, char* out, int max)
 {
 	TCtl& c=tvCtl[id];
-	if(tvWin[c.win].type==W_WINLIST)TvWinListItem(k,out,max);
+	if((c.type==C_INPUT)&&(c.hist>0))StrCpy(out,TvHistAt(c.hist,k),max);
+	else if(tvWin[c.win].type==W_WINLIST)TvWinListItem(k,out,max);
 	else if(tvWin[c.win].type==1001)TvKeysItem(k,out,max);
 	else if(c.virt)TvAppListItem(c.win,id,k,out,max);
 	else TvItemAt(&c.text[0],k,out,max);
@@ -1606,8 +1762,16 @@ void TvComboBox(int& x, int& y, int& w, int& h)
 
 void TvComboOpen(int id)
 {
+	TCtl& c=tvCtl[id];
+	comboSel=c.val;
+	if(c.type==C_INPUT)
+	{
+		// an input's history, from the entry it shows or the newest
+		if(TvListCount(c)==0)return;
+		comboSel=c.hpos;
+		if(comboSel<0)comboSel=0;
+	}
 	comboCtl=id;
-	comboSel=tvCtl[id].val;
 	comboTop=0;
 	tvDirty=1;
 }
@@ -1617,6 +1781,20 @@ void TvComboClose(int pick)
 	int id=comboCtl;
 	comboCtl=-1;
 	tvDirty=1;
+	if(tvCtl[id].type==C_INPUT)
+	{
+		TCtl& c=tvCtl[id];
+		if(pick)
+			if((comboSel>=0)&&(comboSel<TvListCount(c)))
+			{
+				if(c.hpos==-1)StrCpy(&tvHistDraft[0],&c.text[0],200);
+				c.hpos=comboSel;
+				StrCpy(&c.text[0],TvHistAt(c.hist,comboSel),200);
+				c.val=StrLen(&c.text[0]);
+				c.top=0;
+			}
+		return;
+	}
 	if(pick)
 		if(tvCtl[id].val!=comboSel)
 		{
@@ -1806,13 +1984,17 @@ void TvDrawCtl(int id, TWin& t)
 	{
 		// val and top are byte offsets, on character boundaries
 		int len=StrLen(&c.text[0]);
+		// one with a history keeps its last cell for the drop-down arrow
+		int tw=c.w;
+		if(c.hist>0)tw=c.w-1;
 		if(c.val>len)c.val=len;
 		if(c.val<c.top)c.top=c.val;
-		while(TvColsBetween(&c.text[0],c.top,c.val)>c.w-1)
+		while(TvColsBetween(&c.text[0],c.top,c.val)>tw-1)
 			TvUtf8(&c.text[0],c.top);
-		TvFill(x,y,c.w,1,' ',A_INPUT);
-		TvTextN(x,y,&c.text[c.top],A_INPUT,c.w);
+		TvFill(x,y,tw,1,' ',A_INPUT);
+		TvTextN(x,y,&c.text[c.top],A_INPUT,tw);
 		if(c.top>0)TvPut(x,y,G_LEFT,A_INPUT_ARROW);
+		if(c.hist>0)TvPut(x+c.w-1,y,G_DOWN,A_COMBO_ARROW);
 		if(focused)
 		{
 			tvCurX=x+TvColsBetween(&c.text[0],c.top,c.val);
@@ -3557,6 +3739,7 @@ int TvCtlKey(int win, int key)
 	TCtl& c=tvCtl[t.focus];
 	if(c.type==C_INPUT)
 	{
+		if(TvHistKey(t.focus,key))return 1;
 		int len=StrLen(&c.text[0]);
 		if(key==K_LEFT){c.val=TvPrevChar(&c.text[0],c.val);return 1;}
 		if(key==K_RIGHT){if(c.val<len)TvUtf8(&c.text[0],c.val);return 1;}
@@ -3821,6 +4004,8 @@ void TvCtlMouseDown(int win, int id, int mx, int my)
 		TvCaptureMouse(win);
 		TvAppMouse(win,EV_MDOWN,mx-t.x,my-t.y);
 	}
+	else if((c.type==C_INPUT)&&(c.hist>0)&&(mx==t.x+c.x+c.w-1))
+		TvComboOpen(id);
 	else if(c.type==C_INPUT)
 	{
 		int cols=mx-(t.x+c.x);
@@ -4507,6 +4692,9 @@ void TvKey()
 						}
 			}
 		}
+		// a window that is taking typed text (as a search) sees keys before the map
+		if((tvKeyGrab>=0)&&(tvKeyGrab==top))
+			if(TvAppKey(top,key))return;
 		int kc=TvKeyFind(TvKeyCtxNow(),TvChordOf(key,evMod));
 		if(kc>=0)
 		{
@@ -4702,7 +4890,9 @@ int TvExec(int win)
 	tvWin[win].num=0;
 	tvWin[win].result=0;
 	TvToFront(win);
-	return TvRun(win);
+	int res=TvRun(win);
+	if(res==CM_OK)TvHistKeep(win);
+	return res;
 }
 
 // Window > List: every window, front first, with its number and a * for unsaved
@@ -5089,6 +5279,8 @@ int TvMessage(char* title, char* text, int askYesNo)
 
 void TvInit()
 {
+	for(int h=0;h<TV_HISTS;h++)
+		tvHistN[h]=0;
 	tvVga[0]=0;
 	tvVga[1]=4;
 	tvVga[2]=2;

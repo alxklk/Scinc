@@ -523,6 +523,57 @@ static bool writeData(archive* a, const std::string& to, mode_t mode)
 	return true;
 }
 
+// The program's temporary directory ($TMPDIR or /tmp, mode 0700), made on first use
+// and removed when the program ends.
+static bool tmpEnsure()
+{
+	if(!tmpDir.empty())
+		return true;
+	const char* t=getenv("TMPDIR");
+	std::string tpl=std::string(t&&*t?t:"/tmp")+"/t2fc-arc-XXXXXX";
+	std::vector<char> b(tpl.begin(),tpl.end());
+	b.push_back(0);
+	if(!mkdtemp(b.data()))
+	{
+		lastError=std::string("Cannot make a temporary directory: ")+strerror(errno);
+		return false;
+	}
+	tmpDir=b.data();
+	atexit(tmpClean);
+	return true;
+}
+
+// A path for a new temporary file called name, in a directory of its own inside the
+// temporary directory; the file itself is not made. Returns 0 with arc_error if
+// the directory cannot be made.
+static int arc_tmpname(const char* name, char* out, int max)
+{
+	out[0]=0;
+	if(!tmpEnsure())
+		return 0;
+	std::string dir=tmpDir+"/"+std::to_string(++tmpN);
+	if(mkdir(dir.c_str(),0700))
+	{
+		lastError=std::string("Cannot make a temporary directory: ")+strerror(errno);
+		return 0;
+	}
+	copyOut(out,max,dir+"/"+name);
+	return 1;
+}
+
+// Removes a temporary file arc_tmpname named, and its directory; nothing outside the
+// temporary directory.
+static void arc_tmpdrop(const char* path)
+{
+	std::string p=path;
+	if(tmpDir.empty()||p.compare(0,tmpDir.size()+1,tmpDir+"/")!=0||p.find("/../")!=std::string::npos)
+		return;
+	unlink(p.c_str());
+	size_t s=p.rfind('/');
+	if(s!=std::string::npos&&s>tmpDir.size())
+		rmdir(p.substr(0,s).c_str());
+}
+
 // Takes a file out of an archive into a temporary directory, removed when the
 // program ends, and writes that file's path. Returns 0 with arc_error if it cannot.
 static int arc_temp(const char* path, char* out, int max)
@@ -547,20 +598,8 @@ static int arc_temp(const char* path, char* out, int max)
 		copyOut(out,max,it->second);
 		return 1;
 	}
-	if(tmpDir.empty())
-	{
-		const char* t=getenv("TMPDIR");
-		std::string tpl=std::string(t&&*t?t:"/tmp")+"/t2fc-arc-XXXXXX";
-		std::vector<char> b(tpl.begin(),tpl.end());
-		b.push_back(0);
-		if(!mkdtemp(b.data()))
-		{
-			lastError=std::string("Cannot make a temporary directory: ")+strerror(errno);
-			return 0;
-		}
-		tmpDir=b.data();
-		atexit(tmpClean);
-	}
+	if(!tmpEnsure())
+		return 0;
 	std::string dir=tmpDir+"/"+std::to_string(++tmpN);
 	mkdir(dir.c_str(),0700);
 	size_t s=inner.rfind('/');
@@ -1421,3 +1460,5 @@ extern "C" int arc_job_step_wrapper(ScincVM* s, void*){ScincBoundCall(s,arc_job_
 extern "C" int arc_job_answer_wrapper(ScincVM* s, void*){ScincBoundCall(s,arc_job_answer);return 0;}
 extern "C" int arc_job_info_wrapper(ScincVM* s, void*){ScincBoundCall(s,arc_job_info);return 0;}
 extern "C" int arc_job_name_wrapper(ScincVM* s, void*){ScincBoundCall(s,arc_job_name);return 0;}
+extern "C" int arc_tmpname_wrapper(ScincVM* s, void*){ScincBoundCall(s,arc_tmpname);return 0;}
+extern "C" int arc_tmpdrop_wrapper(ScincVM* s, void*){ScincBoundCall(s,arc_tmpdrop);return 0;}

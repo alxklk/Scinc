@@ -163,15 +163,16 @@ files of those names do. F1 shows every key.
 
 | Keys | What they do |
 |------|--------------|
-| Tab, Enter, Backspace, letters | Other panel, enter a directory, the parent, jump to a name |
+| Tab, Enter, Backspace, letters | Other panel, enter a directory, the parent; typing starts a quick search: a box on the panel's bottom line, and the cursor on the next name that starts with what is typed (Backspace takes a letter back; Esc, a cursor key, a click or a command ends it; Preferences sets whether case matters) |
 | Insert, right click, `+` `-` `*` | Mark, mark by pattern, unmark by pattern, invert |
 | F3, F4, Shift+F4 | View (pictures, text read-only, binary in hex), edit, edit a new file |
-| Ctrl+Q, Alt+Q | Quick view in the other panel: the picture, text or hex dump of the file under the cursor; for a folder, how many files and folders it holds and their size, counted in the background for up to 3 s (Options > Preferences turns this off) |
-| F5, F6, Shift+F6, F7, F8 | Copy, move, rename, make a directory, delete; with progress, Cancel, and questions before replacing |
+| Ctrl+Q, Alt+Q | Quick view in the other panel: the picture, text or hex dump of the file under the cursor; for a folder, how many files and folders it holds and their size, counted in the background for up to 5 s (Options > Preferences sets the seconds; 0 turns it off) |
+| F5, Shift+F5, F6, Shift+F6, F7, F8 | Copy, copy in the same directory under a new name, move, rename, make a directory, delete; with progress, Cancel, and questions before replacing |
 | F2, Alt+Enter, Enter on an executable | Run a program (see below) |
 | Ctrl+N | Another panel window (up to six), each with its own directories and modes |
 | Alt+1..9, Alt+N, Alt+0 | Go to a window by number, from the Windows menu, or from the window list. Up to 12 windows are open besides dialogs, numbered 1..9, a, b, c; click a number on the menu bar to bring that window to the front |
 | Ctrl+U, Alt+I, Ctrl+R, Alt+. | Swap panels, other panel here, reread, hidden files |
+| Ctrl+C, Ctrl+Insert | The full path of the entry under the cursor to the clipboard (the archive's path inside an archive), or the names of the marked entries, one a line |
 | F9, F10 | The menus, quit (as in MC; Alt+X quits too) |
 
 Clicking a column title sorts by it; the Left and Right menus choose full or
@@ -242,10 +243,11 @@ window that stays open until Enter: `$TERMINAL`, then `x-terminal-emulator`,
 `gnome-terminal`, `konsole`, `xfce4-terminal` and others are tried, or Options >
 Preferences names one (as `xterm -e`). Command > Open with the desktop hands the
 file to `xdg-open`. File names are quoted for the shell, and the panels are read
-again afterwards. The Run dialog's check boxes send the program's stdout, stderr or
-both to new files in the directory, named after the program (`make.stdout`,
-`make.stderr`, then `make-2.stdout` and so on; nothing is written over), and the
-cursor lands on the new file.
+again afterwards. The Run dialog's check boxes capture the program's stdout, stderr or
+both: when it ends they open as new editor windows named after it (`make.stdout`,
+`make.stderr`), not yet saved anywhere, and Save suggests the panel's directory.
+The output goes through t2fc's own temporary directory (in `$TMPDIR` or `/tmp`),
+which is removed as soon as it is read and when t2fc exits.
 
 **Clipboard.** The editor's Cut, Copy and Paste use the desktop's clipboard
 through `wl-copy`/`wl-paste`, `xclip` or `xsel`, so text goes to and from other
@@ -254,6 +256,11 @@ ssh), a copy goes to the terminal as OSC 52, which most terminals and tmux (with
 `set-clipboard on`) put on the local clipboard; paste then comes from the
 terminal's own paste, and Paste in the editor uses what was last copied in t2fc.
 Rebuild `../tui/term_dl.so` (`../tui/build_so.sh`) for this.
+
+Input lines remember what was typed in them (Run, copy and move targets, new
+names, patterns, Go to directory, the editor's Find, Replace and Go to line): Up and
+Down go through it, as in a shell; the ▼ at the line's end, Ctrl+Down, Alt+Down or F4 drop
+down the list of it; and `t2fc.hist` keeps it between runs.
 
 Settings, including the directories of the panel window in front at exit, are kept
 in `t2fc.cfg`; colour themes are shared with tvdemo (`../tui/tvthemes.cfg`).
