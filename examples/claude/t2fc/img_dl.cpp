@@ -6,7 +6,8 @@
 // WebP, animated too, through libwebp. libwebp is opened only when a WebP file is,
 // so img_dl.so needs nothing beyond the C and C++ libraries and still loads on a
 // machine without libwebp (it then just cannot show WebP); build_so.sh needs the
-// libwebp headers for it, or leaves WebP out.
+// libwebp headers for it, or leaves WebP out. SVG and SVGZ are drawn by librsvg,
+// opened the same way (no headers needed).
 //
 // Videos (MP4, MKV, WebM, AVI, MOV, ...) play through ffmpeg when it is on the PATH,
 // or else GStreamer's gst-launch-1.0: it decodes them scaled down to raw RGBA frames
@@ -178,8 +179,181 @@ static bool hasExt(const char* path, const char* ext)
 	return (n>=e)&&(strcasecmp(path+n-e,ext)==0);
 }
 
+// ---------------------------------------------------------------- SVG
+// SVG (and gzipped SVGZ) through librsvg, opened at run time like libwebp: no
+// headers are needed, the few functions are declared here, and cairo and GObject
+// are found through librsvg's own dependencies.
+#include <dlfcn.h>
+
+struct SvgError { uint32_t domain; int code; char* message; };
+struct SvgDims { int width; int height; double em; double ex; };
+struct SvgRect { double x; double y; double width; double height; };
+
+static void* (*svgNewFromFile)(const char*,SvgError**)=nullptr;
+static void (*svgGetDimensions)(void*,SvgDims*)=nullptr;
+static int (*svgSizeInPixels)(void*,double*,double*)=nullptr;           // 2.52+
+static int (*svgRenderDocument)(void*,void*,const SvgRect*,SvgError**)=nullptr;  // 2.46+
+static int (*svgRenderCairo)(void*,void*)=nullptr;
+static void (*svgUnref)(void*)=nullptr;
+static void (*svgErrorFree)(SvgError*)=nullptr;
+static void* (*crSurfaceCreate)(int,int,int)=nullptr;
+static void* (*crCreate)(void*)=nullptr;
+static void (*crScale)(void*,double,double)=nullptr;
+static void (*crDestroy)(void*)=nullptr;
+static void (*crSurfaceFlush)(void*)=nullptr;
+static void (*crSurfaceDestroy)(void*)=nullptr;
+static int (*crSurfaceStatus)(void*)=nullptr;
+static unsigned char* (*crSurfaceData)(void*)=nullptr;
+static int (*crSurfaceStride)(void*)=nullptr;
+static std::mutex svgLock;
+static int svgState=0;     // 0 not tried, 1 there, -1 missing
+
+static bool svgLoad()
+{
+	std::lock_guard<std::mutex> lk(svgLock);
+	if(svgState)return svgState>0;
+	svgState=-1;
+	void* h=dlopen("librsvg-2.so.2",RTLD_NOW|RTLD_LOCAL);
+	if(!h)h=dlopen("librsvg-2.so",RTLD_NOW|RTLD_LOCAL);
+	if(!h)return false;
+	#define SVG_SYM(v,name) *(void**)&v=dlsym(h,name)
+	SVG_SYM(svgNewFromFile,"rsvg_handle_new_from_file");
+	SVG_SYM(svgGetDimensions,"rsvg_handle_get_dimensions");
+	SVG_SYM(svgSizeInPixels,"rsvg_handle_get_intrinsic_size_in_pixels");
+	SVG_SYM(svgRenderDocument,"rsvg_handle_render_document");
+	SVG_SYM(svgRenderCairo,"rsvg_handle_render_cairo");
+	SVG_SYM(svgUnref,"g_object_unref");
+	SVG_SYM(svgErrorFree,"g_error_free");
+	SVG_SYM(crSurfaceCreate,"cairo_image_surface_create");
+	SVG_SYM(crCreate,"cairo_create");
+	SVG_SYM(crScale,"cairo_scale");
+	SVG_SYM(crDestroy,"cairo_destroy");
+	SVG_SYM(crSurfaceFlush,"cairo_surface_flush");
+	SVG_SYM(crSurfaceDestroy,"cairo_surface_destroy");
+	SVG_SYM(crSurfaceStatus,"cairo_surface_status");
+	SVG_SYM(crSurfaceData,"cairo_image_surface_get_data");
+	SVG_SYM(crSurfaceStride,"cairo_image_surface_get_stride");
+	#undef SVG_SYM
+	if(!svgNewFromFile||!svgGetDimensions||!(svgRenderDocument||svgRenderCairo)||!svgUnref||
+		!svgErrorFree||!crSurfaceCreate||!crCreate||!crScale||!crDestroy||!crSurfaceFlush||
+		!crSurfaceDestroy||!crSurfaceStatus||!crSurfaceData||!crSurfaceStride)return false;
+	svgState=1;
+	return true;
+}
+
+// The pixels an SVG is drawn into: its own size, but small drawings (icons) are
+// drawn bigger, up to SVG_MIN on the longer side, since they would otherwise only
+// be shown with their pixels repeated; and none longer than SVG_MAX.
+#define SVG_MIN 1024
+#define SVG_MAX 8192
+
+static bool decodeSvg(const std::string& path, Picture& p, std::string& err)
+{
+	if(!svgLoad())
+	{
+		err="SVG needs librsvg (librsvg-2.so.2), which this machine does not have.";
+		return false;
+	}
+	SvgError* e=nullptr;
+	void* h=svgNewFromFile(path.c_str(),&e);
+	if(!h)
+	{
+		err=(e&&e->message)?e->message:"This SVG file could not be read.";
+		if(e)svgErrorFree(e);
+		return false;
+	}
+	double w=0,hh=0;
+	if(!svgSizeInPixels||!svgSizeInPixels(h,&w,&hh)||(w<=0)||(hh<=0))
+	{
+		SvgDims d={0,0,0,0};
+		svgGetDimensions(h,&d);
+		w=d.width;
+		hh=d.height;
+	}
+	if((w<=0)||(hh<=0))
+	{
+		w=SVG_MIN;
+		hh=SVG_MIN;
+	}
+	double k=1;
+	double longer=std::max(w,hh);
+	if(longer<SVG_MIN)k=SVG_MIN/longer;
+	if(longer*k>SVG_MAX)k=SVG_MAX/longer;
+	p.w=std::max(1,(int)std::lround(w*k));
+	p.h=std::max(1,(int)std::lround(hh*k));
+	void* surf=crSurfaceCreate(0,p.w,p.h);   // CAIRO_FORMAT_ARGB32
+	if(crSurfaceStatus(surf))
+	{
+		crSurfaceDestroy(surf);
+		svgUnref(h);
+		err="Not enough memory for this SVG.";
+		return false;
+	}
+	void* cr=crCreate(surf);
+	bool ok;
+	if(svgRenderDocument)
+	{
+		SvgRect vp={0,0,(double)p.w,(double)p.h};
+		ok=svgRenderDocument(h,cr,&vp,&e)!=0;
+	}
+	else
+	{
+		crScale(cr,p.w/w,p.h/hh);
+		ok=svgRenderCairo(h,cr)!=0;
+	}
+	crDestroy(cr);
+	crSurfaceFlush(surf);
+	if(!ok)
+	{
+		err=(e&&e->message)?e->message:"This SVG file could not be drawn.";
+		if(e)svgErrorFree(e);
+		crSurfaceDestroy(surf);
+		svgUnref(h);
+		return false;
+	}
+	// cairo's premultiplied ARGB in native order (B G R A bytes) to straight RGBA
+	const unsigned char* src=crSurfaceData(surf);
+	int stride=crSurfaceStride(surf);
+	Frame f;
+	f.rgba.resize((size_t)p.w*p.h*4);
+	for(int y=0;y<p.h;y++)
+	{
+		const uint32_t* row=(const uint32_t*)(src+(size_t)y*stride);
+		uint8_t* o=&f.rgba[(size_t)y*p.w*4];
+		for(int x=0;x<p.w;x++)
+		{
+			uint32_t v=row[x];
+			int a=v>>24;
+			int r=(v>>16)&255,g=(v>>8)&255,b=v&255;
+			if(a&&(a<255))
+			{
+				r=std::min(255,(r*255+a/2)/a);
+				g=std::min(255,(g*255+a/2)/a);
+				b=std::min(255,(b*255+a/2)/a);
+			}
+			o[x*4]=r;o[x*4+1]=g;o[x*4+2]=b;o[x*4+3]=a;
+		}
+	}
+	crSurfaceDestroy(surf);
+	svgUnref(h);
+	p.frames.push_back(std::move(f));
+	return true;
+}
+
+// An SVG by its name (.svg, or .svgz gzipped) and first bytes, or "<svg" without.
+static bool sniffSvg(const uint8_t* d, size_t n, const char* path)
+{
+	if(hasExt(path,".svgz"))return (n>=2)&&(d[0]==0x1F)&&(d[1]==0x8B);
+	size_t i=0;
+	if((n>=3)&&(d[0]==0xEF)&&(d[1]==0xBB)&&(d[2]==0xBF))i=3;
+	while((i<n)&&isspace(d[i]))i++;
+	if((n-i>=4)&&!memcmp(d+i,"<svg",4))return true;
+	return hasExt(path,".svg")&&(i<n)&&(d[i]=='<');
+}
+
 static const char* sniff(const uint8_t* d, size_t n, const char* path)
 {
+	if(sniffSvg(d,n,path))return "SVG";
 	if((n>=8)&&!memcmp(d,"\x89PNG\r\n\x1a\n",8))return "PNG";
 	if((n>=3)&&(d[0]==0xFF)&&(d[1]==0xD8)&&(d[2]==0xFF))return "JPEG";
 	if((n>=4)&&!memcmp(d,"GIF8",4))return "GIF";
@@ -332,6 +506,7 @@ static bool decode(const std::string& path, Picture& p, std::string& err)
 		return false;
 	}
 	p.format=fmt;
+	if(!strcmp(fmt,"SVG"))return decodeSvg(path,p,err);
 	if(!strcmp(fmt,"WebP"))
 	{
 #ifdef HAVE_WEBP
@@ -1028,6 +1203,7 @@ int img_is(char* path)
 #ifndef HAVE_WEBP
 	if(!strcmp(fmt,"WebP"))return 0;
 #endif
+	if(!strcmp(fmt,"SVG")&&!svgLoad())return 0;
 	return 1;
 }
 
@@ -1040,6 +1216,7 @@ int img_sniff(char* head, int n, char* name)
 #ifndef HAVE_WEBP
 	if(!strcmp(fmt,"WebP"))return 0;
 #endif
+	if(!strcmp(fmt,"SVG")&&!svgLoad())return 0;
 	return 1;
 }
 

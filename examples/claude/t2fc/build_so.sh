@@ -12,7 +12,7 @@ if [ -f /usr/include/webp/demux.h ]; then
 	g++ $FLAGS -DHAVE_WEBP -o img_dl.so img_dl.cpp -ldl -lpthread
 	echo "img_dl.so built with WebP"
 else
-	g++ $FLAGS -o img_dl.so img_dl.cpp -lpthread
+	g++ $FLAGS -o img_dl.so img_dl.cpp -ldl -lpthread
 	echo "img_dl.so built without WebP (install libwebp-dev for it)"
 fi
 

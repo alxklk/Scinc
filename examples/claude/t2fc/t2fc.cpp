@@ -661,6 +661,7 @@ int FcIsMedia(char* s)
 	if(FcEndsWith(s,".gif"))return 1;
 	if(FcEndsWith(s,".bmp"))return 1;
 	if(FcEndsWith(s,".svg"))return 1;
+	if(FcEndsWith(s,".svgz"))return 1;
 	if(FcEndsWith(s,".mp3"))return 1;
 	if(FcEndsWith(s,".wav"))return 1;
 	if(FcEndsWith(s,".ogg"))return 1;
@@ -4020,7 +4021,9 @@ void OpenHelp()
 		"  r                    turn a quarter clockwise\n"
 		"  F3, Esc              close\n"
 		"  PNG, JPEG, GIF (animated), WebP (animated), BMP, TGA, PSD,\n"
-		"  HDR and PNM; photos are turned upright by their EXIF data.\n"
+		"  HDR, PNM, and SVG through librsvg when installed (small\n"
+		"  drawings at 1024 pixels); photos are turned upright by\n"
+		"  their EXIF data.\n"
 		"  Videos (MP4, MKV, WebM, AVI, MOV, ...) play through ffmpeg,\n"
 		"  or else GStreamer, when installed, without sound:\n"
 		"  p, Enter             pause, play (at the end: again)\n"
