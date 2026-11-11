@@ -54,6 +54,7 @@ typedef char* pchar;
 #define CM_PREFS 503
 #define CM_THEMEED 504
 #define CM_THEMEPICK 505
+#define CM_DESKPICK 509
 #define CM_LINENUMS 506
 #define CM_WRAP 507
 #define CM_LYNX 508
@@ -3681,6 +3682,8 @@ void PrefsLoad(char* left, char* right)
 	if(k>=12)fcQSecs=v[11];
 	fcQSCase=0;
 	if(k>=13)fcQSCase=(v[12]!=0);
+	teDeskPick=0;
+	if((k>=14)&&(v[13]<TE_DESKN))teDeskPick=v[13];
 	if(fcQSecs>600)fcQSecs=600;
 	// the directories, one a line, then the terminal command
 	for(int d=0;d<3;d++)
@@ -3710,8 +3713,8 @@ void PrefsLoad(char* left, char* right)
 void PrefsSave()
 {
 	char buf[2200];
-	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
-		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
+	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
+		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -3758,42 +3761,50 @@ void ShowToggles()
 	}
 }
 
+int prefsThemeCtl=-1;     // the theme combo box of the open Preferences
+
 void RunPrefs()
 {
-	int win=TvNewCentered(W_PREFS,"Preferences",50,19,WF_DIALOG);
+	int win=TvNewCentered(W_PREFS,"Preferences",50,20,WF_DIALOG);
 	if(win<0)return;
 	TvAdd(win,C_LABEL,3,2,10,1,"~T~heme",0);
 	char names[200];
 	TeThemeNames(&names[0],200);
 	int th=TvAdd(win,C_COMBO,14,2,30,1,&names[0],CM_THEMEPICK);
 	tvCtl[th].val=prefTheme;
-	int hid=TvAdd(win,C_CHECK,2,4,30,1,"Show ~h~idden files",0);
+	prefsThemeCtl=th;
+	TvAdd(win,C_LABEL,3,3,10,1,"~D~esktop",0);
+	int dk=TvAdd(win,C_COMBO,14,3,30,1,teDeskNames,CM_DESKPICK);
+	tvCtl[dk].val=teDeskPick;
+	int oldDesk=teDeskPick;
+	int hid=TvAdd(win,C_CHECK,2,5,30,1,"Show ~h~idden files",0);
 	tvCtl[hid].val=fcHidden;
-	int ln=TvAdd(win,C_CHECK,2,5,30,1,"Editor ~l~ine numbers",0);
+	int ln=TvAdd(win,C_CHECK,2,6,30,1,"Editor ~l~ine numbers",0);
 	tvCtl[ln].val=edLineNums;
-	int wr=TvAdd(win,C_CHECK,2,6,30,1,"Editor ~w~ord wrap",0);
+	int wr=TvAdd(win,C_CHECK,2,7,30,1,"Editor ~w~ord wrap",0);
 	tvCtl[wr].val=edWrap;
-	int ly=TvAdd(win,C_CHECK,2,7,46,1,"L~y~nx-like motion: Left goes up, Right in",0);
+	int ly=TvAdd(win,C_CHECK,2,8,46,1,"L~y~nx-like motion: Left goes up, Right in",0);
 	tvCtl[ly].val=fcLynx;
-	int qc=TvAdd(win,C_CHECK,2,8,46,1,"Case-~s~ensitive file search",0);
+	int qc=TvAdd(win,C_CHECK,2,9,46,1,"Case-~s~ensitive file search",0);
 	tvCtl[qc].val=fcQSCase;
-	TvAdd(win,C_LABEL,3,9,38,1,"~Q~uick view folder count, s (0 off)",0);
-	int qd=TvAdd(win,C_INPUT,41,9,6,1,"",0);
+	TvAdd(win,C_LABEL,3,10,38,1,"~Q~uick view folder count, s (0 off)",0);
+	int qd=TvAdd(win,C_INPUT,41,10,6,1,"",0);
 	snprintf(&tvCtl[qd].text[0],16,"%d",fcQSecs);
 	tvCtl[qd].val=StrLen(&tvCtl[qd].text[0]);
-	TvAdd(win,C_LABEL,3,11,40,1,"Te~r~minal for F2 in a graphic window",0);
-	int term=TvAdd(win,C_INPUT,3,12,44,1,"",0);
+	TvAdd(win,C_LABEL,3,12,40,1,"Te~r~minal for F2 in a graphic window",0);
+	int term=TvAdd(win,C_INPUT,3,13,44,1,"",0);
 	TvInputHistory(term,H_TERM);
 	StrCpy(&tvCtl[term].text[0],&fcTermCmd[0],200);
 	tvCtl[term].val=StrLen(&fcTermCmd[0]);
-	int ok=TvAdd(win,C_BUTTON,11,15,12,2,"O~K~",CM_OK);
+	int ok=TvAdd(win,C_BUTTON,11,16,12,2,"O~K~",CM_OK);
 	tvCtl[ok].isDefault=1;
-	TvAdd(win,C_BUTTON,26,15,12,2,"Cancel",CM_CANCEL);
+	TvAdd(win,C_BUTTON,26,16,12,2,"Cancel",CM_CANCEL);
 	tvWin[win].focus=th;
 	int res=TvExec(win);
 	if(res==CM_OK)
 	{
 		prefTheme=tvCtl[th].val;
+		teDeskPick=tvCtl[dk].val;
 		int h=tvCtl[hid].val;
 		edLineNums=tvCtl[ln].val;
 		edWrap=tvCtl[wr].val;
@@ -3828,8 +3839,10 @@ void RunPrefs()
 		}
 		PrefsSave();
 	}
+	else teDeskPick=oldDesk;
+	prefsThemeCtl=-1;
 	TvClose(win);
-	// the combo box showed each theme as it was picked
+	// the combo boxes showed each theme and pattern as it was picked
 	TeUseTheme(prefTheme);
 	ShowToggles();
 }
@@ -3837,7 +3850,7 @@ void RunPrefs()
 void DrawPrefs(int win)
 {
 	TWin& t=tvWin[win];
-	TvText(t.x+3,t.y+11,"empty: the first one found, as \"xterm -e\"",A_DLG);
+	TvText(t.x+3,t.y+14,"empty: the first one found, as \"xterm -e\"",A_DLG);
 }
 
 // ---------------------------------------------------------------- help
@@ -4108,6 +4121,13 @@ void TvAppButton(int win, int ctl, int cmd)
 	if(cmd==CM_THEMEPICK)
 	{
 		TeUseTheme(tvCtl[ctl].val);
+		return;
+	}
+	if(cmd==CM_DESKPICK)
+	{
+		// shown at once, over whichever theme the dialog's combo box has
+		teDeskPick=tvCtl[ctl].val;
+		if(prefsThemeCtl>=0)TeUseTheme(tvCtl[prefsThemeCtl].val);
 		return;
 	}
 	if((cmd>=CM_TEDEPTH)&&(cmd<=CM_TETHEME))

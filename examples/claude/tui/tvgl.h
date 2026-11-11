@@ -66,6 +66,8 @@ int* glAtlas;           // ints 0xAARRGGBB, the coverage in every channel
 int glSlots=0;          // slots in use
 int glBlank=0;          // slot of the space
 int glUnknown=0;        // slot of the box for characters without a glyph
+int glBraille=0;        // slot of the braille checker of dots
+int glChecker[2];       // checker board fill, starting with a lit pixel and a dark one
 int glSlotOf[GL_DIRECT];
 int glCells[38400];     // 2*TV_MAXW x TV_MAXH texels: fg | slot low byte, bg | slot high bits
 int glTexAtlas=0;
@@ -251,6 +253,21 @@ int GlShape(int slot, int ch)
 	else if(ch==0x2584)GlRect(slot,0,GL_H/2,GL_W,GL_H/2,255);
 	else if(ch==0x258C)GlRect(slot,0,0,GL_W/2,GL_H,255);
 	else if(ch==0x2590)GlRect(slot,GL_W/2,0,GL_W/2,GL_H,255);
+	else if(ch==G_QUADS)
+	{
+		GlRect(slot,0,0,GL_W/2,GL_H/2,255);
+		GlRect(slot,GL_W/2,GL_H/2,GL_W-GL_W/2,GL_H-GL_H/2,255);
+	}
+	else if(ch==G_BRAILLE)
+	{
+		// dots 1 3 5 8: a checker of dots on the 2x4 grid
+		int d=(GL_W+2)/4;
+		for(int r=0;r<4;r++)
+		{
+			int c=r&1;
+			GlRect(slot,(2*c+1)*GL_W/4-d/2,(2*r+1)*GL_H/8-d/2,d,d,255);
+		}
+	}
 	else return 0;
 	return 1;
 }
@@ -298,6 +315,18 @@ void GlBuildAtlas()
 			glSlotOf[ch]=glSlots;
 			glSlots++;
 		}
+	}
+	// past glSlotOf's reach, so GfxFlush asks for these two by name
+	glBraille=glSlots;
+	GlShape(glSlots,G_BRAILLE);
+	glSlots++;
+	for(int k=0;k<2;k++)
+	{
+		glChecker[k]=glSlots;
+		for(int y=0;y<GL_H;y++)
+			for(int x=0;x<GL_W;x++)
+				if(((x+y+k)&1)==0)GlRect(glSlots,x,y,1,1,255);
+		glSlots++;
 	}
 	glBlank=glSlotOf[32];
 	for(int i=0;i<=32;i++)
@@ -569,6 +598,8 @@ void GfxFlush()
 				int slot=0;
 				if(TvIsPixCell(ch,at))slot=GL_PIXSLOT;
 				else if(ch==TV_PIXCH)slot=glBlank;   // a shadow fell on it
+				else if(ch==G_CHECKER)slot=glChecker[(x*GL_W+y*GL_H)&1];   // seamless
+				else if(ch==G_BRAILLE)slot=glBraille;
 				else slot=GlSlot(ch);
 				int t=2*i;
 				glCells[t]=(TvAtFg(at)&0xFFFFFF)|((slot&255)<<24);

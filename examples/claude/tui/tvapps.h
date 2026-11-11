@@ -1320,8 +1320,8 @@ int PtCanClose(int win)
 // background, which is the editor's.
 //
 // Classic blue is built in and stays as it is; the other themes (Dark, Mono,
-// Monokai, Nord, Dracula, One Dark to begin with, and any saved with Save as) are
-// kept in tvthemes.cfg, each as [Name], the depth, the 16 palette text and
+// Monokai, Nord, Dracula, One Dark, Midnight Commander to begin with, and any saved
+// with Save as) are kept in tvthemes.cfg, each as [Name], the depth, the 16 palette text and
 // background colours, then the role text and background colours, in hex ('-' a
 // clear background).
 
@@ -1427,6 +1427,17 @@ char* teOneDark="2c313a 21252b d7dae0 2c313a 61afef 2c313a d7dae0 4b5263 e5c07b 
 	"abb2bf 282c34 c678dd - 5c6370 - 98c379 - d19a66 - "
 	"e06c75 - 56b6c2 - 4b5263 - abb2bf - abb2bf 3e4451 "
 	"282c34 e5c07b abb2bf 4b5263 5c6370 21252b";
+// Midnight Commander's default skin the same way, at depth 4 (VGA colour numbers):
+// the panels are Classic blue's already, the rest is the cyan menus and button bar,
+// grey dialogs with blue hot letters, flat buttons and black on cyan inputs.
+char* teMidnight="7 1 f 3 e 3 f 0 e 0 0 3 f 0 0 7 1 7 8 0 "
+	"7 1 f 1 7 1 a 1 e 1 0 7 0 7 8 7 1 7 0 3 "
+	"0 7 0 7 8 7 1 7 0 3 1 7 0 7 0 7 0 3 1 7 7 7 "
+	"0 7 0 3 1 7 0 3 1 3 0 3 8 7 f 1 f 1 "
+	"0 7 f 8 0 3 1 3 1 3 "
+	"7 1 e - 6 - 2 - f - c - b - f 3 e 3 "
+	"0 3 0 2 f 4 3 1";
+#define TE_MCNAME "Midnight Commander"
 
 // The custom theme's roles from its palette and the built-in attributes.
 void TeRolesFromPalette()
@@ -1625,9 +1636,9 @@ void TeFromTheme(int n, int d);
 
 // A theme of roles written as teMonokai is: Dark's palette for the other windows,
 // its own roles.
-void TeMakePreset(char* roles)
+void TeMakePresetFrom(int theme, int depth, char* roles)
 {
-	TeFromTheme(TH_DARK,24);
+	TeFromTheme(theme,depth);
 	int v[116];
 	int i=0;
 	TeTokens(roles,i,&v[0],116,0);
@@ -1638,8 +1649,20 @@ void TeMakePreset(char* roles)
 	}
 }
 
+void TeMakePreset(char* roles)
+{
+	TeMakePresetFrom(TH_DARK,24,roles);
+}
+
+// Midnight Commander: Classic blue's palette, its own roles.
+void TeAddMidnight()
+{
+	TeMakePresetFrom(TH_CLASSIC,4,teMidnight);
+	TeThAdd(TE_MCNAME);
+}
+
 // Reads tvthemes.cfg; without it the themes are Dark, Mono, the custom theme of
-// before if there is one, Monokai, Nord, Dracula and One Dark.
+// before if there is one, Monokai, Nord, Dracula, One Dark and Midnight Commander.
 void TeLoadThemes()
 {
 	teThN=1;
@@ -1678,7 +1701,12 @@ void TeLoadThemes()
 		}
 	}
 	free(buf);
-	if(teThN>1)return;
+	if(teThN>1)
+	{
+		// a tvthemes.cfg from before it was built in gets it too, at the end
+		if(TeThFind(TE_MCNAME)<0)TeAddMidnight();
+		return;
+	}
 	TeFromTheme(TH_DARK,24);
 	TeThAdd("Dark");
 	TeFromTheme(TH_MONO,24);
@@ -1692,11 +1720,25 @@ void TeLoadThemes()
 	TeThAdd("Dracula");
 	TeMakePreset(teOneDark);
 	TeThAdd("One Dark");
+	TeAddMidnight();
 }
+
+// The desktop's pattern: 0 as the theme has it, or one of these.
+int teDeskPick=0;
+char* teDeskNames="As the theme has it|Light shade \xe2\x96\x91|Medium shade \xe2\x96\x92|Quadrants \xe2\x96\x9a|Checker board \xf0\x9f\xae\x95|Braille dots \xe2\xa2\x95";
+int teDeskChars[5]={G_LIGHT,G_MEDIUM,G_QUADS,G_CHECKER,G_BRAILLE};
+#define TE_DESKN 6
 
 // Puts theme i in use.
 void TeUseTheme(int i)
 {
+	// Midnight Commander's desktop is the checkered one of old Turbo Vision programs,
+	// where the terminal draws it; the graphic versions mix the shades flat
+	tvDeskCh=G_LIGHT;
+#ifndef TV_GFX
+	if((i>0)&&(i==TeThFind(TE_MCNAME)))tvDeskCh=G_MEDIUM;
+#endif
+	if((teDeskPick>0)&&(teDeskPick<TE_DESKN))tvDeskCh=teDeskChars[teDeskPick-1];
 	if((i<=0)||(i>=teThN))
 	{
 		TvSetTheme(TH_CLASSIC);

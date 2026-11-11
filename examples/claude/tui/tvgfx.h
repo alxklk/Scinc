@@ -328,6 +328,46 @@ int GfxDouble(int ch, int px, int py, int col)
 	return 1;
 }
 
+// Checker board cells, made once for a pair of colours: phase 0 starts with a
+// lit pixel at the cell's corner, phase 1 with a dark one.
+int gfxChk[2*GFX_CW*GFX_CH];
+int gfxChkFg=-1;
+int gfxChkBg=-1;
+
+void GfxCheckerCells(int fg, int bg)
+{
+	if((fg==gfxChkFg)&&(bg==gfxChkBg))return;
+	gfxChkFg=fg;
+	gfxChkBg=bg;
+	for(int k=0;k<2;k++)
+		for(int y=0;y<GFX_CH;y++)
+			for(int x=0;x<GFX_CW;x++)
+			{
+				int c=bg;
+				if(((x+y+k)&1)==0)c=fg;
+				gfxChk[(k*GFX_CH+y)*GFX_CW+x]=c;
+			}
+}
+
+// The braille dots of bits (dot 1 the lowest bit), as squares on a 2x4 grid.
+void GfxBraille(int bits, int px, int py, int fg)
+{
+	int d=(GFX_CW+2)/4;
+	for(int k=0;k<8;k++)
+		if((bits>>k)&1)
+		{
+			// dots 1 2 3 down the left, 4 5 6 down the right, then 7 and 8 under them
+			int c=k/3;
+			int r=k%3;
+			if(k>=6)
+			{
+				c=k-6;
+				r=3;
+			}
+			tvG.fillrect(px+(2*c+1)*GFX_CW/4-d/2,py+(2*r+1)*GFX_CH/8-d/2,d,d,fg);
+		}
+}
+
 // Draws box lines, blocks and shades as rectangles on whole pixels. Returns 0
 // for the characters the font draws.
 int GfxShape(int ch, int px, int py, int fg, int bg)
@@ -349,6 +389,18 @@ int GfxShape(int ch, int px, int py, int fg, int bg)
 	else if(ch==0x2584)tvG.fillrect(px,py+GFX_CH/2,GFX_CW,GFX_CH/2,fg);
 	else if(ch==0x258C)tvG.fillrect(px,py,GFX_CW/2,GFX_CH,fg);
 	else if(ch==0x2590)tvG.fillrect(px+GFX_CW/2,py,GFX_CW/2,GFX_CH,fg);
+	else if(ch==G_QUADS)
+	{
+		tvG.fillrect(px,py,GFX_CW/2,GFX_CH/2,fg);
+		tvG.fillrect(px+GFX_CW/2,py+GFX_CH/2,GFX_CW-GFX_CW/2,GFX_CH-GFX_CH/2,fg);
+	}
+	else if(ch==G_CHECKER)
+	{
+		// the phase by the cell's place on the screen, so the cells join seamlessly
+		GfxCheckerCells(fg,bg);
+		tvG.BitBlt(&gfxChk[((px+py)&1)*GFX_CW*GFX_CH],GFX_CW,GFX_CH,px,py);
+	}
+	else if(ch==G_BRAILLE)GfxBraille(0x95,px,py,fg);
 	else return 0;
 	return 1;
 }

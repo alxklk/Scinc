@@ -117,6 +117,9 @@ int tvPasteLost=0;  // set if it did not all fit
 #define G_BR 0x2518
 #define G_LIGHT 0x2591
 #define G_MEDIUM 0x2592
+#define G_QUADS 0x259A     // the upper left and lower right quadrants
+#define G_CHECKER 0x1FB95  // checker board fill: the window versions draw it pixel by pixel
+#define G_BRAILLE 0x2895   // braille dots 1 3 5 8, a checker of dots
 #define G_FULL 0x2588
 #define G_LOWHALF 0x2584
 #define G_UPHALF 0x2580
@@ -158,6 +161,7 @@ int tvVga[8];
 #define TH_MONO 2
 #define TH_CUSTOM 3
 int tvTheme=0;
+int tvDeskCh=G_LIGHT;      // the desktop's pattern, as the theme in use wants it
 int tvFg[16];
 int tvBg[16];
 int tvTrueColor=1;   // the terminal shows 24-bit colours; otherwise themes use xterm's 256
@@ -563,9 +567,16 @@ void OutUtf8(int c)
 		OutByte(0xC0|(c>>6));
 		OutByte(0x80|(c&63));
 	}
-	else
+	else if(c<0x10000)
 	{
 		OutByte(0xE0|(c>>12));
+		OutByte(0x80|((c>>6)&63));
+		OutByte(0x80|(c&63));
+	}
+	else
+	{
+		OutByte(0xF0|(c>>18));
+		OutByte(0x80|((c>>12)&63));
 		OutByte(0x80|((c>>6)&63));
 		OutByte(0x80|(c&63));
 	}
@@ -980,8 +991,9 @@ int TvUtf8One(char* s, int& i)
 		v=(v<<6)|(n&63);
 		i++;
 	}
-	// beyond the three-byte range OutUtf8 can send
-	if(v>0xFFFF)return '?';
+	// beyond the three-byte range only Symbols for Legacy Computing, which are one
+	// column wide; emoji and the like take two and would shift the rest of the line
+	if((v>0xFFFF)&&((v<0x1FB00)||(v>0x1FBFF)))return '?';
 	return v;
 }
 
@@ -3476,7 +3488,7 @@ void TvRedraw()
 	tvCurX=-1;
 	tvPixN=0;
 	TvClip(0,0,tvW,tvH);
-	TvFill(0,1,tvW,tvH-2,G_LIGHT,A_DESK);
+	TvFill(0,1,tvW,tvH-2,tvDeskCh,A_DESK);
 	for(int i=0;i<tvNZ;i++)
 		TvDrawWin(tvZ[i]);
 	TvDrawMenuBar();
