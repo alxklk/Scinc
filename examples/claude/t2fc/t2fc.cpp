@@ -175,6 +175,14 @@ int fcCur[FC_MAXP];
 int fcTop[FC_MAXP];
 int fcSort[FC_MAXP];        // term_dl sort modes: 0 name, 1 ext, 2 size, 3 time, +4 reversed
 int fcBrief[FC_MAXP];
+// Where each panel was in the folders it left, the latest last: their paths, the first
+// row shown and the cursor, so that coming back (going up above all) shows a folder
+// as it was left. A folder is in a panel's stack once, at most FC_STACK of them.
+#define FC_STACK 16
+char fcStkDir[196608];      // FC_MAXP*FC_STACK paths of FC_PATH
+int fcStkTop[192];
+int fcStkCur[192];
+int fcStkN[FC_MAXP];
 int fcStamp[FC_MAXP];
 int fcLastClick=0;          // for double clicks
 int fcLastP=-1;
@@ -207,6 +215,7 @@ void FcInitState()
 		fcSort[p]=0;
 		fcBrief[p]=0;
 		fcStamp[p]=-1;
+		fcStkN[p]=0;
 	}
 	fcTermCmd[0]=0;
 	for(int i=0;i<TV_MAXWIN;i++)
@@ -506,6 +515,48 @@ void FcClamp(int p)
 	if(fcTop[p]<0)fcTop[p]=0;
 }
 
+char* FcStkDirOf(int p, int i)
+{
+	return &fcStkDir[(p*FC_STACK+i)*FC_PATH];
+}
+
+int StrCmp(char* a, char* b);
+
+// The place of path in panel p's stack, or -1.
+int FcStkFind(int p, char* path)
+{
+	for(int i=fcStkN[p]-1;i>=0;i--)
+		if(StrCmp(FcStkDirOf(p,i),path)==0)return i;
+	return -1;
+}
+
+// Takes entry i out of panel p's stack.
+void FcStkDrop(int p, int i)
+{
+	for(int j=i+1;j<fcStkN[p];j++)
+	{
+		StrCpy(FcStkDirOf(p,j-1),FcStkDirOf(p,j),FC_PATH);
+		fcStkTop[p*FC_STACK+j-1]=fcStkTop[p*FC_STACK+j];
+		fcStkCur[p*FC_STACK+j-1]=fcStkCur[p*FC_STACK+j];
+	}
+	fcStkN[p]--;
+}
+
+// Remembers where panel p is in its folder, as it leaves it.
+void FcStkPush(int p)
+{
+	char* dir=FcDirOf(p);
+	if(dir[0]==0)return;
+	int i=FcStkFind(p,dir);
+	if(i>=0)FcStkDrop(p,i);
+	if(fcStkN[p]==FC_STACK)FcStkDrop(p,0);
+	i=fcStkN[p];
+	StrCpy(FcStkDirOf(p,i),dir,FC_PATH);
+	fcStkTop[p*FC_STACK+i]=fcTop[p];
+	fcStkCur[p*FC_STACK+i]=fcCur[p];
+	fcStkN[p]=i+1;
+}
+
 // Lists a directory in panel p with selectName under the cursor if it is there.
 // Returns 0, keeping the panel as it was, if the directory cannot be read.
 int FcArcReady(char* path);
@@ -547,16 +598,25 @@ int FcLoad(int p, char* path, char* selectName)
 		if(resolved[k]==0)break;
 		k++;
 	}
+	if(!same)FcStkPush(p);
 	StrCpy(FcDirOf(p),&resolved[0],FC_PATH);
 	fcCount[p]=n;
 	fcStamp[p]=FcStampOf(&resolved[0]);
-	int at=LsIndex(selectName);
-	if(at>=0)fcCur[p]=at;
-	else if(!same)
+	if(!same)
 	{
+		// a folder left before comes back as it was left
 		fcCur[p]=0;
 		fcTop[p]=0;
+		int i=FcStkFind(p,&resolved[0]);
+		if(i>=0)
+		{
+			fcTop[p]=fcStkTop[p*FC_STACK+i];
+			fcCur[p]=fcStkCur[p*FC_STACK+i];
+			FcStkDrop(p,i);
+		}
 	}
+	int at=LsIndex(selectName);
+	if(at>=0)fcCur[p]=at;
 	FcClamp(p);
 	return 1;
 }
@@ -4364,6 +4424,7 @@ int FcOpen(char* left, char* right, int from)
 		fcDir[p*FC_PATH]=0;
 		fcCur[p]=0;
 		fcTop[p]=0;
+		fcStkN[p]=0;
 		char* dir=left;
 		if(p==fcBase+1)dir=right;
 		if(!FcLoad(p,dir,""))
