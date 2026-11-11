@@ -8,16 +8,20 @@
 // and gold pickups give one more each (five at most).
 //
 // Keys: W/S or Up/Down turn up/down, A/D or Left/Right turn left/right,
-// Space fires, drag with the mouse to look around (it does not steer), I
+// Space or a mouse button fires at the crosshair, moving the mouse looks and
+// aims (it does not steer), C looks straight ahead again, I
 // inverts up/down, P pauses, F toggles full screen, Enter starts the next
 // round, Esc quits.
 //
 // Turns happen at cell centres, so the whole world is made of straight runs.
 // Drawing: the trails live in one vertex array that only grows (one slot of
-// 24 vertices per finished trail cell). Positions are stored as the cell's
+// 48 vertices per finished trail cell). Positions are stored as the cell's
 // centre (sent as the normal) plus an offset inside the cell; the vertex
 // shader wraps the centre to the image nearest to the camera, so the wrapped
-// world needs no copies, and fog hides everything past half the arena.
+// world needs no bookkeeping; the neighbouring copies of the arena are the
+// same lists drawn again with an offset, since the light-gray fog reaches a
+// whole arena length. Finished trail slots are compiled into display lists of
+// 250 slots, and a list is compiled again only when one of its slots changes.
 //
 // Needs ../../claude/opengl/scgl_dl.so (run ../../claude/opengl/build_so.sh).
 
@@ -29,9 +33,9 @@
 #define NC 32768       // GN^3
 #define TH 0.34        // half the thickness of a trail tube
 #define MAXS 6000      // trail cell slots
-#define MAXSV 144000   // MAXS*24 vertices
 #define MAXSH 6        // ships: 0 is the player
 #define MAXP 24        // projectiles
+#define UNLIMITED_AMMO 1  // testing: the player never runs out of shots (0 for the real game)
 #define MAXK 3         // ammo pickups
 #define MAXQ 900       // explosion particles
 #define NLAT 96        // lattice line vertices (48 lines)
@@ -54,13 +58,19 @@ int vis[NC];     // flood-fill stamps
 int visStamp = 0;
 int bq[200];     // flood-fill queue
 
-// trail geometry: 24 vertices per slot (6 faces, a joined side is collapsed)
-float tv[432000];  // offset inside the cell
-float tn[432000];  // cell centre
-float tt[288000];  // joined-sides mask, owner
+// trail geometry: 48 vertices per slot, a cube in the middle of the cell and
+// an arm to each side joined to the next cell (12 faces at most, unused ones
+// collapse to a point)
+float tv[864000];  // offset inside the cell
+float tn[864000];  // cell centre
+float tt[288000];  // owner
 int freeS[MAXS];
 int nFree = 0;
 int highS = 0;
+#define CHUNK 250      // slots per display list
+#define NCHUNK 24      // MAXS / CHUNK
+int chunkList = 0;
+int chunkDirty[NCHUNK];
 
 // ---------------------------------------------------------------- ships
 int shX[MAXSH];
@@ -75,22 +85,22 @@ int shAlive[MAXSH];
 int shAmmo[MAXSH];
 int shKills[MAXSH];
 float shT[MAXSH];   // -0.5..0.5 along shF from the cell centre
-float shFade[MAXSH];
-float shDeadT[MAXSH];
 float shCool[MAXSH];
-int shGone[MAXSH];  // its trail was removed after the crash
 int tq[24];         // queued turns, 4 per ship
 int tqn[MAXSH];
 
 // ---------------------------------------------------------------- shots, pickups, particles
+// shots fly in a straight line, not along the grid: position (kept inside
+// the arena), unit direction, distance flown
 int pOn[MAXP];
-int pX[MAXP];
-int pY[MAXP];
-int pZ[MAXP];
-int pD[MAXP];
-int pR[MAXP];
 int pO[MAXP];
-float pT[MAXP];
+float pX[MAXP];
+float pY[MAXP];
+float pZ[MAXP];
+float pDX[MAXP];
+float pDY[MAXP];
+float pDZ[MAXP];
+float pDist[MAXP];
 
 int kOn[MAXK];
 int kX[MAXK];
@@ -128,12 +138,15 @@ int uCam = 0;
 int uGridN = 0;
 int uMode = 0;
 int uCol = 0;
-int uFade = 0;
 int uFogEnd = 0;
-int uTh = 0;
+int uWrap = 0;
+int uCopy = 0;
+int uFogCol = 0;
+#define FOG_R 0.74
+#define FOG_G 0.76
+#define FOG_B 0.79
 int fontTex = 0;
 int fontPix[13824];  // 96 glyphs of 9x16 in one row
-float fadeArr[6];
 
 int round = 0;
 int wins = 0;
@@ -154,6 +167,7 @@ float camP[3];
 float viewM[16];
 float lookYaw = 0.0;
 float lookPitch = 0.0;
+float lookF[3];   // where the view (and the player's aim) points
 
 int logV[5];
 int logK[5];
@@ -170,6 +184,14 @@ float sbF[3];
 float sbR[3];
 float sbU[3];
 char* numBuf;
+float imgX[8];   // Images() output
+float imgY[8];
+float imgZ[8];
+int nImg = 0;
+float cpX[27];   // VisibleCopies() output
+float cpY[27];
+float cpZ[27];
+int nCopies = 0;
 
 // ======================================================================= helpers
 int Rnd(int n)
@@ -271,7 +293,7 @@ void TurnDirs(int F, int U, int code)
 }
 
 // ======================================================================= trail geometry
-void SetV(int vi, float x, float y, float z, float cx, float cy, float cz, float m, float o)
+void SetV(int vi, float x, float y, float z, float cx, float cy, float cz, float o)
 {
 	tv[vi * 3] = x;
 	tv[vi * 3 + 1] = y;
@@ -279,41 +301,22 @@ void SetV(int vi, float x, float y, float z, float cx, float cy, float cz, float
 	tn[vi * 3] = cx;
 	tn[vi * 3 + 1] = cy;
 	tn[vi * 3 + 2] = cz;
-	tt[vi * 2] = m;
-	tt[vi * 2 + 1] = o;
+	tt[vi] = o;
 }
 
-void ClearSlot(int s)
-{
-	for (int v = s * 24; v < s * 24 + 24; v++)
-		SetV(v, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
-}
+// boxes go either into a slot (emitArr = 1, from vertex emitV on) or straight
+// to GL inside glBegin(GL_QUADS)
+int emitArr = 0;
+int emitV = 0;
+float emitC[3];
+float emitO = 0.0;
 
-// a tube piece filling the cell: joined sides reach the cell's edge, the
-// others close at TH; faces on joined sides collapse to a point
-void BuildSlot(int s, int idx, int mask, int owner)
+// the faces of box lo3..hi3 except those in skip (BITS by direction)
+void EmitBox(int skip)
 {
-	float cx = idx % GN;
-	float cy = (idx / GN) % GN;
-	float cz = idx / (GN * GN);
-	for (int a = 0; a < 3; a++)
-	{
-		lo3[a] = -TH;
-		hi3[a] = TH;
-		if (mask & BITS[a * 2 + 1])
-			lo3[a] = -0.5;
-		if (mask & BITS[a * 2])
-			hi3[a] = 0.5;
-	}
 	for (int f = 0; f < 6; f++)
 	{
-		int v0 = s * 24 + f * 4;
-		if (mask & BITS[f])
-		{
-			for (int k = 0; k < 4; k++)
-				SetV(v0 + k, 0.0, 0.0, 0.0, cx, cy, cz, mask, owner);
-		}
-		else
+		if ((skip & BITS[f]) == 0)
 		{
 			int a = f / 2;
 			int b = (a + 1) % 3;
@@ -329,10 +332,73 @@ void BuildSlot(int s, int idx, int mask, int owner)
 					pv3[b] = hi3[b];
 				if (k >= 2)
 					pv3[c] = hi3[c];
-				SetV(v0 + k, pv3[0], pv3[1], pv3[2], cx, cy, cz, mask, owner);
+				if (emitArr)
+				{
+					SetV(emitV, pv3[0], pv3[1], pv3[2], emitC[0], emitC[1], emitC[2], emitO);
+					emitV = emitV + 1;
+				}
+				else
+					glVertex3f(pv3[0], pv3[1], pv3[2]);
 			}
 		}
 	}
+}
+
+// lo3..hi3 = the part of the tube along direction d from a to b (a < b)
+void SpanBox(int d, float a, float b)
+{
+	for (int k = 0; k < 3; k++)
+	{
+		lo3[k] = -TH;
+		hi3[k] = TH;
+	}
+	int ax = d / 2;
+	if (d % 2 == 0)
+	{
+		lo3[ax] = a;
+		hi3[ax] = b;
+	}
+	else
+	{
+		lo3[ax] = -b;
+		hi3[ax] = -a;
+	}
+}
+
+void ClearSlot(int s)
+{
+	chunkDirty[s / CHUNK] = 1;
+	for (int v = s * 48; v < s * 48 + 48; v++)
+		SetV(v, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+}
+
+// a finished trail cell: the middle cube, open toward the joined sides, and an
+// arm reaching the cell's edge on each of them, so a turn bends cleanly
+void BuildSlot(int s, int idx, int mask, int owner)
+{
+	chunkDirty[s / CHUNK] = 1;
+	emitArr = 1;
+	emitV = s * 48;
+	emitC[0] = idx % GN;
+	emitC[1] = (idx / GN) % GN;
+	emitC[2] = idx / (GN * GN);
+	emitO = owner;
+	SpanBox(0, -TH, TH);
+	EmitBox(mask);
+	for (int d = 0; d < 6; d++)
+	{
+		if (mask & BITS[d])
+		{
+			SpanBox(d, TH, 0.5);
+			EmitBox(BITS[d] | BITS[Opp(d)]);
+		}
+	}
+	while (emitV < s * 48 + 48)
+	{
+		SetV(emitV, 0.0, 0.0, 0.0, emitC[0], emitC[1], emitC[2], emitO);
+		emitV = emitV + 1;
+	}
+	emitArr = 0;
 }
 
 int AllocSlot()
@@ -487,10 +553,7 @@ void KillShip(int i, int killer, int kind)
 	if (shAlive[i] == 0)
 		return;
 	shAlive[i] = 0;
-	shDeadT[i] = 0.0;
-	int idx = Idx(shX[i], shY[i], shZ[i]);
-	if (occ[idx] == i + 1 && slotOf[idx] < 0)
-		FinishCell(idx, i);
+	RemoveTrail(i);
 	ShipPos(i);
 	Burst(pv3[0], pv3[1], pv3[2], shipCol[i * 3], shipCol[i * 3 + 1], shipCol[i * 3 + 2], 160, 6.0);
 	Burst(pv3[0], pv3[1], pv3[2], 1.0, 1.0, 1.0, 40, 3.0);
@@ -503,6 +566,18 @@ void KillShip(int i, int killer, int kind)
 }
 
 // ======================================================================= shots
+// the view direction, mouse look included: the crosshair's line
+void LookDir()
+{
+	float cp = cos(lookPitch * 0.017453);
+	float sp = sin(lookPitch * 0.017453);
+	float cy = cos(lookYaw * 0.017453);
+	float sy = sin(lookYaw * 0.017453);
+	for (int k = 0; k < 3; k++)
+		lookF[k] = camR[k] * cp * sy - camU[k] * sp - camB[k] * cp * cy;
+}
+
+// the player shoots where the crosshair points, the others straight ahead
 void Fire(int i)
 {
 	if (shAmmo[i] <= 0)
@@ -513,16 +588,29 @@ void Fire(int i)
 	{
 		if (pOn[p] == 0)
 		{
+			ShipPos(i);
 			pOn[p] = 1;
-			pX[p] = shX[i];
-			pY[p] = shY[i];
-			pZ[p] = shZ[i];
-			pD[p] = shF[i];
-			pT[p] = shT[i];
-			pR[p] = 28;
 			pO[p] = i;
-			shAmmo[i] = shAmmo[i] - 1;
-			shCool[i] = 0.35;
+			pX[p] = pv3[0];
+			pY[p] = pv3[1];
+			pZ[p] = pv3[2];
+			pDist[p] = 0.0;
+			if (i == 0)
+			{
+				LookDir();
+				pDX[p] = lookF[0];
+				pDY[p] = lookF[1];
+				pDZ[p] = lookF[2];
+			}
+			else
+			{
+				pDX[p] = DX[shF[i]];
+				pDY[p] = DY[shF[i]];
+				pDZ[p] = DZ[shF[i]];
+			}
+			if (i > 0 || UNLIMITED_AMMO == 0)
+				shAmmo[i] = shAmmo[i] - 1;
+			shCool[i] = 0.25;
 			return;
 		}
 	}
@@ -558,29 +646,43 @@ void Hit(int idx, int owner)
 	Burst(x, y, z, r, g, b, 60, 2.5);
 }
 
+float WrapF(float v)
+{
+	if (v >= GN)
+		v = v - GN;
+	if (v < 0.0)
+		v = v + GN;
+	return v;
+}
+
+// shots move in steps of at most 0.2 cells and stop in the first filled cell
+// (other than the one their own ship is in)
 void UpdateShots(float dt)
 {
 	for (int p = 0; p < MAXP; p++)
 	{
-		if (pOn[p])
+		float left = 22.0 * dt;
+		while (pOn[p] && left > 0.0)
 		{
-			pT[p] = pT[p] + 22.0 * dt;
-			while (pOn[p] && pT[p] >= 0.5)
+			float h = left;
+			if (h > 0.2)
+				h = 0.2;
+			left = left - h;
+			pX[p] = WrapF(pX[p] + pDX[p] * h);
+			pY[p] = WrapF(pY[p] + pDY[p] * h);
+			pZ[p] = WrapF(pZ[p] + pDZ[p] * h);
+			pDist[p] = pDist[p] + h;
+			int idx = Idx(int(pX[p] + 0.5), int(pY[p] + 0.5), int(pZ[p] + 0.5));
+			if (occ[idx] > 0)
 			{
-				pT[p] = pT[p] - 1.0;
-				pX[p] = Wrap(pX[p] + DX[pD[p]]);
-				pY[p] = Wrap(pY[p] + DY[pD[p]]);
-				pZ[p] = Wrap(pZ[p] + DZ[pD[p]]);
-				pR[p] = pR[p] - 1;
-				int idx = Idx(pX[p], pY[p], pZ[p]);
-				if (occ[idx] > 0)
+				if (HeadShip(idx) != pO[p])
 				{
 					Hit(idx, pO[p]);
 					pOn[p] = 0;
 				}
-				if (pR[p] <= 0)
-					pOn[p] = 0;
 			}
+			if (pDist[p] > 28.0)
+				pOn[p] = 0;
 		}
 	}
 }
@@ -907,8 +1009,6 @@ void StartRound()
 		shT[i] = -0.5;
 		shAlive[i] = 1;
 		shAmmo[i] = 2;
-		shFade[i] = 1.0;
-		shGone[i] = 0;
 		shCool[i] = 0.0;
 		tqn[i] = 0;
 		occ[Idx(shX[i], shY[i], shZ[i])] = i + 1;
@@ -1032,62 +1132,55 @@ char* vsSrc =
 	"#version 120\n"
 	"uniform vec3 cam;\n"
 	"uniform float gridN;\n"
+	"uniform int wrapOn;\n"
+	"uniform vec3 copyOff;\n"
 	"uniform int mode;\n"
 	"uniform vec3 col[6];\n"
-	"uniform float fade[6];\n"
-	"varying vec3 vP;\n"
 	"varying vec3 vR;\n"
 	"varying vec4 vC;\n"
-	"varying float vM;\n"
+	"varying float vOwn;\n"
 	"void main(){\n"
-	// the cell centre comes as the normal: take its image nearest the camera
+	// the cell centre comes as the normal: take its image nearest the camera,
+	// then the neighbouring copy of the arena this pass draws
 	"  vec3 rel = gl_Normal - cam;\n"
-	"  rel -= gridN * floor(rel / gridN + 0.5);\n"
-	"  vec3 p = rel + gl_Vertex.xyz;\n"
-	"  vP = gl_Vertex.xyz;\n"
+	"  if (wrapOn == 1) rel -= gridN * floor(rel / gridN + 0.5);\n"
+	"  vec3 p = rel + copyOff + gl_Vertex.xyz;\n"
 	"  vR = p;\n"
-	"  if (mode == 0) {\n"
-	"    int o = int(gl_MultiTexCoord0.y + 0.5);\n"
-	"    vC = vec4(col[o], fade[o]);\n"
-	"    vM = gl_MultiTexCoord0.x;\n"
-	"  } else {\n"
-	"    vC = gl_Color;\n"
-	"    vM = 0.0;\n"
-	"  }\n"
+	// trails take their owner's colour, the rest the vertex colour
+	"  vOwn = -1.0;\n"
+	"  if (mode == 0) { vOwn = gl_MultiTexCoord0.x; vC = vec4(col[int(vOwn + 0.5)], 1.0); }\n"
+	"  else vC = gl_Color;\n"
 	"  gl_Position = gl_ModelViewProjectionMatrix * vec4(p, 1.0);\n"
 	"}\n";
 
+// modes: 0 trail and 2 solid (both lit), 1 glow (alpha blended), 3 unlit line or point
 char* fsSrc =
 	"#version 120\n"
 	"uniform int mode;\n"
 	"uniform float fogEnd;\n"
-	"uniform float th;\n"
-	"varying vec3 vP;\n"
+	"uniform vec3 fogCol;\n"
 	"varying vec3 vR;\n"
 	"varying vec4 vC;\n"
-	"varying float vM;\n"
-	"float B(float m, float k){ return mod(floor(m / k + 0.001), 2.0); }\n"
+	"varying float vOwn;\n"
+	// a warm key light from near the zenith, a dim blue one from below
+	"vec3 Light(vec3 n){\n"
+	"  vec3 l1 = normalize(vec3(0.2, 1.0, 0.12));\n"
+	"  vec3 l2 = normalize(vec3(-0.55, -0.75, -0.4));\n"
+	"  return vec3(0.17, 0.18, 0.21) + vec3(1.05, 0.97, 0.78) * max(dot(n, l1), 0.0)\n"
+	"       + vec3(0.2, 0.3, 0.6) * max(dot(n, l2), 0.0);\n"
+	"}\n"
 	"void main(){\n"
-	"  float fog = 1.0 - smoothstep(fogEnd * 0.3, fogEnd, length(vR));\n"
-	"  if (mode == 1) { gl_FragColor = vec4(vC.rgb * vC.a * fog, 1.0); return; }\n"
+	// the player's own trail would fill the view when looking back
+	"  if (mode == 0 && vOwn > -0.5 && vOwn < 0.5 && length(vR) < 1.6) discard;\n"
+	"  float x = clamp(length(vR) / fogEnd, 0.0, 1.0);\n"
+	"  float fog = x * x * (3.0 - 2.0 * x);\n"
+	"  if (mode == 1) { gl_FragColor = vec4(vC.rgb, vC.a * (1.0 - fog)); return; }\n"
+	"  if (mode == 3) { gl_FragColor = vec4(mix(vC.rgb, fogCol, fog), 1.0); return; }\n"
+	// flat faces: the normal from the screen-space derivatives, toward the eye
 	"  vec3 n = normalize(cross(dFdx(vR), dFdy(vR)));\n"
-	"  float f = abs(dot(n, normalize(vR)));\n"
-	"  if (mode == 2) {\n"
-	"    vec3 c = vC.rgb * (0.25 + 0.75 * f) + vC.rgb * pow(1.0 - f, 3.0);\n"
-	"    gl_FragColor = vec4(c * fog, 1.0);\n"
-	"    return;\n"
-	"  }\n"
-	// trail tube: glassy faces, bright edges except where cells join
-	"  float m = floor(vM + 0.5);\n"
-	"  vec3 a = abs(vP);\n"
-	"  vec3 jp = vec3(B(m, 1.0), B(m, 4.0), B(m, 16.0));\n"
-	"  vec3 jn = vec3(B(m, 2.0), B(m, 8.0), B(m, 32.0));\n"
-	"  vec3 j = mix(jn, jp, step(0.0, vP));\n"
-	"  vec3 e = (1.0 - j) * smoothstep(th - 0.07, th - 0.01, a);\n"
-	"  float edge = clamp(e.x + e.y + e.z - 1.0, 0.0, 1.0);\n"
-	"  float body = 0.06 + 0.28 * pow(1.0 - f, 2.0);\n"
-	"  vec3 c = vC.rgb * (body + 1.2 * edge) + vec3(0.3 * edge);\n"
-	"  gl_FragColor = vec4(c * fog * vC.a, 1.0);\n"
+	"  if (dot(n, vR) > 0.0) n = -n;\n"
+	"  vec3 c = vC.rgb * Light(n);\n"
+	"  gl_FragColor = vec4(mix(c, fogCol, fog), 1.0);\n"
 	"}\n";
 
 // ======================================================================= scenery
@@ -1107,12 +1200,13 @@ void BuildScenery()
 						latV[v * 3 + k] = 0.0;
 						latN[v * 3 + k] = 0.0;
 					}
-					latV[v * 3 + ax] = -GN + e * 2.0 * GN;
+					// one arena length per copy, the copies join them up
+					latV[v * 3 + ax] = -GN * 0.5 + e * GN;
 					latN[v * 3 + b] = i * 8 + 3.5;
 					latN[v * 3 + c] = j * 8 + 3.5;
-					latC[v * 4] = 0.10;
-					latC[v * 4 + 1] = 0.22;
-					latC[v * 4 + 2] = 0.45;
+					latC[v * 4] = 0.42;
+					latC[v * 4 + 1] = 0.47;
+					latC[v * 4 + 2] = 0.56;
 					latC[v * 4 + 3] = 1.0;
 					v = v + 1;
 				}
@@ -1124,10 +1218,10 @@ void BuildScenery()
 			dustV[d * 3 + k] = 0.0;
 			dustN[d * 3 + k] = Rf() * GN;
 		}
-		float b = 0.25 + 0.4 * Rf();
-		dustC[d * 4] = b * 0.7;
-		dustC[d * 4 + 1] = b * 0.8;
-		dustC[d * 4 + 2] = b;
+		float b = 0.3 + 0.25 * Rf();
+		dustC[d * 4] = b;
+		dustC[d * 4 + 1] = b * 1.05;
+		dustC[d * 4 + 2] = b * 1.15;
 		dustC[d * 4 + 3] = 1.0;
 	}
 }
@@ -1164,73 +1258,152 @@ void BuildFont()
 }
 
 // ======================================================================= drawing
-// one side-open tube piece along direction d from a to b (a < b), for the
-// cells ships are flying through
-void Piece(int d, float a, float b, int owner)
+// The fog ends one arena length away, but the nearest image of the arena only
+// reaches half that, so the neighbouring copies are drawn as well. Small
+// things go through Images(): the copies of one point closer than the fog's end.
+void Images(float wx, float wy, float wz)
 {
-	int ax = d / 2;
-	float sg = 1.0;
-	if (d % 2 == 1)
-		sg = -1.0;
-	for (int k = 0; k < 3; k++)
+	float rx = WDf(wx - camP[0]);
+	float ry = WDf(wy - camP[1]);
+	float rz = WDf(wz - camP[2]);
+	float sx = GN;
+	float sy = GN;
+	float sz = GN;
+	if (rx > 0.0) sx = -sx;
+	if (ry > 0.0) sy = -sy;
+	if (rz > 0.0) sz = -sz;
+	float lim = (GN + 1.0) * (GN + 1.0);
+	nImg = 0;
+	for (int k = 0; k < 8; k++)
 	{
-		lo3[k] = -TH;
-		hi3[k] = TH;
-	}
-	lo3[ax] = a * sg;
-	hi3[ax] = b * sg;
-	if (sg < 0.0)
-	{
-		lo3[ax] = -b;
-		hi3[ax] = -a;
-	}
-	glTexCoord2f(BITS[ax * 2] + BITS[ax * 2 + 1], owner);
-	for (int f = 0; f < 6; f++)
-	{
-		int fa = f / 2;
-		if (fa != ax)
+		float px = rx + sx * (k % 2);
+		float py = ry + sy * ((k / 2) % 2);
+		float pz = rz + sz * (k / 4);
+		if (px * px + py * py + pz * pz < lim)
 		{
-			int fb = (fa + 1) % 3;
-			int fc = (fa + 2) % 3;
-			pv3[fa] = lo3[fa];
-			if (f % 2 == 0)
-				pv3[fa] = hi3[fa];
-			for (int k = 0; k < 4; k++)
-			{
-				pv3[fb] = lo3[fb];
-				pv3[fc] = lo3[fc];
-				if (k == 1 || k == 2)
-					pv3[fb] = hi3[fb];
-				if (k >= 2)
-					pv3[fc] = hi3[fc];
-				glVertex3f(pv3[0], pv3[1], pv3[2]);
-			}
+			imgX[nImg] = camP[0] + px;
+			imgY[nImg] = camP[1] + py;
+			imgZ[nImg] = camP[2] + pz;
+			nImg = nImg + 1;
 		}
 	}
 }
 
+// the arena copies (offsets -1..1 on each axis) that can be in view: a copy's
+// bounding sphere against a 60 degree view cone
+void VisibleCopies()
+{
+	LookDir();
+	float fx = lookF[0];
+	float fy = lookF[1];
+	float fz = lookF[2];
+	nCopies = 0;
+	for (int k = 0; k < 27; k++)
+	{
+		int ox = k % 3 - 1;
+		int oy = (k / 3) % 3 - 1;
+		int oz = k / 9 - 1;
+		int n2 = ox * ox + oy * oy + oz * oz;
+		int show = 1;
+		if (n2 > 0)
+		{
+			float c = (ox * fx + oy * fy + oz * fz) / sqrt(n2 * 1.0);
+			// cos(60 degrees + asin(copy radius / distance))
+			float lim = -0.556;
+			if (n2 == 2) lim = -0.163;
+			if (n2 == 3) lim = -0.021;
+			if (c < lim)
+				show = 0;
+		}
+		if (show)
+		{
+			cpX[nCopies] = ox * GN;
+			cpY[nCopies] = oy * GN;
+			cpZ[nCopies] = oz * GN;
+			nCopies = nCopies + 1;
+		}
+	}
+}
+
+// trail slots go to the GPU in display lists of CHUNK slots; a list is
+// compiled again only after one of its slots changed
+void UpdateChunks()
+{
+	int nCh = (highS + CHUNK - 1) / CHUNK;
+	glwVertexArray(3, tv);
+	glwNormalArray(tn);
+	glwTexCoordArray(1, tt);
+	for (int c = 0; c < nCh; c++)
+	{
+		if (chunkDirty[c])
+		{
+			int n = highS - c * CHUNK;
+			if (n > CHUNK)
+				n = CHUNK;
+			glNewList(chunkList + c, GL_COMPILE);
+			glDrawArrays(GL_QUADS, c * CHUNK * 48, n * 48);
+			glEndList();
+			chunkDirty[c] = 0;
+		}
+	}
+	glwDisableArrays();
+}
+
+// the cells ships are in, built like finished cells but grown only up to a
+// little behind the ship
 void DrawHeads()
 {
+	emitArr = 0;
 	glBegin(GL_QUADS);
 	for (int i = 0; i < MAXSH; i++)
 	{
 		if (shAlive[i])
 		{
-			glNormal3f(shX[i], shY[i], shZ[i]);
-			float lo = -TH;
-			if (shInC[i])
-				lo = -0.5;
 			float end = shT[i] - 0.3;
-			if (shF[i] == shIn[i])
+			int in = shIn[i];
+			int back = BITS[Opp(in)];
+			glTexCoord2f(i, 0.0);
+			Images(shX[i], shY[i], shZ[i]);
+			for (int m = 0; m < nImg; m++)
 			{
-				if (end > lo)
-					Piece(shIn[i], lo, end, i);
-			}
-			else
-			{
-				Piece(shIn[i], lo, TH, i);
-				if (end > TH)
-					Piece(shF[i], TH, end, i);
+				glNormal3f(imgX[m], imgY[m], imgZ[m]);
+				if (shF[i] == in)
+				{
+					// straight on: one piece from the joint (or the
+					// closed end) to the ship
+					float lo = -TH;
+					int skip = 0;
+					if (shInC[i])
+					{
+						lo = -0.5;
+						skip = back;
+					}
+					if (end > lo)
+					{
+						SpanBox(in, lo, end);
+						EmitBox(skip);
+					}
+				}
+				else
+				{
+					// turned at the centre: arm in, middle cube, arm out
+					int skip = 0;
+					if (shInC[i])
+					{
+						SpanBox(in, -0.5, -TH);
+						EmitBox(back | BITS[in]);
+						skip = back;
+					}
+					if (end > TH)
+						skip = skip | BITS[shF[i]];
+					SpanBox(0, -TH, TH);
+					EmitBox(skip);
+					if (end > TH)
+					{
+						SpanBox(shF[i], TH, end);
+						EmitBox(BITS[Opp(shF[i])]);
+					}
+				}
 			}
 		}
 	}
@@ -1265,15 +1438,19 @@ void DrawShips(float now)
 		{
 			ShipPos(i);
 			ShipBasis(i);
-			glNormal3f(pv3[0], pv3[1], pv3[2]);
+			Images(pv3[0], pv3[1], pv3[2]);
 			glColor4f(shipCol[i * 3], shipCol[i * 3 + 1], shipCol[i * 3 + 2], 1.0);
-			// nose, wings, fin, keel
-			ShipV(0.5, 0.0, 0.0); ShipV(-0.35, -0.34, 0.0); ShipV(-0.3, 0.0, 0.16);
-			ShipV(0.5, 0.0, 0.0); ShipV(-0.3, 0.0, 0.16); ShipV(-0.35, 0.34, 0.0);
-			ShipV(0.5, 0.0, 0.0); ShipV(-0.35, 0.34, 0.0); ShipV(-0.3, 0.0, -0.08);
-			ShipV(0.5, 0.0, 0.0); ShipV(-0.3, 0.0, -0.08); ShipV(-0.35, -0.34, 0.0);
-			ShipV(-0.35, -0.34, 0.0); ShipV(-0.35, 0.34, 0.0); ShipV(-0.3, 0.0, 0.16);
-			ShipV(-0.35, -0.34, 0.0); ShipV(-0.3, 0.0, -0.08); ShipV(-0.35, 0.34, 0.0);
+			for (int m = 0; m < nImg; m++)
+			{
+				glNormal3f(imgX[m], imgY[m], imgZ[m]);
+				// nose, wings, fin, keel
+				ShipV(0.5, 0.0, 0.0); ShipV(-0.35, -0.34, 0.0); ShipV(-0.3, 0.0, 0.16);
+				ShipV(0.5, 0.0, 0.0); ShipV(-0.3, 0.0, 0.16); ShipV(-0.35, 0.34, 0.0);
+				ShipV(0.5, 0.0, 0.0); ShipV(-0.35, 0.34, 0.0); ShipV(-0.3, 0.0, -0.08);
+				ShipV(0.5, 0.0, 0.0); ShipV(-0.3, 0.0, -0.08); ShipV(-0.35, -0.34, 0.0);
+				ShipV(-0.35, -0.34, 0.0); ShipV(-0.35, 0.34, 0.0); ShipV(-0.3, 0.0, 0.16);
+				ShipV(-0.35, -0.34, 0.0); ShipV(-0.3, 0.0, -0.08); ShipV(-0.35, 0.34, 0.0);
+			}
 		}
 	}
 	// ammo pickups: spinning gold octahedra
@@ -1286,18 +1463,22 @@ void DrawShips(float now)
 	{
 		if (kOn[k])
 		{
-			glNormal3f(kX[k], kY[k], kZ[k] + 0.08 * sin(now * 3.0 + k));
-			for (int q = 0; q < 4; q++)
+			Images(kX[k], kY[k], kZ[k] + 0.08 * sin(now * 3.0 + k));
+			for (int m = 0; m < nImg; m++)
 			{
-				float x1 = ca;
-				float z1 = sa;
-				float x2 = -sa;
-				float z2 = ca;
-				if (q == 1) { x1 = -sa; z1 = ca; x2 = -ca; z2 = -sa; }
-				if (q == 2) { x1 = -ca; z1 = -sa; x2 = sa; z2 = -ca; }
-				if (q == 3) { x1 = sa; z1 = -ca; x2 = ca; z2 = sa; }
-				glVertex3f(0.0, s * 1.4, 0.0); glVertex3f(x1, 0.0, z1); glVertex3f(x2, 0.0, z2);
-				glVertex3f(0.0, -s * 1.4, 0.0); glVertex3f(x2, 0.0, z2); glVertex3f(x1, 0.0, z1);
+				glNormal3f(imgX[m], imgY[m], imgZ[m]);
+				for (int q = 0; q < 4; q++)
+				{
+					float x1 = ca;
+					float z1 = sa;
+					float x2 = -sa;
+					float z2 = ca;
+					if (q == 1) { x1 = -sa; z1 = ca; x2 = -ca; z2 = -sa; }
+					if (q == 2) { x1 = -ca; z1 = -sa; x2 = sa; z2 = -ca; }
+					if (q == 3) { x1 = sa; z1 = -ca; x2 = ca; z2 = sa; }
+					glVertex3f(0.0, s * 1.4, 0.0); glVertex3f(x1, 0.0, z1); glVertex3f(x2, 0.0, z2);
+					glVertex3f(0.0, -s * 1.4, 0.0); glVertex3f(x2, 0.0, z2); glVertex3f(x1, 0.0, z1);
+				}
 			}
 		}
 	}
@@ -1306,7 +1487,7 @@ void DrawShips(float now)
 
 void DrawGlows(float now)
 {
-	// engines and pickup halos
+	// engines and shots
 	glPointSize(7.0);
 	glBegin(GL_POINTS);
 	for (int i = 1; i < MAXSH; i++)
@@ -1315,9 +1496,13 @@ void DrawGlows(float now)
 		{
 			ShipPos(i);
 			ShipBasis(i);
-			glNormal3f(pv3[0], pv3[1], pv3[2]);
+			Images(pv3[0], pv3[1], pv3[2]);
 			glColor4f(shipCol[i * 3] * 0.5 + 0.5, shipCol[i * 3 + 1] * 0.5 + 0.5, shipCol[i * 3 + 2] * 0.5 + 0.5, 1.0);
-			ShipV(-0.4, 0.0, 0.02);
+			for (int m = 0; m < nImg; m++)
+			{
+				glNormal3f(imgX[m], imgY[m], imgZ[m]);
+				ShipV(-0.4, 0.0, 0.02);
+			}
 		}
 	}
 	for (int p = 0; p < MAXP; p++)
@@ -1325,9 +1510,13 @@ void DrawGlows(float now)
 		if (pOn[p])
 		{
 			int o = pO[p];
-			glNormal3f(pX[p] + DX[pD[p]] * pT[p], pY[p] + DY[pD[p]] * pT[p], pZ[p] + DZ[pD[p]] * pT[p]);
+			Images(pX[p], pY[p], pZ[p]);
 			glColor4f(0.8 + 0.2 * shipCol[o * 3], 0.8 + 0.2 * shipCol[o * 3 + 1], 0.8 + 0.2 * shipCol[o * 3 + 2], 1.0);
-			glVertex3f(0.0, 0.0, 0.0);
+			for (int m = 0; m < nImg; m++)
+			{
+				glNormal3f(imgX[m], imgY[m], imgZ[m]);
+				glVertex3f(0.0, 0.0, 0.0);
+			}
 		}
 	}
 	glEnd();
@@ -1338,12 +1527,15 @@ void DrawGlows(float now)
 		if (pOn[p])
 		{
 			int o = pO[p];
-			int d = pD[p];
-			glNormal3f(pX[p] + DX[d] * pT[p], pY[p] + DY[d] * pT[p], pZ[p] + DZ[d] * pT[p]);
-			glColor4f(1.0, 1.0, 1.0, 1.0);
-			glVertex3f(0.0, 0.0, 0.0);
-			glColor4f(shipCol[o * 3], shipCol[o * 3 + 1], shipCol[o * 3 + 2], 1.0);
-			glVertex3f(-DX[d] * 1.6, -DY[d] * 1.6, -DZ[d] * 1.6);
+			Images(pX[p], pY[p], pZ[p]);
+			for (int m = 0; m < nImg; m++)
+			{
+				glNormal3f(imgX[m], imgY[m], imgZ[m]);
+				glColor4f(1.0, 1.0, 1.0, 1.0);
+				glVertex3f(0.0, 0.0, 0.0);
+				glColor4f(shipCol[o * 3], shipCol[o * 3 + 1], shipCol[o * 3 + 2], 0.0);
+				glVertex3f(-pDX[p] * 1.6, -pDY[p] * 1.6, -pDZ[p] * 1.6);
+			}
 		}
 	}
 	glEnd();
@@ -1358,8 +1550,12 @@ void DrawGlows(float now)
 			if (a > 1.0)
 				a = 1.0;
 			glColor4f(qR[q], qG[q], qB[q], a);
-			glNormal3f(qX[q], qY[q], qZ[q]);
-			glVertex3f(0.0, 0.0, 0.0);
+			Images(qX[q], qY[q], qZ[q]);
+			for (int m = 0; m < nImg; m++)
+			{
+				glNormal3f(imgX[m], imgY[m], imgZ[m]);
+				glVertex3f(0.0, 0.0, 0.0);
+			}
 		}
 	}
 	glEnd();
@@ -1389,57 +1585,63 @@ void DrawWorld(float now)
 {
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
-	gluPerspective(72.0, winW * 1.0 / winH, 0.03, 40.0);
+	gluPerspective(72.0, winW * 1.0 / winH, 0.03, GN * 1.5);
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 	glRotatef(lookPitch, 1.0, 0.0, 0.0);
 	glRotatef(lookYaw, 0.0, 1.0, 0.0);
 	glMultMatrixf(viewM);
 
+	UpdateChunks();
+	VisibleCopies();
 	glUseProgram(prog);
 	glUniform3f(uCam, camP[0], camP[1], camP[2]);
 	glUniform1f(uGridN, GN * 1.0);
-	glUniform1f(uFogEnd, GN * 0.5 - 0.5);
-	glUniform1f(uTh, TH);
+	glUniform1f(uFogEnd, GN * 1.0);
+	glUniform3f(uFogCol, FOG_R, FOG_G, FOG_B);
 	glUniform3fv(uCol, 6, shipCol);
-	for (int i = 0; i < MAXSH; i++)
-		fadeArr[i] = shFade[i];
-	glUniform1fv(uFade, 6, fadeArr);
 
-	// solid things
+	// everything solid: the arena copies, then single objects at their images
 	glEnable(GL_DEPTH_TEST);
 	glDepthMask(1);
 	glDisable(GL_BLEND);
+	glUniform1i(uWrap, 1);
+	int nCh = (highS + CHUNK - 1) / CHUNK;
+	glUniform1i(uMode, 0);
+	for (int c = 0; c < nCopies; c++)
+	{
+		glUniform3f(uCopy, cpX[c], cpY[c], cpZ[c]);
+		for (int k = 0; k < nCh; k++)
+			glCallList(chunkList + k);
+	}
+	glUniform1i(uMode, 3);
+	glPointSize(2.0);
+	for (int c = 0; c < nCopies; c++)
+	{
+		glUniform3f(uCopy, cpX[c], cpY[c], cpZ[c]);
+		glwVertexArray(3, latV);
+		glwNormalArray(latN);
+		glwColorArray(4, latC);
+		glDrawArrays(GL_LINES, 0, NLAT);
+		glwVertexArray(3, dustV);
+		glwNormalArray(dustN);
+		glwColorArray(4, dustC);
+		glDrawArrays(GL_POINTS, 0, NDUST);
+	}
+	glwDisableArrays();
+	glUniform1i(uWrap, 0);
+	glUniform3f(uCopy, 0.0, 0.0, 0.0);
+	glUniform1i(uMode, 0);
+	DrawHeads();
 	glUniform1i(uMode, 2);
 	DrawShips(now);
 
-	// glowing things add up
+	// glowing things on top
 	glEnable(GL_BLEND);
-	glBlendFunc(GL_ONE, GL_ONE);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glDepthMask(0);
 	glUniform1i(uMode, 1);
-	glwVertexArray(3, latV);
-	glwNormalArray(latN);
-	glwColorArray(4, latC);
-	glDrawArrays(GL_LINES, 0, NLAT);
-	glwVertexArray(3, dustV);
-	glwNormalArray(dustN);
-	glwColorArray(4, dustC);
-	glPointSize(2.0);
-	glDrawArrays(GL_POINTS, 0, NDUST);
-	glwDisableArrays();
 	DrawGlows(now);
-
-	glUniform1i(uMode, 0);
-	if (highS > 0)
-	{
-		glwVertexArray(3, tv);
-		glwNormalArray(tn);
-		glwTexCoordArray(2, tt);
-		glDrawArrays(GL_QUADS, 0, highS * 24);
-		glwDisableArrays();
-	}
-	DrawHeads();
 
 	glDepthMask(1);
 	glUseProgram(0);
@@ -1614,6 +1816,31 @@ void DrawHUD(float now)
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
+	// dark panels keep the text readable in the light haze
+	glDisable(GL_TEXTURE_2D);
+	glBegin(GL_QUADS);
+	glColor4f(0.03, 0.05, 0.1, 0.55);
+	Rect(10.0, 10.0, 360.0, 104.0);
+	for (int k = 0; k < 5; k++)
+	{
+		if (logT[k] > 0.0)
+		{
+			float a = logT[k];
+			if (a > 1.0)
+				a = 1.0;
+			float w = TextLen(shipName[logV[k]]) + 20;
+			if (logK[k] >= 0)
+				w = w + TextLen(shipName[logK[k]]);
+			glColor4f(0.03, 0.05, 0.1, 0.55 * a);
+			Rect(winW - 28.0 - w * 9.0, 15.0 + k * 20.0, w * 9.0 + 16.0, 20.0);
+		}
+	}
+	if (round == 1 && roundT < 12.0)
+	{
+		glColor4f(0.03, 0.05, 0.1, 0.55);
+		Rect(winW * 0.5 - 340.0, winH - 178.0, 680.0, 26.0);
+	}
+	glEnd();
 	// crosshair, red when a wall is two cells ahead or closer
 	float cx = winW * 0.5;
 	float cy = winH * 0.5;
@@ -1630,7 +1857,7 @@ void DrawHUD(float now)
 	if (danger)
 		glColor4f(1.0, 0.25, 0.2, 0.95);
 	else
-		glColor4f(0.6, 0.95, 1.0, 0.7);
+		glColor4f(0.05, 0.12, 0.22, 0.8);
 	glBegin(GL_LINES);
 	glVertex2f(cx - 14.0, cy); glVertex2f(cx - 5.0, cy);
 	glVertex2f(cx + 5.0, cy); glVertex2f(cx + 14.0, cy);
@@ -1654,6 +1881,8 @@ void DrawHUD(float now)
 	glBindTexture(GL_TEXTURE_2D, fontTex);
 	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 	Say(20.0, 18.0, "AMMO", 2.0, 0, 1.0, 0.85, 0.4, 1.0);
+	if (UNLIMITED_AMMO)
+		Say(232.0, 26.0, "test: endless", 1.0, 0, 1.0, 0.85, 0.4, 1.0);
 	int rivals = 0;
 	for (int i = 1; i < MAXSH; i++)
 		rivals = rivals + shAlive[i];
@@ -1716,7 +1945,7 @@ void DrawHUD(float now)
 	if (paused)
 		Say(cx, cy - 60.0, "PAUSED", 3.0, 1, 1.0, 1.0, 1.0, 1.0);
 	if (round == 1 && roundT < 12.0)
-		Say(cx, winH - 172.0, "WASD/arrows turn   Space fire   drag mouse to look   I invert   P pause", 1.0, 1, 0.75, 0.85, 1.0, 0.9);
+		Say(cx, winH - 172.0, "WASD/arrows turn   mouse aim   click fire   C centre view   P pause", 1.0, 1, 0.75, 0.85, 1.0, 0.9);
 	glDisable(GL_TEXTURE_2D);
 }
 
@@ -1744,22 +1973,6 @@ void Update(float dt)
 		}
 	}
 	UpdateShots(dt);
-	for (int i = 0; i < MAXSH; i++)
-	{
-		if (shAlive[i] == 0 && shGone[i] == 0)
-		{
-			shDeadT[i] = shDeadT[i] + dt;
-			shFade[i] = 1.0 - (shDeadT[i] - 1.0) / 1.5;
-			if (shFade[i] > 1.0)
-				shFade[i] = 1.0;
-			if (shFade[i] <= 0.0)
-			{
-				shFade[i] = 0.0;
-				RemoveTrail(i);
-				shGone[i] = 1;
-			}
-		}
-	}
 	for (int k = 0; k < MAXK; k++)
 	{
 		if (kOn[k] == 0)
@@ -1806,7 +2019,6 @@ int main()
 	{
 		shKills[i] = 0;
 		shAlive[i] = 0;
-		shFade[i] = 1.0;
 	}
 	for (int k = 0; k < 5; k++)
 		logT[k] = 0.0;
@@ -1831,12 +2043,16 @@ int main()
 	uGridN = glGetUniformLocation(prog, "gridN");
 	uMode = glGetUniformLocation(prog, "mode");
 	uCol = glGetUniformLocation(prog, "col");
-	uFade = glGetUniformLocation(prog, "fade");
 	uFogEnd = glGetUniformLocation(prog, "fogEnd");
-	uTh = glGetUniformLocation(prog, "th");
+	uWrap = glGetUniformLocation(prog, "wrapOn");
+	uCopy = glGetUniformLocation(prog, "copyOff");
+	uFogCol = glGetUniformLocation(prog, "fogCol");
+	chunkList = glGenLists(NCHUNK);
+	for (int c = 0; c < NCHUNK; c++)
+		chunkDirty[c] = 1;
 	BuildScenery();
 	BuildFont();
-	glClearColor(0.0, 0.0, 0.012, 1.0);
+	glClearColor(FOG_R, FOG_G, FOG_B, 1.0);
 	glwSwapInterval(1);
 
 	StartRound();
@@ -1844,9 +2060,8 @@ int main()
 
 	int ev[5];
 	int running = 1;
-	int dragging = 0;
-	int lastX = 0;
-	int lastY = 0;
+	int md[2];
+	int grabbed = 0;
 	int fullscreen = 0;
 	double tPrev = glwTime();
 	while (running && glwPoll())
@@ -1865,6 +2080,11 @@ int main()
 		}
 		while (glwNextEvent(ev))
 		{
+			if (ev[0] == GLW_EV_MDOWN)
+			{
+				if (countdown <= 0.0 && paused == 0 && shAlive[0] && roundOver == 0)
+					Fire(0);
+			}
 			if (ev[0] == GLW_EV_KEY && ev[4] == 0)
 			{
 				int k = ev[1];
@@ -1909,6 +2129,11 @@ int main()
 				}
 				else if (l == 'p')
 					paused = 1 - paused;
+				else if (l == 'c')
+				{
+					lookYaw = 0.0;
+					lookPitch = 0.0;
+				}
 				else if (l == 'i')
 					invertY = 1 - invertY;
 				else if (l == 'f')
@@ -1918,31 +2143,27 @@ int main()
 				}
 			}
 		}
-		// mouse look: drag to look around, let go and the view swings back
-		int mx = glwMouseX();
-		int my = glwMouseY();
-		if (glwMouseButtons() != 0)
+		// mouse look and aim: the pointer is captured while flying and given
+		// back when paused or between rounds; C looks straight ahead again
+		int want = 1;
+		if (paused || roundOver != 0)
+			want = 0;
+		if (want != grabbed)
 		{
-			if (dragging)
-			{
-				lookYaw = lookYaw + 0.3 * (mx - lastX);
-				lookPitch = lookPitch + 0.3 * (my - lastY);
-				if (lookYaw > 180.0) lookYaw = 180.0;
-				if (lookYaw < -180.0) lookYaw = -180.0;
-				if (lookPitch > 85.0) lookPitch = 85.0;
-				if (lookPitch < -85.0) lookPitch = -85.0;
-			}
-			dragging = 1;
+			glwRelativeMouse(want);
+			grabbed = want;
 		}
-		else
+		glwMouseDelta(md);
+		if (grabbed && (md[0] != 0 || md[1] != 0))
 		{
-			dragging = 0;
-			float k = exp(-dt * 5.0);
-			lookYaw = lookYaw * k;
-			lookPitch = lookPitch * k;
+			lookYaw = lookYaw + 0.15 * md[0];
+			lookPitch = lookPitch + 0.15 * md[1];
+			if (lookYaw > 180.0) lookYaw = 180.0;
+			if (lookYaw < -180.0) lookYaw = -180.0;
+			if (lookPitch > 85.0) lookPitch = 85.0;
+			if (lookPitch < -85.0) lookPitch = -85.0;
 		}
-		lastX = mx;
-		lastY = my;
+
 
 		if (paused == 0)
 		{

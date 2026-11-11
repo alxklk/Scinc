@@ -31,6 +31,8 @@ int glw_mouse_x = 0;
 int glw_mouse_y = 0;
 int glw_mouse_buttons = 0;
 int glw_mouse_wheel = 0;
+int glw_mouse_dx = 0;  // motion summed since the last glwMouseDelta()
+int glw_mouse_dy = 0;
 
 const int KEYQ = 64;
 int glw_keys[KEYQ];
@@ -312,6 +314,8 @@ int glw_poll()
 		}
 		case SDL_MOUSEMOTION:
 		{
+			glw_mouse_dx += e.motion.xrel;
+			glw_mouse_dy += e.motion.yrel;
 			int x = e.motion.x, y = e.motion.y;
 			ToPixels(x, y);
 			PushEvent(4, x, y, 0, 0);

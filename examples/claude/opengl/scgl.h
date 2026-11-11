@@ -256,6 +256,11 @@ WRAP(int,    glwMouseY,      (), {return glw_mouse_y;})
 WRAP(int,    glwMouseButtons,(), {return glw_mouse_buttons;})
 WRAP(int,    glwMouseWheel,  (), {int w = glw_mouse_wheel; glw_mouse_wheel = 0; return w;})
 WRAP(void,   glwSetFullscreen,(int on), {glw_set_fullscreen(on);})
+// Mouse-look: glwRelativeMouse(1) hides the pointer and keeps it in the
+// window, so motion never stops at the screen edge; glwMouseDelta(d) puts the
+// motion since its previous call into d[0], d[1] (works in either mode).
+WRAP(void,   glwRelativeMouse,(int on), {SDL_SetRelativeMouseMode(on ? SDL_TRUE : SDL_FALSE);})
+WRAP(void,   glwMouseDelta,  (int* d), {d[0] = glw_mouse_dx; d[1] = glw_mouse_dy; glw_mouse_dx = 0; glw_mouse_dy = 0;})
 // Saves the current back buffer (call before glwSwap) as a .bmp file.
 WRAP(int,    glwSaveBMP,     (char* path), {return glw_save_bmp(path);})
 
