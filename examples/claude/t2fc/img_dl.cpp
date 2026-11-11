@@ -114,7 +114,7 @@ struct Slot
 	// the last picture drawn, kept while nothing changes
 	std::vector<uint32_t> cache;
 	std::vector<uint32_t> pcache;  // the same for img_pixels
-	double pcacheKey[12]={-1,0,0,0,0,0,0,0,0,0,0,0};
+	double pcacheKey[13]={-1,0,0,0,0,0,0,0,0,0,0,0,0};
 	int cacheKeyI[6]={-1,0,0,0,0,0};
 	double cacheKeyF[4]={0,0,0,0};
 	int version=0;             // bumped by every change to pic
@@ -1235,6 +1235,150 @@ void img_video_ctl(int s, int op, int arg)
 	v->cv.notify_all();
 }
 
+// 0: shrinking averages the source pixels a screen pixel covers; 1: a Lanczos
+// filter (a = 3) where the picture is shown smaller on both axes. Enlarging
+// repeats the pixels either way.
+static int filterMode=0;
+
+void img_filter(int mode)
+{
+	filterMode=mode;
+}
+
+static double lanczos3(double x)
+{
+	if(x<0)x=-x;
+	if(x<1e-9)return 1.0;
+	if(x>=3.0)return 0.0;
+	double px=3.14159265358979323846*x;
+	return 3.0*std::sin(px)*std::sin(px/3.0)/(px*px);
+}
+
+// The taps of one screen pixel along an axis: source pixels first..first+n-1 with
+// these weights, which add up to 1; first<0 when its middle is off the picture.
+struct Taps
+{
+	int first=-1;
+	std::vector<float> w;
+};
+
+static void lanczosTaps(double o, double s, int n, int size, std::vector<Taps>& out)
+{
+	out.assign(n,Taps());
+	double r=3.0*s;
+	for(int k=0;k<n;k++)
+	{
+		double c=o+(k+0.5)*s;        // the middle, in source pixels
+		if((c<0)||(c>=size))continue;
+		int a=(int)std::floor(c-r);
+		int b=(int)std::ceil(c+r);
+		if(a<0)a=0;
+		if(b>size)b=size;
+		Taps& t=out[k];
+		t.first=a;
+		t.w.resize(b-a);
+		double sum=0;
+		for(int i=a;i<b;i++)
+		{
+			double w=lanczos3((i+0.5-c)/s);
+			t.w[i-a]=(float)w;
+			sum+=w;
+		}
+		if(sum!=0)
+			for(float& w:t.w)
+				w=(float)(w/sum);
+	}
+}
+
+static inline double clamp255(double v)
+{
+	if(v<0)return 0;
+	if(v>255)return 255;
+	return v;
+}
+
+// render's work with the Lanczos filter: each source row is filtered across once,
+// into a ring of rows as many as a screen pixel's taps down, and the rows are
+// filtered down from there. Colours are weighted by their opacity.
+static void renderLanczos(const Picture& p, int frame, double ox, double oy, double sx, double sy,
+	int pw, int ph, uint32_t bg, std::vector<uint32_t>& out, int cox, int coy, int csh)
+{
+	const uint8_t* src=p.frames[frame].rgba.data();
+	std::vector<Taps> tx;
+	std::vector<Taps> ty;
+	lanczosTaps(ox,sx,pw,p.w,tx);
+	lanczosTaps(oy,sy,ph,p.h,ty);
+	int ring=(int)std::ceil(6.0*sy)+3;
+	std::vector<float> rows((size_t)ring*pw*4);
+	std::vector<int> rowOf(ring,-1);    // the source row each ring row holds
+	for(int py=0;py<ph;py++)
+	{
+		const Taps& v=ty[py];
+		if(v.first<0)continue;
+		int nv=(int)v.w.size();
+		for(int j=v.first;j<v.first+nv;j++)
+		{
+			int slot=j%ring;
+			if(rowOf[slot]==j)continue;
+			rowOf[slot]=j;
+			float* dst=&rows[(size_t)slot*pw*4];
+			const uint8_t* line=src+(size_t)j*p.w*4;
+			for(int px=0;px<pw;px++)
+			{
+				const Taps& h=tx[px];
+				float r=0,g=0,b=0,a=0;
+				if(h.first>=0)
+				{
+					const uint8_t* q=line+(size_t)h.first*4;
+					for(float w:h.w)
+					{
+						float aw=w*q[3];
+						r+=aw*q[0];
+						g+=aw*q[1];
+						b+=aw*q[2];
+						a+=aw;
+						q+=4;
+					}
+				}
+				dst[px*4]=r;
+				dst[px*4+1]=g;
+				dst[px*4+2]=b;
+				dst[px*4+3]=a;
+			}
+		}
+		for(int px=0;px<pw;px++)
+		{
+			if(tx[px].first<0)continue;
+			double r=0,g=0,b=0,a=0;
+			for(int k=0;k<nv;k++)
+			{
+				const float* q=&rows[((size_t)((v.first+k)%ring)*pw+px)*4];
+				double w=v.w[k];
+				r+=w*q[0];
+				g+=w*q[1];
+				b+=w*q[2];
+				a+=w*q[3];
+			}
+			uint32_t under=((((px+cox)>>csh)+((py+coy)>>csh))&1)?0x9A9A9A:0x666666;
+			double cover=a/255.0;
+			if(cover<0)cover=0;
+			if(cover>1)cover=1;
+			double cr=0,cg=0,cb=0;
+			if(a>1e-6)
+			{
+				cr=clamp255(r/a);
+				cg=clamp255(g/a);
+				cb=clamp255(b/a);
+			}
+			auto ch=[&](uint32_t c,int sh){return (double)((c>>sh)&255);};
+			int R=(int)(cr*cover+ch(under,16)*(1-cover)+0.5);
+			int G=(int)(cg*cover+ch(under,8)*(1-cover)+0.5);
+			int B=(int)(cb*cover+ch(under,0)*(1-cover)+0.5);
+			out[(size_t)py*pw+px]=(R<<16)|(G<<8)|B;
+		}
+	}
+}
+
 static inline int to15(uint32_t c)
 {
 	return (((c>>19)&31)<<10)|(((c>>11)&31)<<5)|((c>>3)&31);
@@ -1251,6 +1395,11 @@ static void render(const Picture& p, int frame, double cx, double cy, double sx,
 	const uint8_t* src=p.frames[frame].rgba.data();
 	double ox=cx-pw*0.5*sx;
 	double oy=cy-ph*0.5*sy;
+	if((filterMode==1)&&(sx>1.0)&&(sy>1.0))
+	{
+		renderLanczos(p,frame,ox,oy,sx,sy,pw,ph,bg,out,cox,coy,csh);
+		return;
+	}
 	// the source columns of each screen column
 	std::vector<int> x0(pw);
 	std::vector<int> x1(pw);
@@ -1358,7 +1507,7 @@ int img_draw(int s, int f, double cx, double cy, double scale, double aspect, in
 	int pw=cw;
 	int ph=ch*2;
 	bool same=(sl.cacheKeyI[0]==version)&&(sl.cacheKeyI[1]==f)&&(sl.cacheKeyI[2]==pw)&&
-		(sl.cacheKeyI[3]==ph)&&(sl.cacheKeyI[4]==bg)&&(sl.cacheKeyF[0]==cx)&&
+		(sl.cacheKeyI[3]==ph)&&(sl.cacheKeyI[4]==bg)&&(sl.cacheKeyI[5]==filterMode)&&(sl.cacheKeyF[0]==cx)&&
 		(sl.cacheKeyF[1]==cy)&&(sl.cacheKeyF[2]==scale)&&(sl.cacheKeyF[3]==aspect)&&
 		(sl.cache.size()==(size_t)pw*ph);
 	if(!same)
@@ -1371,6 +1520,7 @@ int img_draw(int s, int f, double cx, double cy, double scale, double aspect, in
 		sl.cacheKeyI[2]=pw;
 		sl.cacheKeyI[3]=ph;
 		sl.cacheKeyI[4]=bg;
+		sl.cacheKeyI[5]=filterMode;
 		sl.cacheKeyF[0]=cx;
 		sl.cacheKeyF[1]=cy;
 		sl.cacheKeyF[2]=scale;
@@ -1419,10 +1569,10 @@ int img_pixels(int s, int f, double cx, double cy, double scale, int fullW, int 
 	}
 	if(!p||p->frames.empty())return 0;
 	if((f<0)||(f>=(int)p->frames.size()))f=0;
-	double key[12]={(double)version,(double)f,cx,cy,scale,(double)fullW,(double)fullH,
-		(double)ox,(double)oy,(double)w,(double)h,(double)bg};
+	double key[13]={(double)version,(double)f,cx,cy,scale,(double)fullW,(double)fullH,
+		(double)ox,(double)oy,(double)w,(double)h,(double)bg,(double)filterMode};
 	bool same=(sl.pcache.size()==(size_t)w*h);
-	for(int k=0;(k<12)&&same;k++)
+	for(int k=0;(k<13)&&same;k++)
 		if(sl.pcacheKey[k]!=key[k])same=false;
 	if(!same)
 	{
@@ -1430,7 +1580,7 @@ int img_pixels(int s, int f, double cx, double cy, double scale, int fullW, int 
 		double x0=cx-fullW*0.5*scale+ox*scale;
 		double y0=cy-fullH*0.5*scale+oy*scale;
 		render(*p,f,x0+w*0.5*scale,y0+h*0.5*scale,scale,scale,w,h,(uint32_t)bg,sl.pcache,ox,oy,3);
-		for(int k=0;k<12;k++)
+		for(int k=0;k<13;k++)
 			sl.pcacheKey[k]=key[k];
 	}
 	const uint32_t* src=sl.pcache.data();
@@ -1453,3 +1603,4 @@ extern "C" int img_rotate_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_rotate
 extern "C" int img_video_opts_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_video_opts);return 0;}
 extern "C" int img_video_ctl_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_video_ctl);return 0;}
 extern "C" int img_draw_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_draw);return 0;}
+extern "C" int img_filter_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_filter);return 0;}

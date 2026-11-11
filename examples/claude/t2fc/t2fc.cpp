@@ -56,6 +56,7 @@ typedef char* pchar;
 #define CM_THEMEPICK 505
 #define CM_DESKPICK 509
 #define CM_PIX 510       // + 1 to 4: the pixel size of a graphic window
+#define CM_LANCZOS 515   // pictures shown smaller through a Lanczos filter, on or off
 #define CM_LINENUMS 506
 #define CM_WRAP 507
 #define CM_LYNX 508
@@ -738,6 +739,7 @@ int StrCmp(char* a, char* b);
 [[scinc::dynlink(IMG_DL,"img_pixels_wrapper")]]int img_pixels(int s, int f, float cx, float cy, float scale, int fullW, int fullH, int ox, int oy, int w, int h, int bg, int* out);
 [[scinc::dynlink(IMG_DL,"img_video_opts_wrapper")]]void img_video_opts(int s, int maxW, int maxH, int fps, int loop);
 [[scinc::dynlink(IMG_DL,"img_video_ctl_wrapper")]]void img_video_ctl(int s, int op, int arg);
+[[scinc::dynlink(IMG_DL,"img_filter_wrapper")]]void img_filter(int mode);
 [[scinc::dynlink(IMG_DL,"img_draw_wrapper")]]int img_draw(int s, int f, float cx, float cy, float scale, float aspect, int x0, int y0, int cw, int ch, int* cells, int* attrs, int stride, int clx0, int cly0, int clx1, int cly1, int uphalf, int bg);
 
 #define PV_SLOTS 32
@@ -747,6 +749,7 @@ int pvUsed[PV_SLOTS];
 int pvSeen[PV_SLOTS];        // the state of the slot when it was last drawn
 float pvCX[PV_SLOTS];        // the picture point in the middle of the view
 float pvCY[PV_SLOTS];
+int pvLanczos=0;             // pictures shown smaller go through a Lanczos filter
 float pvScale[PV_SLOTS];     // picture pixels per screen pixel; 0 fits the view
 int pvFrame[PV_SLOTS];       // the animation frame shown
 int pvNext[PV_SLOTS];        // and when the next one is due
@@ -1060,7 +1063,7 @@ void PvDraw(int s, int x, int y, int w, int h)
 	{
 		// what the picture looks like now, so that the backend asks for it only
 		// when that changes
-		int key=pvGen[s]*7919+pvFrame[s]*104729+img_info(s,8)*15485863+(int)(pvCX[s]*8.)*31+(int)(pvCY[s]*8.)*1009+(int)(pvScale[s]*1000000.);
+		int key=pvGen[s]*7919+pvFrame[s]*104729+img_info(s,8)*15485863+(int)(pvCX[s]*8.)*31+(int)(pvCY[s]*8.)*1009+(int)(pvScale[s]*1000000.)+pvLanczos*7;
 		TvPixels(s,x,y,w,h,key);
 		return;
 	}
@@ -3737,6 +3740,9 @@ void PrefsLoad(char* left, char* right)
 	if((k>=14)&&(v[13]<TE_DESKN))teDeskPick=v[13];
 	prefScale=0;
 	if(k>=15)prefScale=v[14];
+	pvLanczos=0;
+	if(k>=16)pvLanczos=(v[15]!=0);
+	img_filter(pvLanczos);
 	if(fcQSecs>600)fcQSecs=600;
 	// the directories, one a line, then the terminal command
 	for(int d=0;d<3;d++)
@@ -3770,8 +3776,8 @@ void PrefsSave()
 #ifdef TV_GFX
 	scale=GfxScale();
 #endif
-	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
-		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
+	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
+		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,pvLanczos,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -3783,6 +3789,7 @@ int itemLineNums=-1;     // menu items whose hints show on or off
 int itemWrap=-1;
 int itemLynx=-1;
 int itemHidden=-1;
+int itemLanczos=-1;
 int itemPix=-1;          // the first of the 1x..4x items of Options > Pixel size
 int itemPanel[2];        // each panel's menu: Full and Brief, then the sort keys
 
@@ -3800,6 +3807,7 @@ void ShowToggles()
 	SetHint(itemWrap,edWrap);
 	SetHint(itemLynx,fcLynx);
 	SetHint(itemHidden,fcHidden);
+	SetHint(itemLanczos,pvLanczos);
 #ifdef TV_GFX
 	if(itemPix>=0)
 		for(int k=0;k<4;k++)
@@ -4006,6 +4014,8 @@ void OpenHelp()
 		"  0 or f, 1, 2         fit the window, pixels 1:1, 2:1\n"
 		"  arrows, drag         move a zoomed picture\n"
 		"  double click         1:1 there, or fit again\n"
+		"  Options > Lanczos scaling down: smoother pictures and\n"
+		"  videos where they are shown smaller (slower)\n"
 		"  Space, Backspace     the next, previous picture of the panel\n"
 		"  r                    turn a quarter clockwise\n"
 		"  F3, Esc              close\n"
@@ -4539,6 +4549,14 @@ void TvAppCommand(int cmd)
 		PrefsSave();
 #endif
 	}
+	else if(cmd==CM_LANCZOS)
+	{
+		pvLanczos=!pvLanczos;
+		img_filter(pvLanczos);
+		ShowToggles();
+		PrefsSave();
+		tvDirty=1;
+	}
 	else if(cmd==CM_LYNX)
 	{
 		fcLynx=!fcLynx;
@@ -4583,6 +4601,7 @@ void FcKeys()
 	TvKeyCmd(TV_ST_ALL,CM_LINENUMS,"Line numbers",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_WRAP,"Word wrap",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_LYNX,"Lynx-like motion",0,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_LANCZOS,"Lanczos scaling down",0,0,0);
 #ifdef TV_GFX
 	TvKeyCmd(TV_ST_ALL,CM_PIX+1,"Pixel size 1x",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_PIX+2,"Pixel size 2x",0,0,0);
@@ -4765,6 +4784,8 @@ int main(int argc, pchar* argv)
 	itemWrap=tvNItem-1;
 	TvMenuItem("L~y~nx-like motion","off",CM_LYNX,0);
 	itemLynx=tvNItem-1;
+	TvMenuItem("Lan~c~zos scaling down","off",CM_LANCZOS,0);
+	itemLanczos=tvNItem-1;
 #ifdef TV_GFX
 	int itemPixSub=TvMenuSub("Pi~x~el size");
 #endif
