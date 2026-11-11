@@ -681,6 +681,7 @@ void PrefsLoad()
 		if((k>=7)&&(v[6]==2)&&(v[3]==6))svKind=SV_RANDOM;
 		if((k>=7)&&(v[6]==3)&&(v[3]==7))svKind=SV_RANDOM;
 		if((k>=7)&&(v[6]==4)&&(v[3]==8))svKind=SV_RANDOM;
+		if((k>=7)&&(v[6]==5)&&(v[3]==9))svKind=SV_RANDOM;
 	}
 	if(k>=6)
 	{
@@ -697,7 +698,7 @@ void PrefsSave()
 #ifdef TV_GFX
 	prefScale=GfxScale();
 #endif
-	snprintf(&buf[0],64,"%i %i %i %i %i %i 5 %i %i\n",prefTheme,svOn,svMinutes,svKind,edLineNums,edWrap,prefScale,teDeskPick);
+	snprintf(&buf[0],64,"%i %i %i %i %i %i 6 %i %i\n",prefTheme,svOn,svMinutes,svKind,edLineNums,edWrap,prefScale,teDeskPick);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -724,7 +725,7 @@ void RunPrefs()
 	int on=TvAdd(win,C_CHECK,2,5,30,1,"~S~creen saver",0);
 	tvCtl[on].val=svOn;
 	TvAdd(win,C_LABEL,3,6,10,1,"~K~ind",0);
-	int kind=TvAdd(win,C_COMBO,14,6,30,1,"Stars|Plasma|Matrix|Flame|Reaction-diffusion|Fluid|Landscape|Labyrinth|Objects|Random",0);
+	int kind=TvAdd(win,C_COMBO,14,6,30,1,"Stars|Plasma|Matrix|Flame|Reaction-diffusion|Fluid|Landscape|Labyrinth|Objects|Nyan cat|Random",0);
 	tvCtl[kind].val=svKind;
 	TvAdd(win,C_LABEL,3,8,10,1,"~A~fter",0);
 	prefMinCtl=TvAdd(win,C_SLIDER,14,8,20,1,"",0);
@@ -1354,11 +1355,11 @@ void OpenHelp()
 		"\n"
 		"Screen savers\n"
 		"  Stars, plasma, matrix rain, flame, reaction-diffusion, fluid,\n"
-		"  landscape, labyrinth and objects,\n"
+		"  landscape, labyrinth, objects and a nyan cat,\n"
 		"  full screen after the idle time set in Options, Preferences, or\n"
 		"  at once from Options, Start screen saver. Start saver in a window\n"
 		"  (or Saver in a window in the = menu) opens one in a window, where\n"
-		"  Space shows the next one and 1-9 pick one.\n"
+		"  Space shows the next one and 1-9 and 0 pick one.\n"
 		"  Reaction-diffusion grows Gray-Scott patterns (coral, mitosis,\n"
 		"  maze, worms, holes, bubbles): P the next pattern, R starts it\n"
 		"  again, dragging the mouse drops chemical. Fluid is a stable\n"
@@ -1732,6 +1733,7 @@ void SaverItems(int base)
 	TvMenuItem("~L~andscape","",base+SV_LAND,0);
 	TvMenuItem("La~b~yrinth","",base+SV_MAZE,0);
 	TvMenuItem("~O~bjects","",base+SV_OBJ,0);
+	TvMenuItem("~N~yan cat","",base+SV_NYAN,0);
 	TvMenuLine();
 	TvMenuItem("R~a~ndom","",base+SV_RANDOM,0);
 }

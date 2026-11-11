@@ -1,6 +1,7 @@
 // Pictures drawn with half blocks, two square pixels to a cell in xterm's 256
 // colours: a Mandelbrot set to explore, Conway's Game of Life to paint with the
-// mouse, and a screen saver (stars or plasma) that starts when the desktop is idle.
+// mouse, and screen savers (stars, plasma, ..., a nyan cat) that start when the
+// desktop is idle.
 //
 // The program calls ToyTick from TvAppTick, and the Mb* and Lf* hooks from its own.
 #ifndef TVTOYS_H
@@ -714,8 +715,9 @@ int LfMouse(int win, int ev, int x, int y)
 #define SV_LAND 6
 #define SV_MAZE 7
 #define SV_OBJ 8
-#define SV_KINDS 9
-#define SV_RANDOM 9    // the setting only: a kind chosen at each start
+#define SV_NYAN 9
+#define SV_KINDS 10
+#define SV_RANDOM 10   // the setting only: a kind chosen at each start
 #define SV_NSTARS 220
 
 int svOn=1;
@@ -3704,6 +3706,381 @@ int FlLevel(float l)
 	return int(55.+l*40.);
 }
 
+// ---- nyan cat
+// After the Nyan example (examples/graphic/Nyan/nyan.cpp): a pop-tart cat bobbing on a
+// rainbow among sparkling stars. The example's shapes, in its own coordinates (a
+// 512 x 512 canvas), are filled pixel by pixel by inside tests, scaled to the screen
+// with the cat in the middle; the rainbow reaches to the left edge and the stars
+// cover the screen. Outlines are a pixel wide at least, small dots a pixel.
+#define NY_WAVE 1024
+float nyS=1.;          // pixels per unit of the example
+float nyOX=0.;         // the example's point at pixel 0,0
+float nyOY=0.;
+int nyW=0;
+int nyH=0;
+int nySeed=1;
+float nyWave[NY_WAVE]; // the rainbow's middle line, a point every 4 units leftwards
+
+int NyRand()
+{
+	nySeed=(nySeed*1103515245+12345)&0x7ffffff;
+	return nySeed;
+}
+
+float NyAbs(float x)
+{
+	if(x<0.)return -x;
+	return x;
+}
+
+// At least half a pixel, in the example's units.
+float NyThick(float r)
+{
+	float m=0.5/nyS;
+	if(r<m)return m;
+	return r;
+}
+
+// The pixel rows or columns that units a..b cover, clipped to 0..n-1.
+int NyLo(float a, float o, int n)
+{
+	int p=int((a-o)*nyS)-1;
+	if(p<0)p=0;
+	return p;
+}
+
+int NyHi(float b, float o, int n)
+{
+	float f=(b-o)*nyS+1.;
+	if(f<0.)return -1;
+	int p=int(f);
+	if(p>n-1)p=n-1;
+	return p;
+}
+
+// The pixels within r of the segment a-b.
+void NySeg(float ax, float ay, float bx, float by, float r, int col)
+{
+	r=NyThick(r);
+	float x0=ax;
+	float x1=bx;
+	if(bx<ax)
+	{
+		x0=bx;
+		x1=ax;
+	}
+	float y0=ay;
+	float y1=by;
+	if(by<ay)
+	{
+		y0=by;
+		y1=ay;
+	}
+	int px0=NyLo(x0-r,nyOX,nyW);
+	int px1=NyHi(x1+r,nyOX,nyW);
+	int py0=NyLo(y0-r,nyOY,nyH);
+	int py1=NyHi(y1+r,nyOY,nyH);
+	float dx=bx-ax;
+	float dy=by-ay;
+	float l=dx*dx+dy*dy;
+	float rr=r*r;
+	for(int py=py0;py<=py1;py++)
+	{
+		float v=nyOY+(py+0.5)/nyS;
+		for(int px=px0;px<=px1;px++)
+		{
+			float u=nyOX+(px+0.5)/nyS;
+			float t=0.;
+			if(l>0.)
+			{
+				t=((u-ax)*dx+(v-ay)*dy)/l;
+				if(t<0.)t=0.;
+				if(t>1.)t=1.;
+			}
+			float ex=ax+t*dx-u;
+			float ey=ay+t*dy-v;
+			if(ex*ex+ey*ey<=rr)svPix[py*PIX_W+px]=col;
+		}
+	}
+}
+
+void NyDot(float x, float y, float r, int col)
+{
+	NySeg(x,y,x,y,r,col);
+}
+
+// A rectangle x,y w x h with corners of radius r, grown by g (shrunk if negative).
+void NyRect(float x, float y, float w, float h, float r, float g, int col)
+{
+	float cx=x+w/2.;
+	float cy=y+h/2.;
+	float hx=w/2.-r;
+	float hy=h/2.-r;
+	float rg=r+g;
+	if(rg<0.)return;
+	int px0=NyLo(x-g,nyOX,nyW);
+	int px1=NyHi(x+w+g,nyOX,nyW);
+	int py0=NyLo(y-g,nyOY,nyH);
+	int py1=NyHi(y+h+g,nyOY,nyH);
+	for(int py=py0;py<=py1;py++)
+	{
+		float qy=NyAbs(nyOY+(py+0.5)/nyS-cy)-hy;
+		if(qy<0.)qy=0.;
+		for(int px=px0;px<=px1;px++)
+		{
+			float qx=NyAbs(nyOX+(px+0.5)/nyS-cx)-hx;
+			if(qx<0.)qx=0.;
+			if(qx*qx+qy*qy<=rg*rg)svPix[py*PIX_W+px]=col;
+		}
+	}
+}
+
+// The head at offset ox,oy, grown by g: the lower part of an ellipse under the line
+// y=260 and the polygon of the ears above it.
+float nyHeadX[8];
+float nyHeadY[8];
+
+int NyInHead(float u, float v, float g)
+{
+	float ex=(u-322.5)/(42.+g);
+	float ey=(v-277.56)/(39.+g);
+	if((v>=260.-g)&&(ex*ex+ey*ey<=1.))return 1;
+	int in=0;
+	int j=7;
+	for(int i=0;i<8;i++)
+	{
+		float xi=nyHeadX[i];
+		float yi=nyHeadY[i];
+		float xj=nyHeadX[j];
+		float yj=nyHeadY[j];
+		if((yi>v)!=(yj>v))
+			if(u<(xj-xi)*(v-yi)/(yj-yi)+xi)in=!in;
+		if(g>0.)
+		{
+			float dx=xj-xi;
+			float dy=yj-yi;
+			float t=((u-xi)*dx+(v-yi)*dy)/(dx*dx+dy*dy);
+			if(t<0.)t=0.;
+			if(t>1.)t=1.;
+			float qx=xi+t*dx-u;
+			float qy=yi+t*dy-v;
+			if(qx*qx+qy*qy<=g*g)return 1;
+		}
+		j=i;
+	}
+	return in;
+}
+
+void NyHead(float ox, float oy, float g, int col)
+{
+	int px0=NyLo(280.+ox-g,nyOX,nyW);
+	int px1=NyHi(365.+ox+g,nyOX,nyW);
+	int py0=NyLo(237.+oy-g,nyOY,nyH);
+	int py1=NyHi(318.+oy+g,nyOY,nyH);
+	for(int py=py0;py<=py1;py++)
+	{
+		float v=nyOY+(py+0.5)/nyS-oy;
+		for(int px=px0;px<=px1;px++)
+			if(NyInHead(nyOX+(px+0.5)/nyS-ox,v,g))svPix[py*PIX_W+px]=col;
+	}
+}
+
+// The lower half of a ring: centre x,y, radius r, line half width hw.
+void NySmile(float x, float y, float r, float hw, int col)
+{
+	hw=NyThick(hw);
+	int px0=NyLo(x-r-hw,nyOX,nyW);
+	int px1=NyHi(x+r+hw,nyOX,nyW);
+	int py0=NyLo(y-hw,nyOY,nyH);
+	int py1=NyHi(y+r+hw,nyOY,nyH);
+	for(int py=py0;py<=py1;py++)
+	{
+		float v=nyOY+(py+0.5)/nyS-y;
+		if(v<-hw)continue;
+		for(int px=px0;px<=px1;px++)
+		{
+			float u=nyOX+(px+0.5)/nyS-x;
+			float d=sqrt(u*u+v*v)-r;
+			if(v<0.)d=sqrt((NyAbs(u)-r)*(NyAbs(u)-r)+v*v);
+			if(NyAbs(d)<=hw)svPix[py*PIX_W+px]=col;
+		}
+	}
+}
+
+// A star's sparkle at phase t (0..1 of its cycle): it grows, opens and is gone,
+// drifting left.
+void NyStar(float x, float y, float t)
+{
+	t=(t-int(t))*30.;
+	x=x-t*100.;
+	if(t<1.)
+	{
+		float r1=t*t*30.;
+		if(r1>25.)r1=25.;
+		float r2=t*50.;
+		if(r2>25.)r2=25.;
+		NySeg(x+r1,y,x+r2,y,1.5,0xffffff);
+		NySeg(x-r1,y,x-r2,y,1.5,0xffffff);
+		NySeg(x,y+r1,x,y+r2,1.5,0xffffff);
+		NySeg(x,y-r1,x,y-r2,1.5,0xffffff);
+		if(t>.5)
+		{
+			NyDot(x+17.,y+17.,1.5,0xffffff);
+			NyDot(x-17.,y+17.,1.5,0xffffff);
+			NyDot(x+17.,y-17.,1.5,0xffffff);
+			NyDot(x-17.,y-17.,1.5,0xffffff);
+		}
+	}
+	if((t<1.25)&&(t>.5))NyDot(x,y,1.5,0xffffff);
+}
+
+void NyDraw(int w, int h)
+{
+	float T=svT*0.05;
+	nyW=w;
+	nyH=h;
+	nyS=w/440.;
+	if(h/280.<nyS)nyS=h/280.;
+	if(nyS<=0.)return;
+	nyOX=256.-w/2./nyS;
+	nyOY=262.-h/2./nyS;
+	// the night, lighter in the middle as the example's soft round glow
+	for(int py=0;py<h;py++)
+	{
+		float v=nyOY+(py+0.5)/nyS-256.;
+		for(int px=0;px<w;px++)
+		{
+			float u=nyOX+(px+0.5)/nyS-256.;
+			int k=int(sqrt(u*u+v*v)*256./240.);
+			if(k>256)k=256;
+			svPix[py*PIX_W+px]=ToyMix(0x1060a0,0x000040,k);
+		}
+	}
+	// stars, as many to the area as in the example
+	float sw=w/nyS+125.;
+	float sh=h/nyS;
+	int n=int(200.*sw*sh/262144.);
+	if(n<20)n=20;
+	if(n>600)n=600;
+	nySeed=73661561;
+	for(int i=0;i<n;i++)
+	{
+		float x=nyOX+(NyRand()%10000)*sw/10000.;
+		float y=nyOY+(NyRand()%10000)*sh/10000.;
+		NyStar(x,y,T*.05+(NyRand()%200)*.005);
+	}
+	// the rainbow: one wavy line, six bands along it
+	float t=T*12.;
+	int steps=int((200.-nyOX)/4.)+3;
+	if(steps>NY_WAVE)steps=NY_WAVE;
+	if(steps<2)steps=2;
+	float y=-cos(t)*3.;
+	for(int i=0;i<steps;i++)
+	{
+		nyWave[i]=y;
+		int j=i;
+		if(j>50)j=50;
+		y=y+sin(i*.35-t)*(1.2+j*.05);
+	}
+	int px1=NyHi(206.,nyOX,w);
+	for(int px=0;px<=px1;px++)
+	{
+		float f=(200.-(nyOX+(px+0.5)/nyS))/4.;
+		if(f<0.)f=0.;
+		int i=int(f);
+		if(i>steps-2)i=steps-2;
+		float k=f-i;
+		float mid=nyWave[i]+(nyWave[i+1]-nyWave[i])*k;
+		int py0=NyLo(215.+mid,nyOY,h);
+		int py1=NyHi(302.+mid,nyOY,h);
+		for(int py=py0;py<=py1;py++)
+		{
+			float v=nyOY+(py+0.5)/nyS-mid;
+			int c=-1;
+			if(NyAbs(v-226.)<=11.)c=0xff0000;
+			if(NyAbs(v-240.)<=11.)c=0xff8000;
+			if(NyAbs(v-254.)<=11.)c=0xffff00;
+			if(NyAbs(v-268.)<=11.)c=0x00ff00;
+			if(NyAbs(v-282.)<=11.)c=0x20a0ff;
+			if(NyAbs(v-294.)<=8.)c=0x6000ff;
+			if(c>=0)svPix[py*PIX_W+px]=c;
+		}
+	}
+	// the cat bobs
+	float bdx=-sin(t)*5.;
+	float bdy=cos(t)*3.;
+	float ol=1.5;
+	if(ol<1./nyS)ol=1./nyS;
+	// the tail and the legs, black under grey
+	float tx[9];
+	float ty[9];
+	float ax=200.+bdx;
+	float ay=270.+bdy;
+	for(int i=0;i<9;i++)
+	{
+		float s=i/8.;
+		float a=(1.-s)*(1.-s)*(1.-s);
+		float b=3.*(1.-s)*(1.-s)*s;
+		float c=3.*(1.-s)*s*s;
+		float d=s*s*s;
+		tx[i]=a*ax+b*(ax-10.)+c*(ax-20.)+d*(ax-40.+bdy);
+		ty[i]=a*ay+b*(ay-5.)+c*(ay+bdy*2.-5.)+d*(ay-bdy*4.-10.);
+	}
+	float lx[8];
+	lx[0]=235.;lx[1]=305.+bdx;lx[2]=235.-bdy*2.5-5.;lx[3]=320.+bdx;
+	lx[4]=315.;lx[5]=305.-bdy;lx[6]=315.-bdx*2.;lx[7]=320.-bdy;
+	float fx[8];
+	fx[0]=210.;fx[1]=305.-bdy;fx[2]=210.-bdx*2.5-5.;fx[3]=320.-bdy;
+	fx[4]=290.;fx[5]=305.-bdx*1.4;fx[6]=290.+bdy*3.;fx[7]=320.-bdx*1.4;
+	for(int pass=0;pass<2;pass++)
+	{
+		int col=0x000000;
+		float r=6.5;
+		if(pass==1)
+		{
+			col=0xa0a0a0;
+			r=4.;
+		}
+		for(int i=0;i<8;i++)
+			NySeg(tx[i],ty[i],tx[i+1],ty[i+1],r,col);
+		NySeg(lx[0],lx[1],lx[2],lx[3],r,col);
+		NySeg(lx[4],lx[5],lx[6],lx[7],r,col);
+	}
+	for(int pass=0;pass<2;pass++)
+	{
+		int col=0x000000;
+		float r=6.5;
+		if(pass==1)
+		{
+			col=0xa0a0a0;
+			r=4.;
+		}
+		NySeg(fx[0],fx[1],fx[2],fx[3],r,col);
+		NySeg(fx[4],fx[5],fx[6],fx[7],r,col);
+	}
+	// the pop-tart: crust, icing, sprinkles
+	NyRect(200.+bdx,210.+bdy,135.,100.,15.,ol,0x000000);
+	NyRect(200.+bdx,210.+bdy,135.,100.,15.,-ol,0xe0c0a0);
+	NyRect(210.+bdx,220.+bdy,115.,80.,20.,0.,0xff90f0);
+	char* sp="5174251612";
+	for(int i=0;i<10;i++)
+		NyDot(215.+bdx+i*10.,220.+bdy+(sp[i]-'0')*10.,2.,0xff30d0);
+	// the head
+	float hx=bdx*.75;
+	float hy=bdy*.75-bdx*.8;
+	NyHead(hx,hy,ol,0x000000);
+	NyHead(hx,hy,0.,0xa0a0a0);
+	NyDot(295.+hx,290.+hy,3.5,0xf0a0a0);
+	NyDot(355.+hx,290.+hy,3.5,0xf0a0a0);
+	NyDot(305.+hx,278.+hy,4.,0x000000);
+	NyDot(348.+hx,278.+hy,4.,0x000000);
+	NyDot(302.+hx,276.+hy,1.5,0xffffff);
+	NyDot(345.+hx,276.+hy,1.5,0xffffff);
+	NySmile(317.+hx,290.+hy,10.,1.5,0x000000);
+	NySmile(337.+hx,290.+hy,10.,1.5,0x000000);
+	NyDot(330.+hx,282.+hy,1.5,0x000000);
+}
+
 // Sets up every animation once.
 void SvInit()
 {
@@ -3724,6 +4101,20 @@ void SvInit()
 	MzMake(ToyRandom()%MZ_WORLDS);
 	obT=0.;
 	ObInit();
+	char* hp="285 260 360 260 355 238 348 238 332 253 310 253 294 238 287 238";
+	int hi=0;
+	for(int k=0;k<16;k++)
+	{
+		int v=0;
+		while(hp[hi]==' ')hi++;
+		while((hp[hi]>='0')&&(hp[hi]<='9'))
+		{
+			v=v*10+hp[hi]-'0';
+			hi++;
+		}
+		if(k%2)nyHeadY[k/2]=v;
+		else nyHeadX[k/2]=v;
+	}
 	for(int c=0;c<TV_MAXW;c++)
 		SvDrop(c,TV_MAXH);
 	for(int i=0;i<TV_CELLS;i++)
@@ -3880,7 +4271,7 @@ void SvDraw(int kind, int x0, int y0, int wc, int hc)
 			}
 		return;
 	}
-	if((kind==SV_REACT)||(kind==SV_FLUID)||(kind==SV_LAND)||(kind==SV_MAZE)||(kind==SV_OBJ)||(kind==SV_PLASMA)||(kind==SV_FLAME))
+	if((kind==SV_REACT)||(kind==SV_FLUID)||(kind==SV_LAND)||(kind==SV_MAZE)||(kind==SV_OBJ)||(kind==SV_NYAN)||(kind==SV_PLASMA)||(kind==SV_FLAME))
 	{
 		if(kind==SV_PLASMA)PlasmaDraw(w,h);
 		else if(kind==SV_FLAME)FlameDraw(w,h);
@@ -3888,6 +4279,7 @@ void SvDraw(int kind, int x0, int y0, int wc, int hc)
 		else if(kind==SV_FLUID)FdDraw(w,h);
 		else if(kind==SV_MAZE)MzDraw(w,h);
 		else if(kind==SV_OBJ)ObDraw(w,h);
+		else if(kind==SV_NYAN)NyDraw(w,h);
 		else LmDraw(w,h);
 		ToyShowRgb(&svPix[0],x0,y0,w,h);
 		return;
@@ -3950,6 +4342,7 @@ char* SvName(int kind)
 	if(kind==SV_LAND)return "Landscape";
 	if(kind==SV_MAZE)return "Labyrinth";
 	if(kind==SV_OBJ)return "Objects";
+	if(kind==SV_NYAN)return "Nyan cat";
 	return "Stars";
 }
 
@@ -3975,7 +4368,7 @@ void SvTitle(int win)
 	else StrCpy(&t.title[0],SvName(t.a),48);
 }
 
-// A saver in a window; field a is its kind. Space or 1-9 change it. In
+// A saver in a window; field a is its kind. Space, 1-9 or 0 change it. In
 // reaction-diffusion P picks the next pattern and R starts it again; in the fluid
 // R clears it. Dragging the mouse drops chemical or stirs the fluid. Over the
 // landscape the arrows steer and climb, N makes new land. In the labyrinth the
@@ -4002,6 +4395,7 @@ int SvWinKey(int win, int key)
 	int k=LowerKey(key);
 	if((key==' ')||(key==K_ENTER))t.a=(t.a+1)%SV_KINDS;
 	else if((key>='1')&&(key<='9'))t.a=key-'1';
+	else if(key=='0')t.a=SV_NYAN;
 	else if((t.a==SV_LAND)&&(key==K_LEFT))lmTurn=lmTurn-0.004;
 	else if((t.a==SV_LAND)&&(key==K_RIGHT))lmTurn=lmTurn+0.004;
 	else if((t.a==SV_LAND)&&(key==K_UP))lmLift=lmLift+4.;
