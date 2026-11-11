@@ -10,7 +10,8 @@
 //
 // tv.h includes this when the program defines TV_GFX before including tv.h,
 // at the point where everything the backend uses from tv.h has been defined.
-// TV_GFX_COLS and TV_GFX_ROWS set the size of the desktop in cells.
+// TV_GFX_COLS and TV_GFX_ROWS set the size of the desktop in cells, G_SCREEN_SCALE
+// the starting pixel scale; Ctrl+= and Ctrl+- change it, Ctrl+0 goes back.
 #ifndef TVGFX_H
 #define TVGFX_H
 
@@ -103,6 +104,28 @@ int gfxMY=0;
 int gfxCloseReq=0;   // the window's close button was pressed
 float gfxPresented=0.0; // Time() of the last Present
 int tvCloseCmd=0;    // the command the close button sends; 0 quits at once
+// The window can be resized ('WMOV' brings the size), but its render target keeps
+// the size it was made with, and a window smaller than it shows its top left part.
+// So the grid shrinks and grows within the render target at once; only a window
+// grown past it is made anew, once the size has stayed the same for a moment, as
+// big as the window then is and where it was (as Sectorly does).
+int gfxCols=TV_GFX_COLS;   // the grid
+int gfxRows=TV_GFX_ROWS;
+int gfxRtCols=TV_GFX_COLS; // the render target, in cells
+int gfxRtRows=TV_GFX_ROWS;
+int gfxResized=0;     // the grid changed: GfxReadEvent returns so that TvRun sees it
+int gfxWantCols=0;    // the size the window was given, in cells, past the render target
+int gfxWantRows=0;
+float gfxSizedAt=-1.0;  // Time() it was given that size; -1 nothing to do
+int gfxWinX=-1;       // the window's last real place: under a reparenting window
+int gfxWinY=-1;       // manager 'WMOV' also reports its offset in the frame
+int gfxOldWin=-1;     // the window made anew, whose events are left alone
+// The pixel scale, G_SCREEN_SCALE at first: Ctrl+= and Ctrl+- change it, Ctrl+0
+// goes back, and the program can call GfxSetScale. A new scale makes the window
+// anew, as big on the screen as it was, so the grid gets more or fewer cells.
+int gfxScale=G_SCREEN_SCALE;
+int gfxWinW=TV_GFX_COLS*GFX_CW*G_SCREEN_SCALE;  // the window's size on the screen
+int gfxWinH=TV_GFX_ROWS*GFX_CH*G_SCREEN_SCALE;
 
 void GfxInit()
 {
@@ -114,9 +137,49 @@ void GfxInit()
 #endif
 	SetEventCallback([](SScincEvent e)->int
 	{
+		if((gfxOldWin>=0)&&(e.w==gfxOldWin))return 1;
 		if((e.type=='WDEL')||(e.type=='WDST'))
 		{
 			gfxCloseReq=1;
+			return 1;
+		}
+		// moved or resized: x y the place, z h the size in screen pixels
+		if(e.type=='WMOV')
+		{
+			if(e.w!=mainWin)return 1;
+			int offX=0;
+			int offY=0;
+			wsys.GetWindowPos(mainWin,&offX,&offY);
+			if((e.x!=offX)||(e.y!=offY))
+			{
+				gfxWinX=e.x;
+				gfxWinY=e.y;
+			}
+			gfxWinW=e.z;
+			gfxWinH=e.h;
+			int c=e.z/(GFX_CW*gfxScale);
+			int r=e.h/(GFX_CH*gfxScale);
+			if(c>TV_MAXW)c=TV_MAXW;
+			if(r>TV_MAXH)r=TV_MAXH;
+			if((c>gfxRtCols)||(r>gfxRtRows))
+			{
+				gfxWantCols=c;
+				gfxWantRows=r;
+				gfxSizedAt=Time();
+				return 1;
+			}
+			gfxSizedAt=-1.0;
+			// smaller than this the window shows part of the screen
+			if(c<20)c=20;
+			if(r<6)r=6;
+			if(c>gfxRtCols)c=gfxRtCols;
+			if(r>gfxRtRows)r=gfxRtRows;
+			if((c!=gfxCols)||(r!=gfxRows))
+			{
+				gfxCols=c;
+				gfxRows=r;
+				gfxResized=1;
+			}
 			return 1;
 		}
 		return 0;
@@ -127,12 +190,12 @@ void GfxInit()
 
 int GfxCols()
 {
-	return TV_GFX_COLS;
+	return gfxCols;
 }
 
 int GfxRows()
 {
-	return TV_GFX_ROWS;
+	return gfxRows;
 }
 
 int GfxCellPxW()
@@ -539,6 +602,63 @@ void GfxGlyph(int ch, int px, int py, int col)
 
 // ---------------------------------------------------------------- frames
 
+// The window anew with c x r cells at gfxScale, where the old one was: the last
+// real place less the offset in the frame.
+void GfxNewWindow(int c, int r)
+{
+	gfxSizedAt=-1.0;
+	int offX=0;
+	int offY=0;
+	wsys.GetWindowPos(mainWin,&offX,&offY);
+	gfxOldWin=mainWin;
+	wsys.DeleteWindow(mainWin);
+	mainWin=wsys.CreateWindow(c*GFX_CW,r*GFX_CH,gfxScale,gfxScale,G_SCREEN_MODE);
+	if(gfxWinX>=0)wsys.SetWindowPos(mainWin,gfxWinX-offX,gfxWinY-offY);
+	tvG.SetActiveRT(wsys.GetWindowRT(mainWin));
+	gfxRtCols=c;
+	gfxRtRows=r;
+	gfxCols=c;
+	gfxRows=r;
+	gfxResized=1;
+}
+
+// The window grown past its render target to gfxWantCols x gfxWantRows cells.
+void GfxRemake()
+{
+	int c=gfxWantCols;
+	int r=gfxWantRows;
+	if(c<gfxRtCols)c=gfxRtCols;
+	if(r<gfxRtRows)r=gfxRtRows;
+	GfxNewWindow(c,r);
+}
+
+int GfxScale()
+{
+	return gfxScale;
+}
+
+int GfxScale0()
+{
+	return G_SCREEN_SCALE;
+}
+
+// A new pixel scale, 1 to 4; the grid gets new columns and rows at the next
+// TvCheckSize.
+void GfxSetScale(int s)
+{
+	if(s<1)s=1;
+	if(s>4)s=4;
+	if(s==gfxScale)return;
+	gfxScale=s;
+	int c=gfxWinW/(GFX_CW*s);
+	int r=gfxWinH/(GFX_CH*s);
+	if(c>TV_MAXW)c=TV_MAXW;
+	if(r>TV_MAXH)r=TV_MAXH;
+	if(c<20)c=20;
+	if(r<6)r=6;
+	GfxNewWindow(c,r);
+}
+
 void GfxPresent()
 {
 	wsys.Present(mainWin);
@@ -719,6 +839,19 @@ void GfxEvent(SScincEvent& e)
 			if(gfxCtrl)evMod=evMod|MOD_CTRL;
 			return;
 		}
+		if(gfxCtrl&&(!gfxAlt))
+		{
+			int z=0;
+			if((code=='=')||(code=='+'))z=gfxScale+1;
+			if(code=='-')z=gfxScale-1;
+			if(code=='0')z=G_SCREEN_SCALE;
+			if(z>0)
+			{
+				gfxComboSent=1;
+				GfxSetScale(z);
+				return;
+			}
+		}
 		if((code>32)&&(code<127))
 		{
 			// Alt and Ctrl combinations come from the key, not from the typed character
@@ -869,6 +1002,17 @@ void GfxReadEvent(int timeoutMs)
 	while(true)
 	{
 		Poll();
+		if((gfxSizedAt>=0.0)&&(Time()-gfxSizedAt>0.25))GfxRemake();
+		if(gfxResized)
+		{
+			// what lay past the old grid shows now: all of it is drawn again
+			gfxResized=0;
+			tvG.rgba32(0xFF000000);
+			tvG.FillRT();
+			for(int i=0;i<TV_CELLS;i++)
+				tvPrevCh[i]=-1;
+			return;     // TvRun finds the new size
+		}
 		if(gfxCloseReq)
 		{
 			gfxCloseReq=0;

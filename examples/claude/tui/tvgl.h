@@ -671,6 +671,22 @@ void GlZoom(int s)
 	GlDraw();
 }
 
+// the same as tvgfx.h's, for the program
+int GfxScale()
+{
+	return glScale;
+}
+
+int GfxScale0()
+{
+	return TV_GL_SCALE;
+}
+
+void GfxSetScale(int s)
+{
+	GlZoom(s);
+}
+
 // Turns one queued window event into a tv.h event, or leaves evType at EV_NONE.
 void GlEvent()
 {

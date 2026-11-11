@@ -55,6 +55,7 @@ typedef char* pchar;
 #define CM_THEMEED 504
 #define CM_THEMEPICK 505
 #define CM_DESKPICK 509
+#define CM_BIGPIX 510    // the pixel size of a graphic window: 1x 2x 3x 4x in turn
 #define CM_LINENUMS 506
 #define CM_WRAP 507
 #define CM_LYNX 508
@@ -3640,6 +3641,8 @@ int FcMouse(int win, int ev, int x, int y)
 
 // t2fc.cfg: a line of numbers (theme, hidden, the panels' sort and brief modes, the
 // active panel, line numbers, wrap) and then the two directories.
+int prefScale=0;     // the pixel scale of a graphic window, 0 the program's own
+
 void PrefsLoad(char* left, char* right)
 {
 	char buf[2200];
@@ -3684,6 +3687,8 @@ void PrefsLoad(char* left, char* right)
 	if(k>=13)fcQSCase=(v[12]!=0);
 	teDeskPick=0;
 	if((k>=14)&&(v[13]<TE_DESKN))teDeskPick=v[13];
+	prefScale=0;
+	if(k>=15)prefScale=v[14];
 	if(fcQSecs>600)fcQSecs=600;
 	// the directories, one a line, then the terminal command
 	for(int d=0;d<3;d++)
@@ -3713,8 +3718,12 @@ void PrefsLoad(char* left, char* right)
 void PrefsSave()
 {
 	char buf[2200];
-	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
-		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
+	int scale=prefScale;
+#ifdef TV_GFX
+	scale=GfxScale();
+#endif
+	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
+		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -3726,6 +3735,7 @@ int itemLineNums=-1;     // menu items whose hints show on or off
 int itemWrap=-1;
 int itemLynx=-1;
 int itemHidden=-1;
+int itemBigPix=-1;
 int itemPanel[2];        // each panel's menu: Full and Brief, then the sort keys
 
 void SetHint(int item, int on)
@@ -3742,6 +3752,12 @@ void ShowToggles()
 	SetHint(itemWrap,edWrap);
 	SetHint(itemLynx,fcLynx);
 	SetHint(itemHidden,fcHidden);
+#ifdef TV_GFX
+	if(itemBigPix>=0)
+	{
+		snprintf(&tvItem[itemBigPix].hint[0],12,"%ix",GfxScale());
+	}
+#endif
 	// the menus speak of the panel window in front
 	int base=fcBase;
 	int tc=FcTopC();
@@ -3984,6 +4000,9 @@ void OpenHelp()
 		"  Alt+N                the Windows menu: pick one to go to it\n"
 		"  double click a title zoom the window, or put it back\n"
 		"  Shift+F10            the context menu\n"
+		"  Ctrl+= Ctrl+- Ctrl+0 in a graphic window: bigger, smaller\n"
+		"                       pixels (1x to 4x), and back; Options >\n"
+		"                       Pixel size goes through 1x 2x 3x 4x\n"
 		"  Up, Down in a dialog's input   earlier entries;\n"
 		"  Ctrl+Down, Alt+Down, F4 or its \xe2\x96\xbc   the list\n"
 		"  F10, Alt+X           quit\n";
@@ -4462,6 +4481,17 @@ void TvAppCommand(int cmd)
 		ShowToggles();
 		PrefsSave();
 	}
+	else if(cmd==CM_BIGPIX)
+	{
+#ifdef TV_GFX
+		// 1x 2x 3x 4x, then 1x again
+		int s=GfxScale()+1;
+		if(s>4)s=1;
+		GfxSetScale(s);
+		ShowToggles();
+		PrefsSave();
+#endif
+	}
 	else if(cmd==CM_LYNX)
 	{
 		fcLynx=!fcLynx;
@@ -4506,6 +4536,9 @@ void FcKeys()
 	TvKeyCmd(TV_ST_ALL,CM_LINENUMS,"Line numbers",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_WRAP,"Word wrap",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_LYNX,"Lynx-like motion",0,0,0);
+#ifdef TV_GFX
+	TvKeyCmd(TV_ST_ALL,CM_BIGPIX,"Pixel size",0,0,0);
+#endif
 
 	TvKeyCmd(W_FC,CM_OTHERPANEL,"Other panel",K_TAB,0,0);
 	TvKeyCmd(W_FC,CM_RUN,"Run",K_F2,K_ALT+K_ENTER,0);
@@ -4606,6 +4639,9 @@ int main(int argc, pchar* argv)
 	StrCpy(&left[0],".",FC_PATH);
 	fs_home(&right[0],FC_PATH);
 	PrefsLoad(&left[0],&right[0]);
+#ifdef TV_GFX
+	if(prefScale>0)GfxSetScale(prefScale);
+#endif
 	if(argc>1)StrCpy(&left[0],argv[1],FC_PATH);
 	if(argc>2)StrCpy(&right[0],argv[2],FC_PATH);
 	TeLoadThemes();
@@ -4679,6 +4715,10 @@ int main(int argc, pchar* argv)
 	itemWrap=tvNItem-1;
 	TvMenuItem("L~y~nx-like motion","off",CM_LYNX,0);
 	itemLynx=tvNItem-1;
+#ifdef TV_GFX
+	TvMenuItem("Pi~x~el size","3x",CM_BIGPIX,0);
+	itemBigPix=tvNItem-1;
+#endif
 	itemPanel[1]=PanelMenu("~R~ight",1);
 	TvMenuAdd("~W~indow");
 	TvMenuItem("Ne~w~ panels","",CM_NEWPANELS,0);
