@@ -566,7 +566,7 @@ void HxDraw(int win)
 	}
 	int last=(hxSize+per-1)/per-rows;
 	if(last<0)last=0;
-	TvVBar(t.x+t.w-1,t.y+1,rows,hxTop,last,0x13);
+	if(last>0)TvVBar(t.x+t.w-1,t.y+1,rows,hxTop,last,0x13);
 	char st[80];
 	int v=0;
 	if(hxSize>0)v=hxBuf[hxCur]&255;

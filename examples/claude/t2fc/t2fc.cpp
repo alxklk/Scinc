@@ -57,6 +57,8 @@ typedef char* pchar;
 #define CM_DESKPICK 509
 #define CM_PIX 510       // + 1 to 4: the pixel size of a graphic window
 #define CM_LANCZOS 515   // pictures shown smaller through a Lanczos filter, on or off
+#define CM_PREFPANELS 516 // Options > Panels
+#define CM_PREFEDIT 517  // Options > Edit and view
 #define CM_LINENUMS 506
 #define CM_WRAP 507
 #define CM_LYNX 508
@@ -117,7 +119,7 @@ typedef char* pchar;
 #define H_NAME 3       // new directories and files, Save as
 #define H_PATTERN 4    // select and unselect groups
 #define H_DIR 5        // go to directory
-#define H_TERM 6       // the terminal program in Preferences
+#define H_TERM 6       // the terminal program in Options > Panels
 
 // the panel colours, VGA attributes as Midnight Commander draws them; the themes
 // recolour these through their 16-colour palette
@@ -175,6 +177,7 @@ int fcCur[FC_MAXP];
 int fcTop[FC_MAXP];
 int fcSort[FC_MAXP];        // term_dl sort modes: 0 name, 1 ext, 2 size, 3 time, +4 reversed
 int fcBrief[FC_MAXP];
+int fcBarPos[2];            // where the left, right panel's scroll bar is: 0 left, 1 right, 2 none
 // Where each panel was in the folders it left, the latest last: their paths, the first
 // row shown and the cursor, so that coming back (going up above all) shows a folder
 // as it was left. A folder is in a panel's stack once, at most FC_STACK of them.
@@ -218,6 +221,8 @@ void FcInitState()
 		fcStkN[p]=0;
 	}
 	fcTermCmd[0]=0;
+	fcBarPos[0]=1;
+	fcBarPos[1]=1;
 	for(int i=0;i<TV_MAXWIN;i++)
 	{
 		fcView[i]=0;
@@ -1775,6 +1780,13 @@ void FcDrawPanel(int p, int x, int y, int w, int h)
 	}
 }
 
+// Both scroll bars want the line between the panels: the left panel's then takes
+// its own last column, beside the right one's on the line.
+int FcSplit()
+{
+	return (fcBarPos[0]==1)&&(fcBarPos[1]==0);
+}
+
 void FcPanelBox(int p, int& x, int& y, int& w, int& h)
 {
 	TWin& t=tvWin[fcWin];
@@ -1784,12 +1796,51 @@ void FcPanelBox(int p, int& x, int& y, int& w, int& h)
 	x=t.x+1;
 	y=t.y+1;
 	w=lw;
+	if(FcSplit())w=lw-1;
 	h=t.h-2;
 	if(side==1)
 	{
 		x=t.x+2+lw;
 		w=iw-lw-1;
 	}
+}
+
+// A panel's scroll bar is on its left or right edge (the window's frame or the line
+// between the panels) beside its entries, as Options > Panels has it, and only when
+// there are more of them than it shows. Its highest top entry, 0 for none.
+int FcBarMax(int p)
+{
+	if(fcQuick[p])return 0;
+	int mx=fcCount[p]-FcVisible(p);
+	if(mx<0)mx=0;
+	return mx;
+}
+
+// The column of panel p's scroll bar, or -1 for none.
+int FcBarCol(int p)
+{
+	int pos=fcBarPos[p&1];
+	if(pos==2)return -1;
+	int x=0;
+	int y=0;
+	int w=0;
+	int h=0;
+	FcPanelBox(p,x,y,w,h);
+	if(pos==0)return x-1;
+	return x+w;
+}
+
+// Scrolls panel p to show top first, the cursor kept in sight.
+void FcScrollTo(int p, int top)
+{
+	int mx=FcBarMax(p);
+	if(top>mx)top=mx;
+	if(top<0)top=0;
+	fcTop[p]=top;
+	int vis=FcVisible(p);
+	if(fcCur[p]<top)fcCur[p]=top;
+	if(fcCur[p]>top+vis-1)fcCur[p]=top+vis-1;
+	FcClamp(p);
 }
 
 void FcDraw(int win)
@@ -1818,6 +1869,30 @@ void FcDraw(int win)
 	for(int r=0;r<h;r++)
 		TvPut(x-1,y+r,G_VERT,FC_FRAME);
 	TvPut(x-1,y+h-2,0x253C,FC_FRAME);
+	if(FcSplit())
+	{
+		// the left panel's own bar column: the line under the entries goes on
+		FcPanelBox(fcBase,x,y,w,h);
+		TvPut(x+w,y+h-2,G_HORZ,FC_FRAME);
+	}
+	// scroll bars, as the editor's, only in the front window
+	if(TvTop()!=win)return;
+	int save0=clipX0;
+	int save1=clipX1;
+	clipX0=t.x;
+	if(clipX0<0)clipX0=0;
+	clipX1=tvW;
+	if(clipX1>t.x+t.w)clipX1=t.x+t.w;
+	for(int p=fcBase;p<fcBase+2;p++)
+	{
+		int mx=FcBarMax(p);
+		int col=FcBarCol(p);
+		if((mx<=0)||(col<0))continue;
+		FcPanelBox(p,x,y,w,h);
+		TvVBar(col,y+2,h-4,fcTop[p],mx,0x13);
+	}
+	clipX0=save0;
+	clipX1=save1;
 }
 
 // ---------------------------------------------------------------- dialogs
@@ -3020,7 +3095,7 @@ void FcRunIn(char* cmd, char* dir)
 	if(fcTermCmd[0]!=0)StrCpy(&term[0],&fcTermCmd[0],200);
 	else if(!run_terminal(&term[0],200))
 	{
-		TvMessage("Run","No terminal program was found.\nName one in Options > Preferences.",0);
+		TvMessage("Run","No terminal program was found.\nName one in Options > Panels.",0);
 		return;
 	}
 	char qdir[2100];
@@ -3681,6 +3756,8 @@ int FcHit(int x, int y, int& p, int& part)
 	return k;
 }
 
+int fcBarDrag=-1;   // the panel whose scroll bar thumb is being dragged, or -1
+
 int FcMouse(int win, int ev, int x, int y)
 {
 	if((fcQS>=0)&&(ev!=EV_MUP)&&(ev!=EV_MDRAG))FcQSEnd();
@@ -3688,6 +3765,49 @@ int FcMouse(int win, int ev, int x, int y)
 	{
 		TvOpenPopup(popPanel,-1,-1);
 		return 1;
+	}
+	if((ev==EV_MDRAG)&&(fcBarDrag>=0))
+	{
+		// dragging a scroll bar's thumb
+		int bx=0;
+		int by=0;
+		int bw=0;
+		int bh=0;
+		FcPanelBox(fcBarDrag,bx,by,bw,bh);
+		FcScrollTo(fcBarDrag,TvVBarPos(by+2,bh-4,FcBarMax(fcBarDrag),tvWin[fcWin].y+y));
+		return 1;
+	}
+	if(ev==EV_MDOWN)
+	{
+		fcBarDrag=-1;
+		for(int b=fcBase;b<fcBase+2;b++)
+		{
+			int mx=FcBarMax(b);
+			if(mx<=0)continue;
+			int bx=0;
+			int by=0;
+			int bw=0;
+			int bh=0;
+			FcPanelBox(b,bx,by,bw,bh);
+			int ax=tvWin[fcWin].x+x;
+			int ay=tvWin[fcWin].y+y;
+			int rows=bh-4;
+			int col=FcBarCol(b);
+			if((col<0)||(ax!=col)||(ay<by+2)||(ay>=by+2+rows))continue;
+			FcSetActive(b);
+			int vis=FcVisible(b);
+			int h=TvVBarHit(by+2,rows,fcTop[b],mx,ay);
+			if(h==0)FcScrollTo(b,fcTop[b]-1);
+			if(h==1)FcScrollTo(b,fcTop[b]-vis);
+			if(h==3)FcScrollTo(b,fcTop[b]+vis);
+			if(h==4)FcScrollTo(b,fcTop[b]+1);
+			if(h==2)
+			{
+				fcBarDrag=b;
+				TvCaptureMouse(win);
+			}
+			return 1;
+		}
 	}
 	int p=0;
 	int part=0;
@@ -3761,10 +3881,10 @@ void PrefsLoad(char* left, char* right)
 	int n=fs_load(CFG_FILE,&buf[0],2199);
 	if(n<=0)return;
 	buf[n]=0;
-	int v[16];
+	int v[18];
 	int k=0;
 	int i=0;
-	while((k<16)&&(buf[i]!=0)&&(buf[i]!=10))
+	while((k<18)&&(buf[i]!=0)&&(buf[i]!=10))
 	{
 		if((buf[i]>='0')&&(buf[i]<='9'))
 		{
@@ -3803,6 +3923,8 @@ void PrefsLoad(char* left, char* right)
 	if(k>=15)prefScale=v[14];
 	pvLanczos=0;
 	if(k>=16)pvLanczos=(v[15]!=0);
+	if((k>=17)&&(v[16]<=2))fcBarPos[0]=v[16];
+	if((k>=18)&&(v[17]<=2))fcBarPos[1]=v[17];
 	img_filter(pvLanczos);
 	if(fcQSecs>600)fcQSecs=600;
 	// the directories, one a line, then the terminal command
@@ -3837,8 +3959,8 @@ void PrefsSave()
 #ifdef TV_GFX
 	scale=GfxScale();
 #endif
-	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
-		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,pvLanczos,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
+	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
+		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,pvLanczos,fcBarPos[0],fcBarPos[1],FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -3846,37 +3968,11 @@ void PrefsSave()
 	}
 }
 
-int itemLineNums=-1;     // menu items whose hints show on or off
-int itemWrap=-1;
-int itemLynx=-1;
-int itemHidden=-1;
-int itemLanczos=-1;
-int itemPix=-1;          // the first of the 1x..4x items of Options > Pixel size
 int itemPanel[2];        // each panel's menu: Full and Brief, then the sort keys
-
-void SetHint(int item, int on)
-{
-	if(item<0)return;
-	if(on)StrCpy(&tvItem[item].hint[0],"on",12);
-	else StrCpy(&tvItem[item].hint[0],"off",12);
-}
 
 // Puts a dot by the listing mode and the sort key of each panel's menu.
 void ShowToggles()
 {
-	SetHint(itemLineNums,edLineNums);
-	SetHint(itemWrap,edWrap);
-	SetHint(itemLynx,fcLynx);
-	SetHint(itemHidden,fcHidden);
-	SetHint(itemLanczos,pvLanczos);
-#ifdef TV_GFX
-	if(itemPix>=0)
-		for(int k=0;k<4;k++)
-		{
-			tvItem[itemPix+k].hint[0]=0;
-			if(k+1==GfxScale())StrCpy(&tvItem[itemPix+k].hint[0],"\xe2\x80\xa2",12);
-		}
-#endif
 	// the menus speak of the panel window in front
 	int base=fcBase;
 	int tc=FcTopC();
@@ -3896,11 +3992,17 @@ void ShowToggles()
 	}
 }
 
-int prefsThemeCtl=-1;     // the theme combo box of the open Preferences
+int prefsThemeCtl=-1;     // the theme combo box of the open Appearance dialog
 
-void RunPrefs()
+// Options > Appearance: the theme, the desktop pattern, and the pixel size of a
+// graphic window. The theme and the desktop show at once; Cancel puts them back.
+void RunAppearance()
 {
-	int win=TvNewCentered(W_PREFS,"Preferences",50,20,WF_DIALOG);
+	int h=11;
+#ifdef TV_GFX
+	h=13;
+#endif
+	int win=TvNewCentered(W_PREFS,"Appearance",50,h,WF_DIALOG);
 	if(win<0)return;
 	TvAdd(win,C_LABEL,3,2,10,1,"~T~heme",0);
 	char names[200];
@@ -3912,20 +4014,85 @@ void RunPrefs()
 	int dk=TvAdd(win,C_COMBO,14,3,30,1,teDeskNames,CM_DESKPICK);
 	tvCtl[dk].val=teDeskPick;
 	int oldDesk=teDeskPick;
-	int hid=TvAdd(win,C_CHECK,2,5,30,1,"Show ~h~idden files",0);
+	int by=6;
+#ifdef TV_GFX
+	TvAdd(win,C_LABEL,3,5,12,1,"~P~ixel size",0);
+	int px[4];
+	char* pxName[4];
+	pxName[0]="1x";
+	pxName[1]="2x";
+	pxName[2]="3x";
+	pxName[3]="4x";
+	for(int k=0;k<4;k++)
+	{
+		px[k]=TvAdd(win,C_RADIO,15+k*8,5,8,1,pxName[k],0);
+		tvCtl[px[k]].group=1;
+		tvCtl[px[k]].val=(GfxScale()==k+1);
+	}
+	by=8;
+#endif
+	int ok=TvAdd(win,C_BUTTON,11,by,12,2,"O~K~",CM_OK);
+	tvCtl[ok].isDefault=1;
+	TvAdd(win,C_BUTTON,26,by,12,2,"Cancel",CM_CANCEL);
+	tvWin[win].focus=th;
+	int res=TvExec(win);
+	if(res==CM_OK)
+	{
+		prefTheme=tvCtl[th].val;
+		teDeskPick=tvCtl[dk].val;
+#ifdef TV_GFX
+		for(int k=0;k<4;k++)
+			if(tvCtl[px[k]].val&&(GfxScale()!=k+1))GfxSetScale(k+1);
+#endif
+		PrefsSave();
+	}
+	else
+	{
+		teDeskPick=oldDesk;
+		TeUseTheme(prefTheme);
+	}
+	prefsThemeCtl=-1;
+	TvClose(win);
+}
+
+// Options > Panels: what the panels list and how they move, their scroll bars, the
+// quick view, and the terminal F2 runs commands in.
+void RunPanelPrefs()
+{
+	int win=TvNewCentered(W_PREFS,"Panels",50,20,WF_DIALOG);
+	if(win<0)return;
+	int hid=TvAdd(win,C_CHECK,2,2,30,1,"Show ~h~idden files",0);
 	tvCtl[hid].val=fcHidden;
-	int ln=TvAdd(win,C_CHECK,2,6,30,1,"Editor ~l~ine numbers",0);
-	tvCtl[ln].val=edLineNums;
-	int wr=TvAdd(win,C_CHECK,2,7,30,1,"Editor ~w~ord wrap",0);
-	tvCtl[wr].val=edWrap;
-	int ly=TvAdd(win,C_CHECK,2,8,46,1,"L~y~nx-like motion: Left goes up, Right in",0);
+	int ly=TvAdd(win,C_CHECK,2,3,46,1,"L~y~nx-like motion: Left goes up, Right in",0);
 	tvCtl[ly].val=fcLynx;
-	int qc=TvAdd(win,C_CHECK,2,9,46,1,"Case-~s~ensitive file search",0);
+	int qc=TvAdd(win,C_CHECK,2,4,46,1,"Case-~s~ensitive file search",0);
 	tvCtl[qc].val=fcQSCase;
-	TvAdd(win,C_LABEL,3,10,38,1,"~Q~uick view folder count, s (0 off)",0);
-	int qd=TvAdd(win,C_INPUT,41,10,6,1,"",0);
+	TvAdd(win,C_LABEL,3,5,38,1,"~Q~uick view folder count, s (0 off)",0);
+	int qd=TvAdd(win,C_INPUT,41,5,6,1,"",0);
 	snprintf(&tvCtl[qd].text[0],16,"%d",fcQSecs);
 	tvCtl[qd].val=StrLen(&tvCtl[qd].text[0]);
+	TvAdd(win,C_LABEL,3,7,12,1,"Scroll bar",0);
+	TvAdd(win,C_LABEL,17,7,14,1,"Left panel",0);
+	TvAdd(win,C_LABEL,33,7,14,1,"Right panel",0);
+	char* where[3];
+	where[0]="~L~eft";
+	where[1]="R~i~ght";
+	where[2]="~O~ff";
+	char* where2[3];
+	where2[0]="L~e~ft";
+	where2[1]="Ri~g~ht";
+	where2[2]="O~f~f";
+	int bar[6];
+	for(int side=0;side<2;side++)
+		for(int k=0;k<3;k++)
+		{
+			char* name=where[k];
+			if(side==1)name=where2[k];
+			int c=TvAdd(win,C_RADIO,16+side*16,8+k,14,1,name,0);
+			tvCtl[c].group=1+side;
+			tvCtl[c].val=(fcBarPos[side]==k);
+			bar[side*3+k]=c;
+		}
 	TvAdd(win,C_LABEL,3,12,40,1,"Te~r~minal for F2 in a graphic window",0);
 	int term=TvAdd(win,C_INPUT,3,13,44,1,"",0);
 	TvInputHistory(term,H_TERM);
@@ -3934,17 +4101,16 @@ void RunPrefs()
 	int ok=TvAdd(win,C_BUTTON,11,16,12,2,"O~K~",CM_OK);
 	tvCtl[ok].isDefault=1;
 	TvAdd(win,C_BUTTON,26,16,12,2,"Cancel",CM_CANCEL);
-	tvWin[win].focus=th;
+	tvWin[win].focus=hid;
 	int res=TvExec(win);
 	if(res==CM_OK)
 	{
-		prefTheme=tvCtl[th].val;
-		teDeskPick=tvCtl[dk].val;
 		int h=tvCtl[hid].val;
-		edLineNums=tvCtl[ln].val;
-		edWrap=tvCtl[wr].val;
 		fcLynx=tvCtl[ly].val;
 		fcQSCase=tvCtl[qc].val;
+		for(int side=0;side<2;side++)
+			for(int k=0;k<3;k++)
+				if(tvCtl[bar[side*3+k]].val)fcBarPos[side]=k;
 		// the seconds: digits only, up to ten minutes
 		int secs=0;
 		int bad=0;
@@ -3973,13 +4139,43 @@ void RunPrefs()
 			FcReloadBoth();
 		}
 		PrefsSave();
+		tvDirty=1;
 	}
-	else teDeskPick=oldDesk;
-	prefsThemeCtl=-1;
 	TvClose(win);
-	// the combo boxes showed each theme and pattern as it was picked
-	TeUseTheme(prefTheme);
-	ShowToggles();
+}
+
+// Options > Edit and view: the editor's line numbers and wrap, and how pictures and
+// videos are scaled down.
+void RunEditPrefs()
+{
+	int win=TvNewCentered(W_PREFS,"Edit and view",50,13,WF_DIALOG);
+	if(win<0)return;
+	TvAdd(win,C_LABEL,3,2,20,1,"Editor",0);
+	int ln=TvAdd(win,C_CHECK,2,3,30,1,"~L~ine numbers",0);
+	tvCtl[ln].val=edLineNums;
+	int wr=TvAdd(win,C_CHECK,2,4,30,1,"~W~ord wrap",0);
+	tvCtl[wr].val=edWrap;
+	TvAdd(win,C_LABEL,3,6,30,1,"Pictures and videos",0);
+	int lz=TvAdd(win,C_CHECK,2,7,46,1,"Lan~c~zos scaling down (smoother, slower)",0);
+	tvCtl[lz].val=pvLanczos;
+	int ok=TvAdd(win,C_BUTTON,11,9,12,2,"O~K~",CM_OK);
+	tvCtl[ok].isDefault=1;
+	TvAdd(win,C_BUTTON,26,9,12,2,"Cancel",CM_CANCEL);
+	tvWin[win].focus=ln;
+	int res=TvExec(win);
+	if(res==CM_OK)
+	{
+		edLineNums=tvCtl[ln].val;
+		edWrap=tvCtl[wr].val;
+		if(tvCtl[lz].val!=pvLanczos)
+		{
+			pvLanczos=tvCtl[lz].val;
+			img_filter(pvLanczos);
+		}
+		PrefsSave();
+		tvDirty=1;
+	}
+	TvClose(win);
 }
 
 void DrawPrefs(int win)
@@ -4019,18 +4215,21 @@ void OpenHelp()
 		"                       (Backspace one back); Esc, a cursor\n"
 		"                       key or a click ends it\n"
 		"  click a column title sort by it; again reverses\n"
+		"  scroll bar           arrows, a page, or drag the thumb; Options\n"
+		"                       > Panels puts it left, right or off\n"
 		"  Ctrl+R               read both directories again\n"
 		"  Ctrl+U               swap the panels\n"
 		"  Alt+I                the other panel shows this directory\n"
 		"  Alt+.                show or hide hidden files\n"
-		"  Left, Right          with Options > Lynx-like motion: the\n"
-		"                       parent, into a directory or archive\n"
+		"  Left, Right          with Lynx-like motion (Options >\n"
+		"                       Panels): the parent, into a directory\n"
+		"                       or archive\n"
 		"  Ctrl+N               another panel window (up to six)\n"
 		"  Ctrl+Q, Alt+Q        quick view in the other panel: the\n"
 		"                       picture, text or hex dump of the file\n"
 		"                       under the cursor (Left, Right menus);\n"
 		"                       for a folder what it holds, counted\n"
-		"                       for up to 5 s (Options > Preferences)\n"
+		"                       for up to 5 s (Options > Panels)\n"
 		"\n"
 		"Files (the marked ones, or the one under the cursor)\n"
 		"  F3                   view: pictures, text read-only, binary\n"
@@ -4066,7 +4265,7 @@ void OpenHelp()
 		"  In a terminal the command gets the whole terminal, and a\n"
 		"  key brings t2fc back afterwards. In a graphic window it runs\n"
 		"  in a new terminal window, which stays open until Enter;\n"
-		"  Options > Preferences can name the terminal program.\n"
+		"  Options > Panels can name the terminal program.\n"
 		"  Command > Open with the desktop: the desktop's own program\n"
 		"  for the file (xdg-open)\n"
 		"\n"
@@ -4075,8 +4274,8 @@ void OpenHelp()
 		"  0 or f, 1, 2         fit the window, pixels 1:1, 2:1\n"
 		"  arrows, drag         move a zoomed picture\n"
 		"  double click         1:1 there, or fit again\n"
-		"  Options > Lanczos scaling down: smoother pictures and\n"
-		"  videos where they are shown smaller (slower)\n"
+		"  Options > Edit and view > Lanczos scaling down: smoother\n"
+		"  pictures and videos where they are shown smaller (slower)\n"
 		"  Space, Backspace     the next, previous picture of the panel\n"
 		"  r                    turn a quarter clockwise\n"
 		"  F3, Esc              close\n"
@@ -4125,7 +4324,7 @@ void OpenHelp()
 		"  Shift+F10            the context menu\n"
 		"  Ctrl+= Ctrl+- Ctrl+0 in a graphic window: bigger, smaller\n"
 		"                       pixels (1x to 4x), and back; also\n"
-		"                       Options > Pixel size\n"
+		"                       Options > Appearance\n"
 		"  Up, Down in a dialog's input   earlier entries;\n"
 		"  Ctrl+Down, Alt+Down, F4 or its \xe2\x96\xbc   the list\n"
 		"  F10, Alt+X           quit\n";
@@ -4589,7 +4788,9 @@ void TvAppCommand(int cmd)
 	}
 	if(cmd==CM_QUIT)FcQuit();
 	else if(cmd==CM_HELP)OpenHelp();
-	else if(cmd==CM_PREFS)RunPrefs();
+	else if(cmd==CM_PREFS)RunAppearance();
+	else if(cmd==CM_PREFPANELS)RunPanelPrefs();
+	else if(cmd==CM_PREFEDIT)RunEditPrefs();
 	else if(cmd==CM_THEMEED)
 	{
 		int r=TeRun(prefTheme);
@@ -4659,7 +4860,9 @@ void FcKeys()
 	TvKeyCmd(TV_ST_ALL,CM_NEXT,"Next window",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_PREV,"Previous window",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_ZOOM,"Zoom the window",0,0,0);
-	TvKeyCmd(TV_ST_ALL,CM_PREFS,"Preferences",0,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_PREFS,"Appearance options",0,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_PREFPANELS,"Panel options",0,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_PREFEDIT,"Edit and view options",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_THEMEED,"Theme editor",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_KEYS,"Keyboard",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_LINENUMS,"Line numbers",0,0,0);
@@ -4836,23 +5039,12 @@ int main(int argc, pchar* argv)
 	TvMenuItem("~G~o to line...","",CM_GOTO,0);
 	TvMenuItem("~M~atching bracket","",CM_MATCH,0);
 	TvMenuAdd("~O~ptions");
-	TvMenuItem("~P~references...","",CM_PREFS,0);
+	TvMenuItem("~A~ppearance...","",CM_PREFS,0);
+	TvMenuItem("~P~anels...","",CM_PREFPANELS,0);
+	TvMenuItem("~E~dit and view...","",CM_PREFEDIT,0);
+	TvMenuLine();
 	TvMenuItem("~T~heme editor...","",CM_THEMEED,0);
 	TvMenuItem("~K~eyboard...","",CM_KEYS,0);
-	TvMenuLine();
-	TvMenuItem("~H~idden files","Alt+.",CM_HIDDEN,0);
-	itemHidden=tvNItem-1;
-	TvMenuItem("~L~ine numbers","off",CM_LINENUMS,0);
-	itemLineNums=tvNItem-1;
-	TvMenuItem("~W~ord wrap","off",CM_WRAP,0);
-	itemWrap=tvNItem-1;
-	TvMenuItem("L~y~nx-like motion","off",CM_LYNX,0);
-	itemLynx=tvNItem-1;
-	TvMenuItem("Lan~c~zos scaling down","off",CM_LANCZOS,0);
-	itemLanczos=tvNItem-1;
-#ifdef TV_GFX
-	int itemPixSub=TvMenuSub("Pi~x~el size");
-#endif
 	itemPanel[1]=PanelMenu("~R~ight",1);
 	TvMenuAdd("~W~indow");
 	TvMenuItem("Ne~w~ panels","",CM_NEWPANELS,0);
@@ -4870,14 +5062,6 @@ int main(int argc, pchar* argv)
 	TvMenuItem("~K~eys and mouse","",CM_HELP,0);
 	TvMenuItem("~A~bout...","",CM_ABOUT,0);
 
-#ifdef TV_GFX
-	TvSubmenuAdd(itemPixSub);
-	TvMenuItem("~1~x","",CM_PIX+1,0);
-	itemPix=tvNItem-1;
-	TvMenuItem("~2~x","",CM_PIX+2,0);
-	TvMenuItem("~3~x","",CM_PIX+3,0);
-	TvMenuItem("~4~x","",CM_PIX+4,0);
-#endif
 	popPanel=TvPopupAdd();
 	TvMenuItem("R~u~n...","",CM_RUN,0);
 	TvMenuItem("~O~pen with the desktop","",CM_OPENSYS,0);

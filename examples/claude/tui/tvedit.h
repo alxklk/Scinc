@@ -2968,7 +2968,8 @@ void DrawViewer(int win)
 	clipY1=tvH-1;
 	if(front)
 	{
-		TvVBar(t.x+t.w-1,t.y+1,rows,t.a,mxTop,A_ED_SCROLL);
+		// only when the text is longer than the window
+		if(t.d>rows)TvVBar(t.x+t.w-1,t.y+1,rows,t.a,mxTop,A_ED_SCROLL);
 		char pos[40];
 		int pc=EdCol(t.c+e.cy,e.cx);
 		if(blk)pc=e.bcc;
