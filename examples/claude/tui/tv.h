@@ -129,6 +129,7 @@ int tvPasteLost=0;  // set if it did not all fit
 #define G_RIGHT 0x25BA
 #define G_BOX 0x25A0
 #define G_ZOOM 0x2195
+#define G_SUN 0x263C     // a pressed close or zoom box, as in Turbo Vision
 #define G_MENU 0x2261
 #define G_DOT 0x2022
 
@@ -2357,14 +2358,12 @@ void TvDrawWin(int id)
 	int fr=A_WIN_FRAME;
 	int pas=A_WIN_PASSIVE;
 	int icon=A_WIN_ICON;
-	int press=A_WIN_PRESSED;
 	if(dialog)
 	{
 		bg=A_DLG;
 		fr=A_DLG_FRAME;
 		pas=A_DLG_PASSIVE;
 		icon=A_DLG_ICON;
-		press=A_DLG_PRESSED;
 	}
 	if(t.flags&WF_HELP)
 	{
@@ -2372,7 +2371,6 @@ void TvDrawWin(int id)
 		fr=A_HELP_FRAME;
 		pas=A_HELP_PASSIVE;
 		icon=A_HELP_ICON;
-		press=A_HELP_PRESSED;
 	}
 	TvClip(0,1,tvW,tvH-1);
 	TvShadow(t.x,t.y,t.w,t.h);
@@ -2394,21 +2392,24 @@ void TvDrawWin(int id)
 	}
 	if(active&&!dragging)
 	{
-		// a pressed box shows in yellow until the button is released
+		// a pressed box shows a sun until the button is released, in its own
+		// colour, as in Turbo Vision
+		int boxCh=G_BOX;
+		int zoomCh=G_ZOOM;
 		int boxAt=icon;
 		int zoomAt=boxAt;
 		if((dragMode==7)&&(dragWin==id)&&pressedInside)
 		{
-			if(dragCtl==1)boxAt=press;
-			if(dragCtl==2)zoomAt=press;
+			if(dragCtl==1)boxCh=G_SUN;
+			if(dragCtl==2)zoomCh=G_SUN;
 		}
 		TvPut(t.x+2,t.y,'[',at);
-		TvPut(t.x+3,t.y,G_BOX,boxAt);
+		TvPut(t.x+3,t.y,boxCh,boxAt);
 		TvPut(t.x+4,t.y,']',at);
 		if(t.flags&WF_RESIZE)
 		{
 			TvPut(t.x+t.w-5,t.y,'[',at);
-			TvPut(t.x+t.w-4,t.y,G_ZOOM,zoomAt);
+			TvPut(t.x+t.w-4,t.y,zoomCh,zoomAt);
 			TvPut(t.x+t.w-3,t.y,']',at);
 			TvPut(t.x+t.w-1,t.y+t.h-1,G_BR,icon);
 			TvPut(t.x+t.w-2,t.y+t.h-1,G_HORZ,icon);
@@ -2441,8 +2442,8 @@ void TvDrawWin(int id)
 
 // ---------------------------------------------------------------- menus and status line
 
-#define TV_MAXMENU 16
-#define TV_MAXITEM 128
+#define TV_MAXMENU 24
+#define TV_MAXITEM 192
 #define TV_MAXSTATUS 96
 
 struct TMenu
@@ -2994,8 +2995,15 @@ int subY=0;
 int tvDeskPopup=-1;  // the context menu for a right click on the desktop, or -1
 int tvClockSec=-1;
 
+// Past TV_MAXMENU menus or TV_MAXITEM items the rest are left out, with a word on
+// stderr, rather than written over what follows.
 void TvMenuAdd(char* title)
 {
+	if(tvNMenu>=TV_MAXMENU)
+	{
+		fputs("tv.h: too many menus, raise TV_MAXMENU\n",stderr);
+		return;
+	}
 	TMenu& m=tvMenu[tvNMenu];
 	StrCpy(&m.title[0],title,16);
 	m.first=tvNItem;
@@ -3015,6 +3023,11 @@ int TvPopupAdd()
 
 void TvMenuItem(char* text, char* hint, int cmd, int key)
 {
+	if(tvNItem>=TV_MAXITEM)
+	{
+		fputs("tv.h: too many menu items, raise TV_MAXITEM\n",stderr);
+		return;
+	}
 	TItem& it=tvItem[tvNItem];
 	StrCpy(&it.text[0],text,32);
 	StrCpy(&it.hint[0],hint,12);

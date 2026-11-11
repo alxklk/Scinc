@@ -69,9 +69,11 @@ typedef char* pchar;
 #define CM_THEMEED 125
 #define CM_SVNOW 400    // + a saver kind, SV_RANDOM the last
 #define CM_SVWIN 420
+#define CM_PIX 440      // + 1 to 4: the pixel size of a graphic window
 #define CM_CALCKEY 200
 #define CM_THEMEPICK 300
 #define CM_VOLUME 301
+#define CM_DESKPICK 302
 
 #define W_PREFS 8
 #define W_PROGRESS 9
@@ -638,19 +640,22 @@ void DrawControls(int win)
 
 #define CFG_FILE "tvdemo.cfg"
 int prefTheme=0;
+int prefScale=0;     // the pixel size of a graphic window, 0 the program's own
+int prefsThemeCtl=-1; // the theme combo box of the open Preferences
 
 // The settings file holds: theme, saver on, saver minutes, saver kind, line numbers,
-// wrap, and the saver numbering: 3 has Random at 7, 2 had it at 6, none at 4.
+// wrap, the saver numbering (3 has Random at 7, 2 had it at 6, none at 4), and the
+// pixel size of a graphic window, and the desktop pattern.
 void PrefsLoad()
 {
 	char buf[64];
 	int n=fs_load(CFG_FILE,&buf[0],63);
 	if(n<=0)return;
 	buf[n]=0;
-	int v[7];
+	int v[9];
 	int k=0;
 	int i=0;
-	while((k<7)&&(buf[i]!=0))
+	while((k<9)&&(buf[i]!=0))
 	{
 		if((buf[i]>='0')&&(buf[i]<='9'))
 		{
@@ -682,12 +687,17 @@ void PrefsLoad()
 		edLineNums=(v[4]!=0);
 		edWrap=(v[5]!=0);
 	}
+	if((k>=8)&&(v[7]<=4))prefScale=v[7];
+	if((k>=9)&&(v[8]<TE_DESKN))teDeskPick=v[8];
 }
 
 void PrefsSave()
 {
 	char buf[64];
-	snprintf(&buf[0],64,"%i %i %i %i %i %i 5\n",prefTheme,svOn,svMinutes,svKind,edLineNums,edWrap);
+#ifdef TV_GFX
+	prefScale=GfxScale();
+#endif
+	snprintf(&buf[0],64,"%i %i %i %i %i %i 5 %i %i\n",prefTheme,svOn,svMinutes,svKind,edLineNums,edWrap,prefScale,teDeskPick);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -699,25 +709,30 @@ int prefMinCtl=-1;   // the saver delay slider of the open dialog
 
 void RunPrefs()
 {
-	int win=TvNewCentered(W_PREFS,"Preferences",48,14,WF_DIALOG);
+	int win=TvNewCentered(W_PREFS,"Preferences",48,15,WF_DIALOG);
 	if(win<0)return;
 	TvAdd(win,C_LABEL,3,2,10,1,"~T~heme",0);
 	char names[200];
 	TeThemeNames(&names[0],200);
 	int th=TvAdd(win,C_COMBO,14,2,30,1,&names[0],CM_THEMEPICK);
 	tvCtl[th].val=prefTheme;
-	int on=TvAdd(win,C_CHECK,2,4,30,1,"~S~creen saver",0);
+	prefsThemeCtl=th;
+	TvAdd(win,C_LABEL,3,3,10,1,"~D~esktop",0);
+	int dk=TvAdd(win,C_COMBO,14,3,30,1,teDeskNames,CM_DESKPICK);
+	tvCtl[dk].val=teDeskPick;
+	int oldDesk=teDeskPick;
+	int on=TvAdd(win,C_CHECK,2,5,30,1,"~S~creen saver",0);
 	tvCtl[on].val=svOn;
-	TvAdd(win,C_LABEL,3,5,10,1,"~K~ind",0);
-	int kind=TvAdd(win,C_COMBO,14,5,30,1,"Stars|Plasma|Matrix|Flame|Reaction-diffusion|Fluid|Landscape|Labyrinth|Objects|Random",0);
+	TvAdd(win,C_LABEL,3,6,10,1,"~K~ind",0);
+	int kind=TvAdd(win,C_COMBO,14,6,30,1,"Stars|Plasma|Matrix|Flame|Reaction-diffusion|Fluid|Landscape|Labyrinth|Objects|Random",0);
 	tvCtl[kind].val=svKind;
-	TvAdd(win,C_LABEL,3,7,10,1,"~A~fter",0);
-	prefMinCtl=TvAdd(win,C_SLIDER,14,7,20,1,"",0);
+	TvAdd(win,C_LABEL,3,8,10,1,"~A~fter",0);
+	prefMinCtl=TvAdd(win,C_SLIDER,14,8,20,1,"",0);
 	tvCtl[prefMinCtl].count=29;
 	tvCtl[prefMinCtl].val=svMinutes-1;
-	int ok=TvAdd(win,C_BUTTON,10,10,12,2,"O~K~",CM_OK);
+	int ok=TvAdd(win,C_BUTTON,10,11,12,2,"O~K~",CM_OK);
 	tvCtl[ok].isDefault=1;
-	TvAdd(win,C_BUTTON,25,10,12,2,"Cancel",CM_CANCEL);
+	TvAdd(win,C_BUTTON,25,11,12,2,"Cancel",CM_CANCEL);
 	tvWin[win].focus=th;
 	int res=TvExec(win);
 	if(res==CM_OK)
@@ -726,9 +741,12 @@ void RunPrefs()
 		svOn=tvCtl[on].val;
 		svKind=tvCtl[kind].val;
 		svMinutes=tvCtl[prefMinCtl].val+1;
+		teDeskPick=tvCtl[dk].val;
 		PrefsSave();
 	}
+	else teDeskPick=oldDesk;
 	prefMinCtl=-1;
+	prefsThemeCtl=-1;
 	TvClose(win);
 	// the combo box showed each theme as it was picked
 	TeUseTheme(prefTheme);
@@ -739,7 +757,7 @@ void DrawPrefs(int win)
 	TWin& t=tvWin[win];
 	char s[16];
 	snprintf(&s[0],16,"%i min",tvCtl[prefMinCtl].val+1);
-	TvText(t.x+36,t.y+7,&s[0],A_DLG);
+	TvText(t.x+36,t.y+8,&s[0],A_DLG);
 }
 
 // ---------------------------------------------------------------- progress bar demo
@@ -790,11 +808,29 @@ void ProgressTick()
 
 int itemLineNums=-1;  // the menu items whose hints show on or off
 int itemWrap=-1;
+int itemPix=-1;       // the first of the 1x..4x items of Options > Pixel size
+int pixShown=0;       // the size they show
+
+// A dot by the pixel size in use: Ctrl+= and Ctrl+- change it too, so each
+// window drawn looks whether it is still the one shown.
+void ShowPixSize()
+{
+#ifdef TV_GFX
+	if(itemPix<0)return;
+	pixShown=GfxScale();
+	for(int k=0;k<4;k++)
+	{
+		tvItem[itemPix+k].hint[0]=0;
+		if(k+1==pixShown)StrCpy(&tvItem[itemPix+k].hint[0],"\xe2\x80\xa2",12);
+	}
+#endif
+}
 
 void ShowToggles()
 {
 	char* on="on";
 	char* off="off";
+	ShowPixSize();
 	if(edLineNums)StrCpy(&tvItem[itemLineNums].hint[0],on,12);
 	else StrCpy(&tvItem[itemLineNums].hint[0],off,12);
 	if(edWrap)StrCpy(&tvItem[itemWrap].hint[0],on,12);
@@ -1253,6 +1289,9 @@ void OpenHelp()
 		"  Shift+F10         context menu (or click the right button)\n"
 		"  In the file list: letters jump to a name, Backspace goes up\n"
 		"  Alt+X, Ctrl+Q     quit\n"
+		"  Ctrl+= Ctrl+- Ctrl+0  in a graphic window: bigger, smaller\n"
+		"                    pixels (1x to 4x), and back; also\n"
+		"                    Options > Pixel size\n"
 		"\n"
 		"Editor\n"
 		"  Ctrl+N, Ctrl+O, Ctrl+S   new, open, save\n"
@@ -1382,6 +1421,9 @@ int FindWin(int type)
 
 void TvAppDraw(int win)
 {
+#ifdef TV_GFX
+	if(GfxScale()!=pixShown)ShowPixSize();
+#endif
 	int type=tvWin[win].type;
 	if(type==W_VIEW)DrawViewer(win);
 	else if(type==W_CALC)DrawCalc(win);
@@ -1487,6 +1529,13 @@ void TvAppButton(int win, int ctl, int cmd)
 	if(cmd==CM_THEMEPICK)
 	{
 		TeUseTheme(tvCtl[ctl].val);
+		return;
+	}
+	if(cmd==CM_DESKPICK)
+	{
+		// shown at once, over whichever theme the dialog's combo box has
+		teDeskPick=tvCtl[ctl].val;
+		if(prefsThemeCtl>=0)TeUseTheme(tvCtl[prefsThemeCtl].val);
 		return;
 	}
 	if((cmd>=CM_TEDEPTH)&&(cmd<=CM_TETHEME))
@@ -1655,6 +1704,14 @@ void TvAppCommand(int cmd)
 	else if(cmd==CM_SAVERWIN)SvOpenWindow(svKind);
 	else if((cmd>=CM_SVNOW)&&(cmd<=CM_SVNOW+SV_RANDOM))SvStartKind(cmd-CM_SVNOW);
 	else if((cmd>=CM_SVWIN)&&(cmd<=CM_SVWIN+SV_RANDOM))SvOpenWindow(cmd-CM_SVWIN);
+	else if((cmd>CM_PIX)&&(cmd<=CM_PIX+4))
+	{
+#ifdef TV_GFX
+		GfxSetScale(cmd-CM_PIX);
+		ShowPixSize();
+		PrefsSave();
+#endif
+	}
 	else if(cmd==CM_HELP)OpenHelp();
 	else if(cmd==CM_ABOUT)
 		TvMessage("About","Turbo Vision style desktop\nWritten in Scinc, drawn with ANSI escapes",0);
@@ -1686,6 +1743,9 @@ int main(int argc, pchar* argv)
 	StrCpy(&ctlName[0],"Scinc",64);
 	fdDir[0]=0;
 	PrefsLoad();
+#ifdef TV_GFX
+	if(prefScale>0)GfxSetScale(prefScale);
+#endif
 	TeLoadThemes();
 	if(prefTheme>=teThN)prefTheme=0;
 	TeUseTheme(prefTheme);
@@ -1743,6 +1803,9 @@ int main(int argc, pchar* argv)
 	itemLineNums=tvNItem-1;
 	TvMenuItem("~W~ord wrap","off",CM_WRAP,0);
 	itemWrap=tvNItem-1;
+#ifdef TV_GFX
+	int itemPixSub=TvMenuSub("Pi~x~el size");
+#endif
 	TvMenuAdd("~W~indow");
 	TvMenuItem("~N~ext","F6",CM_NEXT,K_F6);
 	TvMenuItem("~P~revious","F7",CM_PREV,K_F7);
@@ -1762,6 +1825,14 @@ int main(int argc, pchar* argv)
 	int subWin=TvSubmenuAdd(itemSaverWin);
 	SaverItems(CM_SVWIN);
 	TvSubmenuShare(itemDeskSaver,subWin);
+#ifdef TV_GFX
+	TvSubmenuAdd(itemPixSub);
+	TvMenuItem("~1~x","",CM_PIX+1,0);
+	itemPix=tvNItem-1;
+	TvMenuItem("~2~x","",CM_PIX+2,0);
+	TvMenuItem("~3~x","",CM_PIX+3,0);
+	TvMenuItem("~4~x","",CM_PIX+4,0);
+#endif
 
 	popEdit=TvPopupAdd();
 	TvMenuItem("~U~ndo","Ctrl+Z",CM_UNDO,0);
@@ -1858,6 +1929,9 @@ int main(int argc, pchar* argv)
 		OpenHelp();
 
 	TvRun(-1);
+#ifdef TV_GFX
+	if(GfxScale()!=prefScale)PrefsSave();   // changed by Ctrl+= or Ctrl+-
+#endif
 	TvStop();
 	return 0;
 }

@@ -55,7 +55,7 @@ typedef char* pchar;
 #define CM_THEMEED 504
 #define CM_THEMEPICK 505
 #define CM_DESKPICK 509
-#define CM_BIGPIX 510    // the pixel size of a graphic window: 1x 2x 3x 4x in turn
+#define CM_PIX 510       // + 1 to 4: the pixel size of a graphic window
 #define CM_LINENUMS 506
 #define CM_WRAP 507
 #define CM_LYNX 508
@@ -860,6 +860,14 @@ int PvBusy()
 	return 0;
 }
 
+// Screen pixels per pixel of the picture's own size at scale 1: a video comes
+// decoded smaller than it is, and its zoom counts against its own size.
+float PvOwn(int s)
+{
+	if(img_info(s,4)&&(img_info(s,9)>0))return 1.*img_info(s,0)/img_info(s,9);
+	return 1.;
+}
+
 // The scale that shows the whole picture in pw*ph screen pixels.
 float PvFit(int s, int pw, int ph)
 {
@@ -899,7 +907,7 @@ void PvSetScale(int s, float scale, int px, int py, int pw, int ph)
 	}
 	float wx=pvCX[s]+(px-pw/2.)*cur*pvAspect;
 	float wy=pvCY[s]+(py-ph/2.)*cur;
-	if(scale<1./32.)scale=1./32.;
+	if(scale<PvOwn(s)/8.)scale=PvOwn(s)/8.;
 	if(scale>=fit)
 	{
 		pvScale[s]=0.;
@@ -913,11 +921,51 @@ void PvSetScale(int s, float scale, int px, int py, int pw, int ph)
 	tvDirty=1;
 }
 
-void PvZoom(int s, float f, int px, int py, int pw, int ph)
+// The zoom levels, as screen pixels per pixel of the picture: 8 4 3 2 1, then
+// 1/2 1/3 1/4 and on by halves. The next one above m (dir 1) or below it (-1),
+// or 0 when there is none.
+float PvLevel(float m, int dir)
+{
+	float up[5];
+	up[0]=8.;
+	up[1]=4.;
+	up[2]=3.;
+	up[3]=2.;
+	up[4]=1.;
+	float best=0.;
+	for(int k=0;k<40;k++)
+	{
+		float l=0.;
+		if(k<5)l=up[k];
+		else if(k==5)l=1./2.;
+		else if(k==6)l=1./3.;
+		else l=1./(1<<(k-5));        // 1/4 1/8 1/16 ...
+		if(l<1./4096.)break;
+		if(dir>0)
+		{
+			if(l>m*1.001)best=l;     // the list goes down: the last above m
+		}
+		else if(l<m*0.999)return l;
+	}
+	return best;
+}
+
+// One zoom level in (dir 1) or out (-1), keeping screen pixel px,py where it is;
+// past the whole picture going out it fits the view again.
+void PvZoom(int s, int dir, int px, int py, int pw, int ph)
 {
 	float cur=pvScale[s];
 	if(cur==0.)cur=PvFit(s,pw,ph);
-	PvSetScale(s,cur/f,px,py,pw,ph);
+	float own=PvOwn(s);
+	float l=PvLevel(own/cur,dir);
+	if(l==0.)
+	{
+		if(dir>0)return;           // 8x already
+		pvScale[s]=0.;
+		tvDirty=1;
+		return;
+	}
+	PvSetScale(s,own/l,px,py,pw,ph);
 }
 
 // Moves a zoomed picture by dx,dy screen pixels.
@@ -2332,15 +2380,15 @@ void PicCommand(int win, int cmd)
 	TWin& t=tvWin[win];
 	int pw=(t.w-2)*TvCellPxW();
 	int ph=(t.h-2)*TvCellPxH();
-	if(cmd==CM_PICIN)PvZoom(win,1.5,pw/2,ph/2,pw,ph);
-	else if(cmd==CM_PICOUT)PvZoom(win,1./1.5,pw/2,ph/2,pw,ph);
+	if(cmd==CM_PICIN)PvZoom(win,1,pw/2,ph/2,pw,ph);
+	else if(cmd==CM_PICOUT)PvZoom(win,-1,pw/2,ph/2,pw,ph);
 	else if(cmd==CM_PICFIT)
 	{
 		pvScale[win]=0.;
 		tvDirty=1;
 	}
-	else if(cmd==CM_PIC1X)PvSetScale(win,1.,pw/2,ph/2,pw,ph);
-	else if(cmd==CM_PIC2X)PvSetScale(win,0.5,pw/2,ph/2,pw,ph);
+	else if(cmd==CM_PIC1X)PvSetScale(win,PvOwn(win),pw/2,ph/2,pw,ph);
+	else if(cmd==CM_PIC2X)PvSetScale(win,PvOwn(win)/2.,pw/2,ph/2,pw,ph);
 	else if(cmd==CM_PICPLAY)img_video_ctl(win,1,0);
 	else if(cmd==CM_PICFWD)img_video_ctl(win,3,10000);
 	else if(cmd==CM_PICBACK)img_video_ctl(win,3,-10000);
@@ -2366,8 +2414,8 @@ int PicMouse(int win, int ev, int x, int y)
 	int py=(y-1)*cph+cph/2;
 	if(ev==EV_WHEEL)
 	{
-		if(evWheel>0)PvZoom(win,1.25,px,py,pw,ph);
-		else PvZoom(win,1./1.25,px,py,pw,ph);
+		if(evWheel>0)PvZoom(win,1,px,py,pw,ph);
+		else PvZoom(win,-1,px,py,pw,ph);
 		return 1;
 	}
 	if(ev==EV_MDOWN)
@@ -2378,7 +2426,7 @@ int PicMouse(int win, int ev, int x, int y)
 		if((pvClickWin==win)&&(now-pvClickMs<400))
 		{
 			pvClickWin=-1;
-			if(pvScale[win]==0.)PvSetScale(win,1.,px,py,pw,ph);
+			if(pvScale[win]==0.)PvSetScale(win,PvOwn(win),px,py,pw,ph);
 			else
 			{
 				pvScale[win]=0.;
@@ -3735,7 +3783,7 @@ int itemLineNums=-1;     // menu items whose hints show on or off
 int itemWrap=-1;
 int itemLynx=-1;
 int itemHidden=-1;
-int itemBigPix=-1;
+int itemPix=-1;          // the first of the 1x..4x items of Options > Pixel size
 int itemPanel[2];        // each panel's menu: Full and Brief, then the sort keys
 
 void SetHint(int item, int on)
@@ -3753,10 +3801,12 @@ void ShowToggles()
 	SetHint(itemLynx,fcLynx);
 	SetHint(itemHidden,fcHidden);
 #ifdef TV_GFX
-	if(itemBigPix>=0)
-	{
-		snprintf(&tvItem[itemBigPix].hint[0],12,"%ix",GfxScale());
-	}
+	if(itemPix>=0)
+		for(int k=0;k<4;k++)
+		{
+			tvItem[itemPix+k].hint[0]=0;
+			if(k+1==GfxScale())StrCpy(&tvItem[itemPix+k].hint[0],"\xe2\x80\xa2",12);
+		}
 #endif
 	// the menus speak of the panel window in front
 	int base=fcBase;
@@ -4001,8 +4051,8 @@ void OpenHelp()
 		"  double click a title zoom the window, or put it back\n"
 		"  Shift+F10            the context menu\n"
 		"  Ctrl+= Ctrl+- Ctrl+0 in a graphic window: bigger, smaller\n"
-		"                       pixels (1x to 4x), and back; Options >\n"
-		"                       Pixel size goes through 1x 2x 3x 4x\n"
+		"                       pixels (1x to 4x), and back; also\n"
+		"                       Options > Pixel size\n"
 		"  Up, Down in a dialog's input   earlier entries;\n"
 		"  Ctrl+Down, Alt+Down, F4 or its \xe2\x96\xbc   the list\n"
 		"  F10, Alt+X           quit\n";
@@ -4481,13 +4531,10 @@ void TvAppCommand(int cmd)
 		ShowToggles();
 		PrefsSave();
 	}
-	else if(cmd==CM_BIGPIX)
+	else if((cmd>CM_PIX)&&(cmd<=CM_PIX+4))
 	{
 #ifdef TV_GFX
-		// 1x 2x 3x 4x, then 1x again
-		int s=GfxScale()+1;
-		if(s>4)s=1;
-		GfxSetScale(s);
+		GfxSetScale(cmd-CM_PIX);
 		ShowToggles();
 		PrefsSave();
 #endif
@@ -4537,7 +4584,10 @@ void FcKeys()
 	TvKeyCmd(TV_ST_ALL,CM_WRAP,"Word wrap",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_LYNX,"Lynx-like motion",0,0,0);
 #ifdef TV_GFX
-	TvKeyCmd(TV_ST_ALL,CM_BIGPIX,"Pixel size",0,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_PIX+1,"Pixel size 1x",0,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_PIX+2,"Pixel size 2x",0,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_PIX+3,"Pixel size 3x",0,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_PIX+4,"Pixel size 4x",0,0,0);
 #endif
 
 	TvKeyCmd(W_FC,CM_OTHERPANEL,"Other panel",K_TAB,0,0);
@@ -4716,8 +4766,7 @@ int main(int argc, pchar* argv)
 	TvMenuItem("L~y~nx-like motion","off",CM_LYNX,0);
 	itemLynx=tvNItem-1;
 #ifdef TV_GFX
-	TvMenuItem("Pi~x~el size","3x",CM_BIGPIX,0);
-	itemBigPix=tvNItem-1;
+	int itemPixSub=TvMenuSub("Pi~x~el size");
 #endif
 	itemPanel[1]=PanelMenu("~R~ight",1);
 	TvMenuAdd("~W~indow");
@@ -4736,6 +4785,14 @@ int main(int argc, pchar* argv)
 	TvMenuItem("~K~eys and mouse","",CM_HELP,0);
 	TvMenuItem("~A~bout...","",CM_ABOUT,0);
 
+#ifdef TV_GFX
+	TvSubmenuAdd(itemPixSub);
+	TvMenuItem("~1~x","",CM_PIX+1,0);
+	itemPix=tvNItem-1;
+	TvMenuItem("~2~x","",CM_PIX+2,0);
+	TvMenuItem("~3~x","",CM_PIX+3,0);
+	TvMenuItem("~4~x","",CM_PIX+4,0);
+#endif
 	popPanel=TvPopupAdd();
 	TvMenuItem("R~u~n...","",CM_RUN,0);
 	TvMenuItem("~O~pen with the desktop","",CM_OPENSYS,0);
