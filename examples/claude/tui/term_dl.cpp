@@ -306,7 +306,9 @@ static int term_truecolor()
 	// in tmux, COLORTERM may be left over from the terminal tmux was started in
 	if(getenv("TMUX"))return known=tmuxTrueColor();
 	const char* c=getenv("COLORTERM");
-	if(c&&((strcasecmp(c,"truecolor")==0)||(strcasecmp(c,"24bit")==0)))return known=1;
+	// kmscon sets COLORTERM=kmscon (over any value it was started with); it keeps
+	// 24-bit colours but answers none of the questions probeTrueColor asks
+	if(c&&((strcasecmp(c,"truecolor")==0)||(strcasecmp(c,"24bit")==0)||(strcasecmp(c,"kmscon")==0)))return known=1;
 	if(!isatty(0)||!isatty(1))return known=0;
 	known=probeTrueColor();
 	return known;
