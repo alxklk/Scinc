@@ -694,7 +694,7 @@ function SC_stext()
 	//y=0
 	for(var k=0;k<stext.length;k++)
 	{
-		var c=stext.charCodeAt(k)-32
+		var c=stext.charCodeAt(k)
 		x+=6
 		if(c>=256)
 			continue;
