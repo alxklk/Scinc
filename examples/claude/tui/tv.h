@@ -87,6 +87,10 @@ int evY=0;
 int evBtn=0;
 int evWheel=0;
 int evHalf=-1;      // which half of the cell the mouse is in, 0 top, 1 bottom, -1 not known
+int evSubX=-1;      // the pixel in the cell the mouse is on, of TvCellPxW by TvCellPxH,
+int evSubY=-1;      // in a graphic window; -1 not known
+int tvPixDrag=0;    // set while a drag wants every pixel, not only new cells (the
+                    // graphic backends clear it when the button comes up)
 int evMod=0;        // MOD_* held with a cursor or function key
 char evUtf[5];      // the bytes of a non-ASCII character, whose evKey is '?'
 int evUtfN=0;
@@ -832,12 +836,13 @@ void TvPixRgb(int x, int y, int top, int bottom)
 // of which it wants the w*h at ox,oy (the part inside the clip), as 0xAARRGGBB.
 // Whatever is drawn over those cells afterwards (a window in front, a menu) shows
 // instead, as any cell would. A terminal has no pixels: TvPixels does nothing there
-// and TvHasPixels says 0, so a program draws half blocks instead (TvPixRgb).
+// and TvHasPixels says 0, so a program draws half blocks instead (TvPixRgb). With
+// tvCellPics set a graphic program does the same.
 // key tells whether the picture changed: the same id, place and key as in the
 // last flush means the pixels need not be asked for again.
 #define TV_PIXCH 0x10FFFE      // the character of a cell showing pixels
 #define TV_PIXAT 0x0F000000    // | id, its attribute
-#define TV_MAXPIX 8
+#define TV_MAXPIX 16
 int tvPixN=0;
 int tvPixId[TV_MAXPIX];
 int tvPixR[TV_MAXPIX*9];       // x, y, w, h, the visible x0, y0, x1, y1, key
@@ -846,10 +851,13 @@ int tvPixPrev[TV_MAXPIX*10];
 int tvPixPrevCW=0;
 int tvPixPrevCH=0;
 
+// A graphic program can still ask for half blocks, as in a terminal.
+int tvCellPics=0;
+
 int TvHasPixels()
 {
 #ifdef TV_GFX
-	return 1;
+	return !tvCellPics;
 #endif
 	return 0;
 }
@@ -861,7 +869,7 @@ int GfxCellPxH();
 int TvCellPxW()
 {
 #ifdef TV_GFX
-	return GfxCellPxW();
+	if(!tvCellPics)return GfxCellPxW();
 #endif
 	return 1;
 }
@@ -869,7 +877,7 @@ int TvCellPxW()
 int TvCellPxH()
 {
 #ifdef TV_GFX
-	return GfxCellPxH();
+	if(!tvCellPics)return GfxCellPxH();
 #endif
 	return 2;
 }

@@ -1348,6 +1348,7 @@ int PtCanClose(int win)
 #define TE_SLW 16      // the sliders
 #define TE_ITEMS 74    // R_N roles, then the 16 palette colours
 #define TE_PX 32       // the right-hand column
+#define TE_PIXID 900   // TvPixels ids: the square, the six sliders, Was and Now
 
 int teThN=1;                  // the themes: 0 Classic blue, the rest from tvthemes.cfg
 char teThName[512];           // TE_MAXTH*TE_NAMELEN
@@ -1367,6 +1368,7 @@ int teHex=-1;
 int teClear=-1;
 int tePartR[2];
 int teDrag=-1;         // the view a press went to
+int teWasRgb=0;        // the Was swatch, for TePixels
 int teDepthR[3];
 int teChanR[6];
 int teSlider[6];
@@ -2256,30 +2258,44 @@ void TeDraw(int win)
 		int ax=0;
 		int ay=0;
 		TeAxes(ax,ay);
-		for(int j=0;j<TE_SQH;j++)
-			for(int i=0;i<TE_SQW;i++)
-			{
-				float tx=(i+0.5)/TE_SQW;
-				int top=TeColorWith(ax,tx,ay,1-(j*2+0.5)/(TE_SQH*2));
-				int bot=TeColorWith(ax,tx,ay,1-(j*2+1.5)/(TE_SQH*2));
-				TvPixRgb(px+i,py+j,top,bot);
-			}
-		int mx=int(teV[ax]*TE_SQW);
-		if(mx>TE_SQW-1)mx=TE_SQW-1;
-		int my=int((1-teV[ay])*TE_SQH);
-		if(my>TE_SQH-1)my=TE_SQH-1;
-		int ch=0x25CB;
-		if(f==tePick)ch=0x25D8;
-		TeCell(px+mx,py+my,ch,TeColorWith(ax,(mx+0.5)/TE_SQW,ay,1-(my+0.5)/TE_SQH));
+		// in a graphic window the square and the sliders are pixels (TePixels),
+		// with the key telling the backend when they change
+		int pix=TvHasPixels();
+		int key=teChan*3+(f==tePick);
+		for(int k=0;k<6;k++)
+			key=key*31+int(teV[k]*65535.);
+		if(pix)TvPixels(TE_PIXID,px,py,TE_SQW,TE_SQH,key);
+		else
+		{
+			for(int j=0;j<TE_SQH;j++)
+				for(int i=0;i<TE_SQW;i++)
+				{
+					float tx=(i+0.5)/TE_SQW;
+					int top=TeColorWith(ax,tx,ay,1-(j*2+0.5)/(TE_SQH*2));
+					int bot=TeColorWith(ax,tx,ay,1-(j*2+1.5)/(TE_SQH*2));
+					TvPixRgb(px+i,py+j,top,bot);
+				}
+			int mx=int(teV[ax]*TE_SQW);
+			if(mx>TE_SQW-1)mx=TE_SQW-1;
+			int my=int((1-teV[ay])*TE_SQH);
+			if(my>TE_SQH-1)my=TE_SQH-1;
+			int ch=0x25CB;
+			if(f==tePick)ch=0x25D8;
+			TeCell(px+mx,py+my,ch,TeColorWith(ax,(mx+0.5)/TE_SQW,ay,1-(my+0.5)/TE_SQH));
+		}
 		for(int k=0;k<6;k++)
 		{
 			TCtl& lc=tvCtl[teSlider[k]];
 			int lx=t.x+lc.x;
 			int ly=t.y+lc.y;
-			for(int i=0;i<TE_SLW;i++)
-				TvPut(lx+i,ly,' ',TeRgbAt(TeColorWith(k,(i+0.5)/TE_SLW,-1,0.)));
-			int th=int(teV[k]*(TE_SLW-1)+0.5);
-			TeCell(lx+th,ly,0x2666,TeColorWith(k,(th+0.5)/TE_SLW,-1,0.));
+			if(pix)TvPixels(TE_PIXID+1+k,lx,ly,TE_SLW,1,key);
+			else
+			{
+				for(int i=0;i<TE_SLW;i++)
+					TvPut(lx+i,ly,' ',TeRgbAt(TeColorWith(k,(i+0.5)/TE_SLW,-1,0.)));
+				int th=int(teV[k]*(TE_SLW-1)+0.5);
+				TeCell(lx+th,ly,0x2666,TeColorWith(k,(th+0.5)/TE_SLW,-1,0.));
+			}
 			int val=int(teV[k]*255+0.5);
 			if(k==3)val=int(teV[k]*360+0.5)%360;
 			if(k>3)val=int(teV[k]*100+0.5);
@@ -2305,9 +2321,16 @@ void TeDraw(int win)
 		}
 		TvText(px,py+9,"Was",A_DLG);
 		TvText(px+9,py+9,"Now",A_DLG);
-		if(old>=0)TvFill(px+4,py+9,4,1,' ',TeRgbAt(TvCustRgb(teSaveDepth,old)));
-		else TvText(px+4,py+9,"clr",A_DLG_PASSIVE);
-		TvFill(px+13,py+9,4,1,' ',TeRgbAt(TePack(teV[0],teV[1],teV[2])));
+		// cells hold 15 bits of colour, pixels all 24
+		int was=0;
+		if(old>=0)was=TvCustRgb(teSaveDepth,old)&0xFFFFFF;
+		teWasRgb=was;
+		int now=TePack(teV[0],teV[1],teV[2])&0xFFFFFF;
+		if(old<0)TvText(px+4,py+9,"clr",A_DLG_PASSIVE);
+		else if(pix)TvPixels(TE_PIXID+7,px+4,py+9,4,1,was);
+		else TvFill(px+4,py+9,4,1,' ',TeRgbAt(was));
+		if(pix)TvPixels(TE_PIXID+8,px+13,py+9,4,1,now);
+		else TvFill(px+13,py+9,4,1,' ',TeRgbAt(now));
 	}
 }
 
@@ -2401,8 +2424,15 @@ int TeKey(int win, int key)
 		int ax=0;
 		int ay=0;
 		TeAxes(ax,ay);
+		// a pixel a press (Ctrl: a cell) in a graphic window, half a cell in a terminal
 		float sx=1./TE_SQW;
 		float sy=1./(TE_SQH*2);
+		if(TvHasPixels()&&!(evMod&MOD_CTRL))
+		{
+			sx=1./(TE_SQW*TvCellPxW());
+			sy=1./(TE_SQH*TvCellPxH());
+		}
+		else if(TvHasPixels())sy=1./TE_SQH;
 		if(key==K_LEFT){TeSetChan(ax,teV[ax]-sx);return 1;}
 		if(key==K_RIGHT){TeSetChan(ax,teV[ax]+sx);return 1;}
 		if(key==K_UP)
@@ -2434,6 +2464,94 @@ int TeKey(int win, int key)
 	return 0;
 }
 
+// The pixels of the square (TE_PIXID) and the sliders after it, for a graphic
+// backend: fullW*fullH of them for the whole, of which the w*h at ox,oy go into buf,
+// as 0xAARRGGBB. The square's mark is a ring, thicker with the focus on the square;
+// a slider's is a diamond, both black or white against the colour under them. 0 if
+// id is not one of these, for TvAppPixels to try its own.
+int TePixels(int id, int* buf, int fullW, int fullH, int ox, int oy, int w, int h)
+{
+	if((id<TE_PIXID)||(id>TE_PIXID+8))return 0;
+	if(id>=TE_PIXID+7)
+	{
+		int c=0xFF000000|TePack(teV[0],teV[1],teV[2]);
+		if(id==TE_PIXID+7)c=0xFF000000|teWasRgb;
+		for(int i=0;i<w*h;i++)
+			buf[i]=c;
+		return 1;
+	}
+	float r=0.;
+	float g=0.;
+	float b=0.;
+	if(id==TE_PIXID)
+	{
+		int ax=0;
+		int ay=0;
+		TeAxes(ax,ay);
+		float v[6];
+		for(int k=0;k<6;k++)
+			v[k]=teV[k];
+		float mx=teV[ax]*fullW;
+		float my=(1-teV[ay])*fullH;
+		float ro=0.4*fullW/TE_SQW;
+		if(ro<3.)ro=3.;
+		float th=1.2;
+		if((teWin>=0)&&(tvWin[teWin].focus==tePick))th=2.4;
+		float ri=ro-th;
+		float ro2=ro*ro;
+		float ri2=ri*ri;
+		int ring=0xFF000000|TeContrast(TeColorWith(ax,teV[ax],ay,teV[ay]));
+		for(int j=0;j<h;j++)
+		{
+			float py=oy+j+0.5;
+			v[ay]=1-py/fullH;
+			float dy=py-my;
+			for(int i=0;i<w;i++)
+			{
+				float px=ox+i+0.5;
+				float dx=px-mx;
+				float d2=dx*dx+dy*dy;
+				if((d2<=ro2)&&(d2>=ri2))buf[j*w+i]=ring;
+				else
+				{
+					v[ax]=px/fullW;
+					if(ax>=3)TeHsvToRgb(v[3],v[4],v[5],r,g,b);
+					else
+					{
+						r=v[0];
+						g=v[1];
+						b=v[2];
+					}
+					buf[j*w+i]=0xFF000000|TePack(r,g,b);
+				}
+			}
+		}
+		return 1;
+	}
+	int k=id-TE_PIXID-1;
+	float tx=teV[k]*(fullW-1)+0.5;
+	float hh=fullH*0.4;
+	float hw=hh*0.6;
+	if(hw<2.)hw=2.;
+	float cy=fullH/2.;
+	int mark=0xFF000000|TeContrast(TeColorWith(k,teV[k],-1,0.));
+	for(int i=0;i<w;i++)
+	{
+		float px=ox+i+0.5;
+		int c=0xFF000000|TeColorWith(k,px/fullW,-1,0.);
+		float dx=px-tx;
+		if(dx<0)dx=-dx;
+		for(int j=0;j<h;j++)
+		{
+			float dy=oy+j+0.5-cy;
+			if(dy<0)dy=-dy;
+			if(dx/hw+dy/hh<=1.)buf[j*w+i]=mark;
+			else buf[j*w+i]=c;
+		}
+	}
+	return 1;
+}
+
 int TeMouse(int win, int ev, int x, int y)
 {
 	TWin& t=tvWin[win];
@@ -2463,6 +2581,8 @@ int TeMouse(int win, int ev, int x, int y)
 				TCtl& vc=tvCtl[i];
 				if((x>=vc.x)&&(x<vc.x+vc.w)&&(y>=vc.y)&&(y<vc.y+vc.h))teDrag=i;
 			}
+		// the square and the sliders follow the mouse pixel by pixel
+		tvPixDrag=TvHasPixels()&&(teDrag>=0)&&(tvCustDepth==24);
 	}
 	if((ev!=EV_MDOWN)&&(ev!=EV_MDRAG))return 0;
 	int v=teDrag;
@@ -2488,15 +2608,29 @@ int TeMouse(int win, int ev, int x, int y)
 		int ax=0;
 		int ay=0;
 		TeAxes(ax,ay);
-		teV[ax]=TeClamp((cx+0.5)/TE_SQW);
-		teV[ay]=TeClamp(1-(cy+0.5)/TE_SQH);
+		// to the pixel in a graphic window, else to the middle of the cell
+		float fx=0.5;
+		float fy=0.5;
+		if(TvHasPixels()&&(evSubX>=0))
+		{
+			fx=(evSubX+0.5)/TvCellPxW();
+			fy=(evSubY+0.5)/TvCellPxH();
+		}
+		teV[ax]=TeClamp((cx+fx)/TE_SQW);
+		teV[ay]=TeClamp(1-(cy+fy)/TE_SQH);
 		TeApply(teChan>=3);
 		return 1;
 	}
 	for(int k=0;k<6;k++)
 		if(v==teSlider[k])
 		{
-			TeSetChan(k,cx/(TE_SLW-1.));
+			if(TvHasPixels()&&(evSubX>=0))
+			{
+				// the pixel, as TePixels puts the thumb
+				int cw=TvCellPxW();
+				TeSetChan(k,(cx*cw+evSubX)/(TE_SLW*cw-1.));
+			}
+			else TeSetChan(k,cx/(TE_SLW-1.));
 			return 1;
 		}
 	return 0;

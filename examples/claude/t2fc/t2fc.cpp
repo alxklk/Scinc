@@ -46,6 +46,7 @@ typedef char* pchar;
 #define W_JOB 61
 #define W_ASK 62
 #define W_PREFS 63
+#define W_PANELPREFS 67  // Options > Panels, which draws a hint of its own
 #define W_ARCWAIT 66
 
 #define CM_QUIT 500
@@ -824,6 +825,19 @@ float pvAspect=1.;           // a view pixel's width over its height
 int pvGen[PV_SLOTS];         // counts the pictures opened and turned, for TvPixels
 int pvVid[PV_SLOTS];         // a video's frame count when it was last drawn
 
+// In a graphic window drawing in character cells the two halves of a cell are known
+// exactly, and seldom square (9x8 pixels in the 9x16 font): pictures keep their shape.
+void PvSetAspect()
+{
+	pvAspect=1.;
+#ifdef TV_GFX
+	if(tvCellPics)pvAspect=2.*GfxCellPxW()/GfxCellPxH();
+#endif
+	for(int s=0;s<PV_SLOTS;s++)
+		pvScale[s]=0.;
+	tvDirty=1;
+}
+
 void PvInit()
 {
 	for(int s=0;s<PV_SLOTS;s++)
@@ -1143,6 +1157,7 @@ void PvDraw(int s, int x, int y, int w, int h)
 // The pixels of slot id for the graphic backend: its view is fullW*fullH pixels.
 void TvAppPixels(int id, int* buf, int fullW, int fullH, int ox, int oy, int w, int h)
 {
+	if(TePixels(id,buf,fullW,fullH,ox,oy,w,h))return;
 	float scale=0.;
 	float cx=0.;
 	float cy=0.;
@@ -1780,8 +1795,8 @@ void FcDrawPanel(int p, int x, int y, int w, int h)
 	}
 }
 
-// Both scroll bars want the line between the panels: the left panel's then takes
-// its own last column, beside the right one's on the line.
+// Both scroll bars want the line between the panels: each panel then gives up its
+// column next to the line for its bar, and the line stays between the two.
 int FcSplit()
 {
 	return (fcBarPos[0]==1)&&(fcBarPos[1]==0);
@@ -1802,6 +1817,11 @@ void FcPanelBox(int p, int& x, int& y, int& w, int& h)
 	{
 		x=t.x+2+lw;
 		w=iw-lw-1;
+		if(FcSplit())
+		{
+			x++;
+			w--;
+		}
 	}
 }
 
@@ -1866,14 +1886,15 @@ void FcDraw(int win)
 	}
 	FcPanelBox(fcBase+1,x,y,w,h);
 	ShowToggles();     // keys and clicks change the modes the menus show
+	int sep=t.x+1+(t.w-3)/2;   // the line between the panels
 	for(int r=0;r<h;r++)
-		TvPut(x-1,y+r,G_VERT,FC_FRAME);
-	TvPut(x-1,y+h-2,0x253C,FC_FRAME);
+		TvPut(sep,y+r,G_VERT,FC_FRAME);
+	TvPut(sep,y+h-2,0x253C,FC_FRAME);
 	if(FcSplit())
 	{
-		// the left panel's own bar column: the line under the entries goes on
-		FcPanelBox(fcBase,x,y,w,h);
-		TvPut(x+w,y+h-2,G_HORZ,FC_FRAME);
+		// the bar columns beside it: the line under the entries goes on
+		TvPut(sep-1,y+h-2,G_HORZ,FC_FRAME);
+		TvPut(sep+1,y+h-2,G_HORZ,FC_FRAME);
 	}
 	// scroll bars, as the editor's, only in the front window
 	if(TvTop()!=win)return;
@@ -3881,10 +3902,10 @@ void PrefsLoad(char* left, char* right)
 	int n=fs_load(CFG_FILE,&buf[0],2199);
 	if(n<=0)return;
 	buf[n]=0;
-	int v[18];
+	int v[21];
 	int k=0;
 	int i=0;
-	while((k<18)&&(buf[i]!=0)&&(buf[i]!=10))
+	while((k<21)&&(buf[i]!=0)&&(buf[i]!=10))
 	{
 		if((buf[i]>='0')&&(buf[i]<='9'))
 		{
@@ -3925,6 +3946,10 @@ void PrefsLoad(char* left, char* right)
 	if(k>=16)pvLanczos=(v[15]!=0);
 	if((k>=17)&&(v[16]<=2))fcBarPos[0]=v[16];
 	if((k>=18)&&(v[17]<=2))fcBarPos[1]=v[17];
+	if((k>=19)&&(v[18]>=1)&&(v[18]<=16))edTab=v[18];
+	if(k>=20)edInvis=(v[19]!=0);
+	if(k>=21)tvCellPics=(v[20]!=0);
+	PvSetAspect();
 	img_filter(pvLanczos);
 	if(fcQSecs>600)fcQSecs=600;
 	// the directories, one a line, then the terminal command
@@ -3959,8 +3984,8 @@ void PrefsSave()
 #ifdef TV_GFX
 	scale=GfxScale();
 #endif
-	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
-		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,pvLanczos,fcBarPos[0],fcBarPos[1],FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
+	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
+		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,pvLanczos,fcBarPos[0],fcBarPos[1],edTab,edInvis,tvCellPics,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -4059,7 +4084,7 @@ void RunAppearance()
 // quick view, and the terminal F2 runs commands in.
 void RunPanelPrefs()
 {
-	int win=TvNewCentered(W_PREFS,"Panels",50,20,WF_DIALOG);
+	int win=TvNewCentered(W_PANELPREFS,"Panels",50,20,WF_DIALOG);
 	if(win<0)return;
 	int hid=TvAdd(win,C_CHECK,2,2,30,1,"Show ~h~idden files",0);
 	tvCtl[hid].val=fcHidden;
@@ -4144,34 +4169,74 @@ void RunPanelPrefs()
 	TvClose(win);
 }
 
-// Options > Edit and view: the editor's line numbers and wrap, and how pictures and
-// videos are scaled down.
+// Options > Edit and view: the editor's line numbers, wrap, tab size and marks for
+// invisible characters, and how pictures and videos are scaled down and, in a graphic
+// window, whether they are drawn in pixels or in character cells as in a terminal.
 void RunEditPrefs()
 {
-	int win=TvNewCentered(W_PREFS,"Edit and view",50,13,WF_DIALOG);
+	int by=11;
+#ifdef TV_GFX
+	by=13;
+#endif
+	int win=TvNewCentered(W_PREFS,"Edit and view",50,by+4,WF_DIALOG);
 	if(win<0)return;
 	TvAdd(win,C_LABEL,3,2,20,1,"Editor",0);
 	int ln=TvAdd(win,C_CHECK,2,3,30,1,"~L~ine numbers",0);
 	tvCtl[ln].val=edLineNums;
 	int wr=TvAdd(win,C_CHECK,2,4,30,1,"~W~ord wrap",0);
 	tvCtl[wr].val=edWrap;
-	TvAdd(win,C_LABEL,3,6,30,1,"Pictures and videos",0);
-	int lz=TvAdd(win,C_CHECK,2,7,46,1,"Lan~c~zos scaling down (smoother, slower)",0);
+	int iv=TvAdd(win,C_CHECK,2,5,46,1,"Show ~i~nvisible: tabs, spaces, line ends",0);
+	tvCtl[iv].val=edInvis;
+	TvAdd(win,C_LABEL,3,6,22,1,"~T~ab size (1 to 16)",0);
+	int ts=TvAdd(win,C_INPUT,25,6,6,1,"",0);
+	snprintf(&tvCtl[ts].text[0],16,"%d",edTab);
+	tvCtl[ts].val=StrLen(&tvCtl[ts].text[0]);
+	TvAdd(win,C_LABEL,3,8,30,1,"Pictures and videos",0);
+	int lz=TvAdd(win,C_CHECK,2,9,46,1,"Lan~c~zos scaling down (smoother, slower)",0);
 	tvCtl[lz].val=pvLanczos;
-	int ok=TvAdd(win,C_BUTTON,11,9,12,2,"O~K~",CM_OK);
+#ifdef TV_GFX
+	TvAdd(win,C_LABEL,3,10,10,1,"Draw in",0);
+	int pp=TvAdd(win,C_RADIO,13,10,12,1,"~P~ixels",0);
+	int pc=TvAdd(win,C_RADIO,26,10,22,1,"Character c~e~lls",0);
+	tvCtl[pp].group=1;
+	tvCtl[pc].group=1;
+	tvCtl[pp].val=!tvCellPics;
+	tvCtl[pc].val=tvCellPics;
+#endif
+	int ok=TvAdd(win,C_BUTTON,11,by,12,2,"O~K~",CM_OK);
 	tvCtl[ok].isDefault=1;
-	TvAdd(win,C_BUTTON,26,9,12,2,"Cancel",CM_CANCEL);
+	TvAdd(win,C_BUTTON,26,by,12,2,"Cancel",CM_CANCEL);
 	tvWin[win].focus=ln;
 	int res=TvExec(win);
 	if(res==CM_OK)
 	{
 		edLineNums=tvCtl[ln].val;
 		edWrap=tvCtl[wr].val;
+		edInvis=tvCtl[iv].val;
+		// digits only; anything else keeps the size there was
+		int tab=0;
+		char* tx=&tvCtl[ts].text[0];
+		for(int k=0;tx[k]!=0;k++)
+		{
+			if((tx[k]>='0')&&(tx[k]<='9'))
+			{
+				if(tab<100)tab=tab*10+tx[k]-'0';
+			}
+			else if(tx[k]!=' ')tab=-1000;
+		}
+		if((tab>=1)&&(tab<=16))edTab=tab;
 		if(tvCtl[lz].val!=pvLanczos)
 		{
 			pvLanczos=tvCtl[lz].val;
 			img_filter(pvLanczos);
 		}
+#ifdef TV_GFX
+		if(tvCtl[pc].val!=tvCellPics)
+		{
+			tvCellPics=tvCtl[pc].val;
+			PvSetAspect();
+		}
+#endif
 		PrefsSave();
 		tvDirty=1;
 	}
@@ -4276,6 +4341,8 @@ void OpenHelp()
 		"  double click         1:1 there, or fit again\n"
 		"  Options > Edit and view > Lanczos scaling down: smoother\n"
 		"  pictures and videos where they are shown smaller (slower)\n"
+		"  Options > Edit and view > Draw in character cells: in a\n"
+		"  graphic window, half blocks as in a terminal, not pixels\n"
 		"  Space, Backspace     the next, previous picture of the panel\n"
 		"  r                    turn a quarter clockwise\n"
 		"  F3, Esc              close\n"
@@ -4309,6 +4376,8 @@ void OpenHelp()
 		"  Ctrl+F, Ctrl+L       find, find next; Ctrl+R replace\n"
 		"  Ctrl+G               go to a line\n"
 		"  Ctrl+W, Esc Esc      close\n"
+		"  Options > Edit and view: line numbers, word wrap, the tab\n"
+		"  size, and marks for tabs, spaces and line ends\n"
 		"\n"
 		"These are the keys at first: Options > Keyboard changes\n"
 		"them, and t2fc.keys keeps the changes.\n"
@@ -4373,7 +4442,7 @@ void TvAppDraw(int win)
 	else if(type==W_JOB)DrawJob(win);
 	else if(type==W_ARCWAIT)DrawArcWait(win);
 	else if(type==W_ASK)DrawAsk(win);
-	else if(type==W_PREFS)DrawPrefs(win);
+	else if(type==W_PANELPREFS)DrawPrefs(win);
 }
 
 int fcEscWin=-1;    // the edit window Esc was last pressed in, and when

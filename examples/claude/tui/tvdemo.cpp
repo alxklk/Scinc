@@ -23,6 +23,7 @@
 #define TVAPP_CANCLOSE
 #define TVAPP_PASTE
 #define TVAPP_TICK
+#define TVAPP_PIXELS
 #define TV_TERM_HINT "Scinc tvdemo.cpp"
 #include "tv.h"
 #include "tvapp.h"
@@ -30,6 +31,12 @@
 #include "circuitfall.h"
 #include "tvtoys.h"
 #include "tvapps.h"
+
+// The theme editor's colours as pixels in a graphic window.
+void TvAppPixels(int id, int* buf, int fullW, int fullH, int ox, int oy, int w, int h)
+{
+	TePixels(id,buf,fullW,fullH,ox,oy,w,h);
+}
 
 #pragma STACK_SIZE 655360
 

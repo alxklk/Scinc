@@ -660,6 +660,8 @@ void GlMouseAt(int x, int y)
 	if(evY>=tvH)evY=tvH-1;
 	evHalf=0;
 	if(py%chh>=chh/2)evHalf=1;
+	evSubX=px%cw;
+	evSubY=py%chh;
 }
 
 // A new zoom: the grid gets new columns and rows at the next TvCheckSize.
@@ -810,6 +812,7 @@ void GlEvent()
 		evBtn=glBtn;
 		if(evBtn<0)evBtn=0;
 		glBtn=-1;
+		tvPixDrag=0;
 		evType=EV_MUP;
 		return;
 	}
@@ -817,9 +820,11 @@ void GlEvent()
 	{
 		int ox=evX;
 		int oy=evY;
+		int osx=evSubX;
+		int osy=evSubY;
 		GlMouseAt(glEv[1],glEv[2]);
 		if(glBtn>=0)
-			if((evX!=ox)||(evY!=oy))
+			if((evX!=ox)||(evY!=oy)||(tvPixDrag&&((evSubX!=osx)||(evSubY!=osy))))
 			{
 				evBtn=glBtn;
 				evType=EV_MDRAG;

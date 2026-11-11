@@ -40,7 +40,8 @@
 #define ED_UNDOTEXT 1000000
 #define ED_UNDORECS 20000
 #define ED_CLIPMAX 1000000
-#define ED_TAB 4
+int edTab=4;         // the columns between tab stops (Options)
+int edInvis=0;       // tabs, spaces and line ends show as marks
 
 #define AT_SELECT A_ED_SELECT
 
@@ -1155,7 +1156,7 @@ int EdCol(int i, int x)
 	while(p<end)
 	{
 		int c=TvUtf8(vwText,p);
-		if(c==9)col=(col/ED_TAB+1)*ED_TAB;
+		if(c==9)col=(col/edTab+1)*edTab;
 		else col++;
 	}
 	return col;
@@ -1172,7 +1173,7 @@ int EdByteAt(int i, int want)
 		int q=p;
 		int c=TvUtf8(vwText,q);
 		int next=col+1;
-		if(c==9)next=(col/ED_TAB+1)*ED_TAB;
+		if(c==9)next=(col/edTab+1)*edTab;
 		if(next>want)break;
 		col=next;
 		p=q;
@@ -1226,7 +1227,7 @@ void EdWrapLine(int i, int cols)
 		int q=p;
 		int c=TvUtf8(vwText,q);
 		int next=col+1;
-		if(c==9)next=(col/ED_TAB+1)*ED_TAB;
+		if(c==9)next=(col/edTab+1)*edTab;
 		if((next-rowCol>cols)&&(edRowN<4096))
 			if(p-start>edRowAt[edRowN-1])
 			{
@@ -1919,9 +1920,9 @@ void EdEnter(int win)
 		{
 			if(((n>0)&&(edIndent[1]==' '))||((n==0)&&(t.f==LANG_PY)))
 			{
-				for(int k=0;k<ED_TAB;k++)
+				for(int k=0;k<edTab;k++)
 					edIndent[n+1+k]=' ';
-				n=n+ED_TAB;
+				n=n+edTab;
 			}
 			else
 			{
@@ -2007,7 +2008,7 @@ void EdUnindentLines(int win)
 		int first=vwText[p];
 		if(first==9)n=1;
 		else
-			while(n<ED_TAB)
+			while(n<edTab)
 			{
 				int c=vwText[p+n];
 				if(c!=' ')break;
@@ -2899,9 +2900,13 @@ void DrawViewer(int win)
 				}
 				if((k==edBmY2)&&(off==edBmX2))at=A_ED_MATCH;
 				int c=TvUtf8(vwText,p);
+				// the marks of invisible characters, dim unless selected or found
+				int mat=at;
+				if((at==HL_TEXT)||(at==HL_COMMENT)||(at==HL_STRING))mat=A_ED_LINENO;
 				if(c==9)
 				{
-					int next=(col/ED_TAB+1)*ED_TAB;
+					int next=(col/edTab+1)*edTab;
+					int tc=col;
 					if(at==AT_SELECT)
 						while(col<next)
 						{
@@ -2916,6 +2921,16 @@ void DrawViewer(int win)
 							col++;
 						}
 					col=next;
+					if(edInvis&&(tc>=base)&&(tc-base<cols))
+					{
+						if((at==AT_SELECT)||(inBlk&&(tc>=edBC1)&&(tc<edBC2)))mat=AT_SELECT;
+						TvPut(x0+tc-base,t.y+1+j,0x2192,mat);
+					}
+				}
+				else if(edInvis&&(c==' '))
+				{
+					if(col>=base)TvPut(x0+col-base,t.y+1+j,0xB7,mat);
+					col++;
 				}
 				else
 				{
@@ -2925,10 +2940,14 @@ void DrawViewer(int win)
 				// the rest of a very long line is out of sight
 				if(col-base>=cols)break;
 			}
-			// a selected line end shows as one cell
-			if(r==edRowN-1)
-				if((selB>vwLen[i])&&(col>=base))
-					TvPut(x0+col-base,t.y+1+j,' ',AT_SELECT);
+			// a selected line end shows as one cell, and as a mark with the marks on
+			if((r==edRowN-1)&&(col>=base)&&(col-base<cols))
+			{
+				int lc=' ';
+				if(edInvis&&(k+1<t.d))lc=0xB6;
+				if(selB>vwLen[i])TvPut(x0+col-base,t.y+1+j,lc,AT_SELECT);
+				else if(lc!=' ')TvPut(x0+col-base,t.y+1+j,lc,A_ED_LINENO);
+			}
 			// and a block goes on past the line's end
 			if(inBlk&&(r==edRowN-1))
 			{
@@ -3176,7 +3195,7 @@ int EdDedent(int win)
 	if(vwText[p+e.cx-1]==' ')
 	{
 		n=0;
-		while((n<ED_TAB)&&(n<e.cx))
+		while((n<edTab)&&(n<e.cx))
 		{
 			if(vwText[p+e.cx-1-n]!=' ')break;
 			n++;

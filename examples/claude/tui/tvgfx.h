@@ -812,6 +812,8 @@ void GfxMouseAt(int x, int y)
 	evY=y/GFX_CH;
 	evHalf=0;
 	if(y%GFX_CH>=GFX_CH/2)evHalf=1;
+	evSubX=x%GFX_CW;
+	evSubY=y%GFX_CH;
 }
 
 // Turns one window event into a tv.h event, or leaves evType at EV_NONE.
@@ -946,6 +948,7 @@ void GfxEvent(SScincEvent& e)
 		evBtn=gfxBtn;
 		if(evBtn<0)evBtn=0;
 		gfxBtn=-1;
+		tvPixDrag=0;
 		evType=EV_MUP;
 		return;
 	}
@@ -953,9 +956,11 @@ void GfxEvent(SScincEvent& e)
 	{
 		int ox=evX;
 		int oy=evY;
+		int osx=evSubX;
+		int osy=evSubY;
 		GfxMouseAt(e.x,e.y);
 		if(gfxBtn>=0)
-			if((evX!=ox)||(evY!=oy))
+			if((evX!=ox)||(evY!=oy)||(tvPixDrag&&((evSubX!=osx)||(evSubY!=osy))))
 			{
 				evBtn=gfxBtn;
 				evType=EV_MDRAG;
