@@ -1957,6 +1957,85 @@ static void run_quote(const char* s, char* out, int max)
 	copyOut(out,max,q);
 }
 
+// 1 if dir holds a directory (or a link to one), hidden ones only with showHidden.
+static int hasSubdir(const std::string& dir, int showHidden)
+{
+	DIR* d=opendir(dir.c_str());
+	if(!d)
+		return 0;
+	int found=0;
+	while(!found)
+	{
+		dirent* e=readdir(d);
+		if(!e)
+			break;
+		const char* n=e->d_name;
+		if(n[0]=='.'&&(!showHidden||!n[1]||(n[1]=='.'&&!n[2])))
+			continue;
+		if(e->d_type==DT_DIR)
+			found=1;
+		else if(e->d_type==DT_LNK||e->d_type==DT_UNKNOWN)
+		{
+			struct stat st;
+			if(!stat((dir+"/"+n).c_str(),&st)&&S_ISDIR(st.st_mode))
+				found=1;
+		}
+	}
+	closedir(d);
+	return found;
+}
+
+// The directories in path (links to them too), for a folder tree: one line each in
+// out, sorted by name, "+name" if it holds directories itself, " name" if not; with
+// more than 2000 of them, every one is "+", unprobed. Does not touch the listings.
+// Returns their count, -1 if path cannot be read, -2 if they do not fit in max.
+static int fs_subdirs(const char* path, char* out, int max, int showHidden)
+{
+	out[0]=0;
+	DIR* d=opendir(path);
+	if(!d)
+	{
+		noteError(path);
+		return -1;
+	}
+	std::string dir=path;
+	if(dir.empty()||dir.back()!='/')
+		dir+="/";
+	std::vector<std::string> names;
+	while(dirent* e=readdir(d))
+	{
+		const char* n=e->d_name;
+		if(n[0]=='.'&&(!showHidden||!n[1]||(n[1]=='.'&&!n[2])))
+			continue;
+		int isDir=e->d_type==DT_DIR;
+		if(e->d_type==DT_LNK||e->d_type==DT_UNKNOWN)
+		{
+			struct stat st;
+			isDir=!stat((dir+n).c_str(),&st)&&S_ISDIR(st.st_mode);
+		}
+		if(isDir)
+			names.push_back(n);
+	}
+	closedir(d);
+	std::sort(names.begin(),names.end(),[](const std::string& a,const std::string& b)
+	{
+		int c=strcasecmp(a.c_str(),b.c_str());
+		return c?c<0:a<b;
+	});
+	int probe=names.size()<=2000;
+	std::string all;
+	for(const std::string& n:names)
+	{
+		all+=(!probe||hasSubdir(dir+n,showHidden))?'+':' ';
+		all+=n;
+		all+='\n';
+	}
+	if((int)all.size()>=max)
+		return -2;
+	memcpy(out,all.c_str(),all.size()+1);
+	return (int)names.size();
+}
+
 // 1 if prog is a program found in PATH.
 static int run_which(const char* prog)
 {
@@ -2525,6 +2604,7 @@ extern "C" int fs_save_write_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_save
 extern "C" int fs_save_end_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_save_end);return 0;}
 extern "C" int fs_list_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_list);return 0;}
 extern "C" int fs_name_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_name);return 0;}
+extern "C" int fs_subdirs_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_subdirs);return 0;}
 extern "C" int fs_info_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_info);return 0;}
 extern "C" int fs_index_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_index);return 0;}
 extern "C" int fs_find_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_find);return 0;}

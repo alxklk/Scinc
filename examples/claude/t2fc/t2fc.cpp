@@ -203,6 +203,7 @@ int fcConfExit=1;           // asks before quitting
 int fcConfRun=0;            // asks before Enter runs a program
 int fcConfPause=1;          // waits for a key (Enter in a terminal window) after a command
 int fcTypeView=1;           // F3 and quick view know pictures, archives and programs
+int fcTreeAll=0;            // F3's folder tree starts at /, not at the folder
 int fcAskAtStart=0;         // FcAsk puts the cursor at the start of the text
 int fcAskHist=0;            // and gives its input this history (H_*), once
 int popPanel=-1;
@@ -2937,14 +2938,20 @@ int FcInfoOpen(char* local, char* path, int kind)
 	return 1;
 }
 
-// F3: directories are entered, binary files go to the hex viewer, and text opens in a
+// F3: folders show the folder tree, binary files go to the hex viewer, and text opens in a
 // read-only editor window. With fcTypeView (Options > Edit and view), and unless
 // raw (Shift+F3), archives, pictures and programs get views of their own.
 int ArcOpen(char* path);
+int TreeOpen(char* path);
 
 void FcViewAs(char* path, int raw)
 {
-	if(FcIsDir(path))return;
+	// a folder: the folder tree, for one not in an archive
+	if(FcIsDir(path))
+	{
+		if(FcArcWhere(path)==0)TreeOpen(path);
+		return;
+	}
 	int aware=fcTypeView&&!raw;
 	// an archive opens in an archive window, its tree
 	if(aware&&(FcArcWhere(path)==1))
@@ -3338,6 +3345,434 @@ int ArcMouse(int win, int ev, int x, int y)
 	arClickWin=win;
 	arClickRow=i;
 	arClickMs=now;
+	return 1;
+}
+
+// ---------------------------------------------------------------- the folder tree
+
+// F3 on a folder: the folders from / down to it and in it, in a window. Right and
+// Left (+ and -, Space) open and close a branch, Enter takes the active panel to the
+// folder under the cursor. Branches are read when opened (term_dl fs_subdirs). Rows
+// keep their names in slots of a fixed table, so that opening a branch moves only
+// row numbers.
+#define W_TREE 68
+#define CM_TREEGO 652
+#define TR_MAX 8000
+
+int trDepth[TR_MAX];
+int trState[TR_MAX];        // 0 holds no folders, 1 closed, 2 open
+int trSlot[TR_MAX];
+char trNames[2048000];      // TR_MAX names of 256
+int trFree[TR_MAX];
+int trFreeN=0;
+int trN=0;
+int trCur=0;
+int trTop=0;
+int trWin=-1;
+char trList[262144];
+int trClickMs=0;
+int trClickRow=-1;
+
+void TrReset()
+{
+	trN=0;
+	trFreeN=TR_MAX;
+	for(int i=0;i<TR_MAX;i++)trFree[i]=TR_MAX-1-i;
+}
+
+char trRoot[FC_PATH];        // the root row's name: / or a whole path
+
+char* TrName(int i)
+{
+	if(trDepth[i]==0)return &trRoot[0];
+	return &trNames[trSlot[i]*256];
+}
+
+// The path of row i: the names of its branch from the root down.
+void TrPath(int i, char* out)
+{
+	int chain[256];
+	int n=0;
+	int d=trDepth[i];
+	int j=i;
+	while((j>=0)&&(n<256))
+	{
+		if(trDepth[j]==d)
+		{
+			chain[n]=j;
+			n++;
+			d--;
+			if(d<0)break;
+		}
+		j--;
+	}
+	int o=0;
+	out[0]=0;
+	for(int k=n-1;k>=0;k--)
+	{
+		if(trDepth[chain[k]]==0)o=TvKAdd(out,o,FC_PATH,TrName(chain[k]));
+		else
+		{
+			if(o>1)o=TvKAdd(out,o,FC_PATH,"/");
+			o=TvKAdd(out,o,FC_PATH,TrName(chain[k]));
+		}
+	}
+}
+
+// Closes the branch at row i: its rows go, their slots are free again.
+void TrClose(int i)
+{
+	int d=trDepth[i];
+	int e=i+1;
+	while((e<trN)&&(trDepth[e]>d))
+	{
+		trFree[trFreeN]=trSlot[e];
+		trFreeN++;
+		e++;
+	}
+	int gone=e-i-1;
+	for(int k=e;k<trN;k++)
+	{
+		trDepth[k-gone]=trDepth[k];
+		trState[k-gone]=trState[k];
+		trSlot[k-gone]=trSlot[k];
+	}
+	trN=trN-gone;
+	if(trState[i]==2)trState[i]=1;
+	if(trCur>i)
+	{
+		if(trCur<e)trCur=i;
+		else trCur=trCur-gone;
+	}
+}
+
+// Opens the branch at row i, reading the folders in it. 0 if it cannot.
+int TrOpen(int i)
+{
+	if(trState[i]==2)return 1;
+	char path[FC_PATH];
+	TrPath(i,&path[0]);
+	int n=fs_subdirs(&path[0],&trList[0],262144,fcHidden);
+	if(n==-2)
+	{
+		TvMessage("Folder tree","This folder holds too many folders to show.",0);
+		return 0;
+	}
+	if(n<0)
+	{
+		char err[300];
+		fs_error(&err[0],300);
+		TvMessage("Folder tree",&err[0],0);
+		return 0;
+	}
+	if(n==0)
+	{
+		trState[i]=0;
+		return 1;
+	}
+	if((trN+n>TR_MAX)||(n>trFreeN))
+	{
+		TvMessage("Folder tree","The tree is too big: close some branches first.",0);
+		return 0;
+	}
+	for(int k=trN-1;k>i;k--)
+	{
+		trDepth[k+n]=trDepth[k];
+		trState[k+n]=trState[k];
+		trSlot[k+n]=trSlot[k];
+	}
+	trN=trN+n;
+	if(trCur>i)trCur=trCur+n;
+	int c=0;
+	for(int r=0;r<n;r++)
+	{
+		int at=i+1+r;
+		trFreeN--;
+		trSlot[at]=trFree[trFreeN];
+		trDepth[at]=trDepth[i]+1;
+		trState[at]=0;
+		if(trList[c]=='+')trState[at]=1;
+		c++;
+		char* name=TrName(at);
+		int k=0;
+		while((trList[c]!=10)&&(trList[c]!=0))
+		{
+			if(k<255)
+			{
+				name[k]=trList[c];
+				k++;
+			}
+			c++;
+		}
+		name[k]=0;
+		if(trList[c]==10)c++;
+	}
+	trState[i]=2;
+	return 1;
+}
+
+int TrRows()
+{
+	if(trWin<0)return 1;
+	int r=tvWin[trWin].h-4;
+	if(r<1)r=1;
+	return r;
+}
+
+void TrClamp()
+{
+	int rows=TrRows();
+	if(trCur>=trN)trCur=trN-1;
+	if(trCur<0)trCur=0;
+	if(trCur<trTop)trTop=trCur;
+	if(trCur>=trTop+rows)trTop=trCur-rows+1;
+	if(trTop>trN-rows)trTop=trN-rows;
+	if(trTop<0)trTop=0;
+}
+
+// Opens the tree of path, with its branch open and the cursor on it: from / down
+// to it with fcTreeAll (Options > Panels), else from the folder itself.
+int TreeOpen(char* path)
+{
+	char full[FC_PATH];
+	if(!fs_abspath(path,&full[0],FC_PATH))StrCpy(&full[0],path,FC_PATH);
+	TrReset();
+	trFreeN--;
+	trSlot[0]=trFree[trFreeN];
+	StrCpy(&trRoot[0],"/",FC_PATH);
+	if(!fcTreeAll)StrCpy(&trRoot[0],&full[0],FC_PATH);
+	trDepth[0]=0;
+	trState[0]=1;
+	trN=1;
+	trCur=0;
+	trTop=0;
+	TrOpen(0);
+	// down the path, a name at a time
+	int at=0;
+	int k=1;
+	if(!fcTreeAll)k=StrLen(&full[0]);
+	char part[256];
+	while(full[k]!=0)
+	{
+		int n=0;
+		while((full[k]!=0)&&(full[k]!='/'))
+		{
+			if(n<255)
+			{
+				part[n]=full[k];
+				n++;
+			}
+			k++;
+		}
+		part[n]=0;
+		if(full[k]=='/')k++;
+		if(n==0)continue;
+		if(trState[at]!=2)
+			if(!TrOpen(at))break;
+		int found=-1;
+		int j=at+1;
+		while((j<trN)&&(trDepth[j]>trDepth[at]))
+		{
+			if((trDepth[j]==trDepth[at]+1)&&(StrCmp(TrName(j),&part[0])==0))
+			{
+				found=j;
+				break;
+			}
+			j++;
+		}
+		// a hidden folder, with hidden ones not shown: the tree stops above it
+		if(found<0)break;
+		at=found;
+	}
+	trCur=at;
+	if(trState[at]==1)TrOpen(at);
+	if(trWin<0)
+	{
+		int w=tvW-8;
+		if(w>90)w=90;
+		if(w<30)w=tvW;
+		int h=tvH-4;
+		trWin=TvNew(W_TREE,"Folder tree",(tvW-w)/2,2,w,h,WF_RESIZE);
+		if(trWin<0)
+		{
+			TvMessage("Folder tree","Too many windows are open.",0);
+			return -1;
+		}
+	}
+	else TvToFront(trWin);
+	// the cursor a third of the way down, so that what is above shows too
+	trTop=trCur-TrRows()/3;
+	TrClamp();
+	return trWin;
+}
+
+void TrDraw(int win)
+{
+	TWin& t=tvWin[win];
+	TrClamp();
+	TvFill(t.x+1,t.y+1,t.w-2,t.h-2,' ',FC_BG);
+	char path[FC_PATH];
+	path[0]=0;
+	if(trN>0)TrPath(trCur,&path[0]);
+	// a long path shows its end, as panel headers do
+	int start=0;
+	int pw=t.w-4;
+	if(TvCols(&path[0])>pw)
+	{
+		while((path[start]!=0)&&(TvCols(&path[start])>pw-1))
+		{
+			start++;
+			while((path[start]&192)==128)start++;
+		}
+		TvPut(t.x+2,t.y+1,G_LEFT,FC_HEAD);
+		TvText(t.x+3,t.y+1,&path[start],FC_HEAD);
+	}
+	else TvText(t.x+2,t.y+1,&path[0],FC_HEAD);
+	for(int k=1;k<t.w-1;k++)
+		TvPut(t.x+k,t.y+2,G_HORZ,FC_FRAME);
+	int rows=TrRows();
+	int w=t.w-2;
+	for(int r=0;r<rows;r++)
+	{
+		int i=trTop+r;
+		if(i>=trN)break;
+		int y=t.y+3+r;
+		int at=FC_DIR;
+		if(i==trCur)
+		{
+			at=FC_CUR;
+			TvFill(t.x+1,y,w,1,' ',at);
+		}
+		int x=t.x+2+trDepth[i]*2;
+		// a deep branch shifts left, so that names stay readable
+		int shift=0;
+		if(trN>0)
+		{
+			int dc=trDepth[trCur]*2+24-w;
+			if(dc>0)shift=dc;
+		}
+		x=x-shift;
+		if(x>=t.x+1)
+		{
+			if(trState[i]==1)TvPut(x,y,G_RIGHT,at);
+			else if(trState[i]==2)TvPut(x,y,G_DOWN,at);
+		}
+		int nx=x+2;
+		int cut=0;
+		if(nx<t.x+1)
+		{
+			cut=t.x+1-nx;
+			nx=t.x+1;
+		}
+		// the root row is the folder's name; the header has its whole path
+		char* name=TrName(i);
+		if((trDepth[i]==0)&&(trRoot[1]!=0))name=&trRoot[EdBase(&trRoot[0])];
+		if(cut<StrLen(name))FcCut(nx,y,&name[cut],at,t.x+t.w-1-nx);
+	}
+}
+
+// Enter: the active panel goes to the folder, and the tree is done.
+void TrGo(int win)
+{
+	if(trN==0)return;
+	char path[FC_PATH];
+	TrPath(trCur,&path[0]);
+	int c=FcTopC();
+	if(c<0)c=fcC;
+	if(fcWinOf[c]<0)
+	{
+		TvMessage("Folder tree","There is no panel window open.",0);
+		return;
+	}
+	TvClose(win);
+	FcSelect(c);
+	FcChangeDir(fcActive,&path[0]);
+	TvToFront(fcWin);
+}
+
+// The row above i that holds it, or i for the root.
+int TrParent(int i)
+{
+	int j=i-1;
+	while(j>=0)
+	{
+		if(trDepth[j]<trDepth[i])return j;
+		j--;
+	}
+	return i;
+}
+
+int TrKey(int win, int key)
+{
+	int rows=TrRows();
+	if(key==K_UP)trCur--;
+	else if(key==K_DOWN)trCur++;
+	else if(key==K_PGUP)trCur=trCur-rows+1;
+	else if(key==K_PGDN)trCur=trCur+rows-1;
+	else if(key==K_HOME)trCur=0;
+	else if(key==K_END)trCur=trN-1;
+	else if((key==K_RIGHT)||(key=='+'))
+	{
+		if(trState[trCur]==1)TrOpen(trCur);
+		else if((key==K_RIGHT)&&(trState[trCur]==2)&&(trCur+1<trN))trCur++;
+	}
+	else if((key==K_LEFT)||(key=='-'))
+	{
+		if(trState[trCur]==2)TrClose(trCur);
+		else if(key==K_LEFT)trCur=TrParent(trCur);
+	}
+	else if(key==' ')
+	{
+		if(trState[trCur]==2)TrClose(trCur);
+		else if(trState[trCur]==1)TrOpen(trCur);
+	}
+	else if(key==K_BACKSPACE)trCur=TrParent(trCur);
+	else return 0;
+	TrClamp();
+	return 1;
+}
+
+int TrMouse(int win, int ev, int x, int y)
+{
+	if(ev==EV_WHEEL)
+	{
+		int rows=TrRows();
+		trTop=trTop-evWheel*3;
+		if(trTop>trN-rows)trTop=trN-rows;
+		if(trTop<0)trTop=0;
+		if(trCur<trTop)trCur=trTop;
+		if(trCur>=trTop+rows)trCur=trTop+rows-1;
+		return 1;
+	}
+	if(ev!=EV_MDOWN)return 0;
+	int r=y-3;
+	if((r<0)||(r>=TrRows()))return 0;
+	int i=trTop+r;
+	if(i>=trN)return 1;
+	int wasCur=trCur;
+	trCur=i;
+	// the arrow opens or closes the branch, a double click goes there
+	int shift=trDepth[wasCur]*2+24-(tvWin[win].w-2);
+	if(shift<0)shift=0;
+	int ax=2+trDepth[i]*2-shift;
+	if((x==ax)&&(trState[i]!=0))
+	{
+		if(trState[i]==2)TrClose(i);
+		else TrOpen(i);
+		trClickRow=-1;
+		TrClamp();
+		return 1;
+	}
+	int now=term_ms();
+	if((trClickRow==i)&&(now-trClickMs<400))
+	{
+		trClickRow=-1;
+		TrGo(win);
+		return 1;
+	}
+	trClickRow=i;
+	trClickMs=now;
+	TrClamp();
 	return 1;
 }
 
@@ -4255,10 +4690,10 @@ void PrefsLoad(char* left, char* right)
 	int n=fs_load(CFG_FILE,&buf[0],2199);
 	if(n<=0)return;
 	buf[n]=0;
-	int v[25];
+	int v[40];
 	int k=0;
 	int i=0;
-	while((k<25)&&(buf[i]!=0)&&(buf[i]!=10))
+	while((k<40)&&(buf[i]!=0)&&(buf[i]!=10))
 	{
 		if((buf[i]>='0')&&(buf[i]<='9'))
 		{
@@ -4308,6 +4743,8 @@ void PrefsLoad(char* left, char* right)
 	if(k>=25)fcConfPause=(v[24]!=0);
 	fcTypeView=1;
 	if(k>=26)fcTypeView=(v[25]!=0);
+	fcTreeAll=0;
+	if(k>=27)fcTreeAll=(v[26]!=0);
 	PvSetAspect();
 	img_filter(pvLanczos);
 	if(fcQSecs>600)fcQSecs=600;
@@ -4343,8 +4780,8 @@ void PrefsSave()
 #ifdef TV_GFX
 	scale=GfxScale();
 #endif
-	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
-		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,pvLanczos,fcBarPos[0],fcBarPos[1],edTab,edInvis,tvCellPics,fcTrash,fcConfExit,fcConfRun,fcConfPause,fcTypeView,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
+	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
+		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,pvLanczos,fcBarPos[0],fcBarPos[1],edTab,edInvis,tvCellPics,fcTrash,fcConfExit,fcConfRun,fcConfPause,fcTypeView,fcTreeAll,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -4455,6 +4892,8 @@ void RunPanelPrefs()
 	int qd=TvAdd(win,C_INPUT,41,5,6,1,"",0);
 	snprintf(&tvCtl[qd].text[0],16,"%d",fcQSecs);
 	tvCtl[qd].val=StrLen(&tvCtl[qd].text[0]);
+	int ta=TvAdd(win,C_CHECK,2,6,46,1,"F3 on a folder: the ~w~hole tree, from /",0);
+	tvCtl[ta].val=fcTreeAll;
 	TvAdd(win,C_LABEL,3,7,12,1,"Scroll bar",0);
 	TvAdd(win,C_LABEL,17,7,14,1,"Left panel",0);
 	TvAdd(win,C_LABEL,33,7,14,1,"Right panel",0);
@@ -4492,6 +4931,7 @@ void RunPanelPrefs()
 		int h=tvCtl[hid].val;
 		fcLynx=tvCtl[ly].val;
 		fcQSCase=tvCtl[qc].val;
+		fcTreeAll=tvCtl[ta].val;
 		for(int side=0;side<2;side++)
 			for(int k=0;k<3;k++)
 				if(tvCtl[bar[side*3+k]].val)fcBarPos[side]=k;
@@ -4717,6 +5157,11 @@ void OpenHelp()
 		"                       installed) tell what is in them: ELF,\n"
 		"                       Windows PE, .a; Mach-O with llvm-objdump\n"
 		"  Shift+F3             view as text or hex, whatever the file\n"
+		"  F3 on a folder       the tree of folders in it (from / with\n"
+		"                       Options > Panels > whole tree): Right,\n"
+		"                       Left (+, -, Space) open and close a\n"
+		"                       branch, Enter takes the panel to the\n"
+		"                       folder; Esc or F3 closes it\n"
 		"  Options > Edit and view > File type-aware: off, F3 and quick\n"
 		"  view show every file as text or hex.\n"
 		"  F4, Shift+F4         edit, edit a new file\n"
@@ -4867,6 +5312,7 @@ void TvAppDraw(int win)
 	else if(type==W_HEX)HxDraw(win);
 	else if(type==W_PIC)PicDraw(win);
 	else if(type==W_ARC)ArcDraw(win);
+	else if(type==W_TREE)TrDraw(win);
 	else if(type==W_THEME)TeDraw(win);
 	else if(type==W_JOB)DrawJob(win);
 	else if(type==W_ARCWAIT)DrawArcWait(win);
@@ -4887,7 +5333,7 @@ int TvAppKey(int win, int key)
 		return FcKey(win,key);
 	}
 	// view windows close with Esc, and F3 as in MC (a command of the keyboard map)
-	if((type==W_HEX)||(type==W_PIC)||(type==W_ARC)||((type==W_VIEW)&&fcView[win]))
+	if((type==W_HEX)||(type==W_PIC)||(type==W_ARC)||(type==W_TREE)||((type==W_VIEW)&&fcView[win]))
 	{
 		if(key==K_ESC)
 		{
@@ -4916,6 +5362,7 @@ int TvAppKey(int win, int key)
 	}
 	if(type==W_PIC)return PicKey(win,key);
 	if(type==W_ARC)return ArcKey(win,key);
+	if(type==W_TREE)return TrKey(win,key);
 	if(type==W_HEX)return HxKey(win,key);
 	if(type==W_THEME)return TeKey(win,key);
 	return 0;
@@ -4951,6 +5398,7 @@ int TvAppMouse(int win, int ev, int x, int y)
 	if(type==W_VIEW)return ViewerMouse(win,ev,x,y);
 	if(type==W_PIC)return PicMouse(win,ev,x,y);
 	if(type==W_ARC)return ArcMouse(win,ev,x,y);
+	if(type==W_TREE)return TrMouse(win,ev,x,y);
 	if(type==W_HEX)return HxMouse(win,ev,x,y);
 	return 0;
 }
@@ -4987,6 +5435,7 @@ void TvAppClosed(int win)
 		free(hxBuf);
 		hxWin=-1;
 	}
+	if(win==trWin)trWin=-1;
 	if(tvWin[win].type==W_PIC)PvFree(win);
 	if(tvWin[win].type==W_FC)
 	{
@@ -5262,6 +5711,12 @@ void TvAppCommand(int cmd)
 			if(tvWin[top].type==W_PIC)PicCommand(top,cmd);
 		return;
 	}
+	if(cmd==CM_TREEGO)
+	{
+		if(top>=0)
+			if(tvWin[top].type==W_TREE)TrGo(top);
+		return;
+	}
 	if((cmd==CM_ARCOPEN)||(cmd==CM_ARCCOPY))
 	{
 		if(top>=0)
@@ -5355,6 +5810,7 @@ void FcKeys()
 	TvKeyContext(W_PIC,TV_ST_ALL,"Picture windows");
 	TvKeyContext(W_HEX,TV_ST_ALL,"Hex view");
 	TvKeyContext(W_ARC,TV_ST_ALL,"Archive windows");
+	TvKeyContext(W_TREE,TV_ST_ALL,"Folder tree");
 
 	TvKeyCmd(TV_ST_ALL,CM_QUIT,"Quit",K_F10,K_ALT+'x',0);
 	TvKeyCmd(TV_ST_ALL,CM_HELP,"Help",K_F1,0,0);
@@ -5450,6 +5906,9 @@ void FcKeys()
 	TvKeyCmd(W_ARC,CM_ARCOPEN,"View, or show in the panel",K_ENTER,0,0);
 	TvKeyCmd(W_ARC,CM_ARCCOPY,"Copy out",K_F5,0,0);
 	TvKeyCmd(W_ARC,CM_CLOSE,"Close",K_F3,0,0);
+
+	TvKeyCmd(W_TREE,CM_TREEGO,"Go to the folder",K_ENTER,0,0);
+	TvKeyCmd(W_TREE,CM_CLOSE,"Close",K_F3,0,0);
 }
 
 // A panel's menu: listing mode, sort keys, reverse. Returns its first item.
@@ -5644,6 +6103,10 @@ int main(int argc, pchar* argv)
 	TvStatusFor(W_ARC);
 	TvStatusCmd("View",CM_ARCOPEN);
 	TvStatusCmd("Copy out",CM_ARCCOPY);
+	TvStatusCmd("Close",CM_CLOSE);
+	TvStatusFor(W_TREE);
+	TvStatusCmd("Go",CM_TREEGO);
+	TvStatusAdd("~Left~ ~Right~ Branch",0,0);
 	TvStatusCmd("Close",CM_CLOSE);
 	TvStatusFor(TV_ST_DESK);
 	TvStatusCmd("Panels",CM_NEWPANELS);

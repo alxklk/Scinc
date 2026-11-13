@@ -24,6 +24,7 @@
 [[scinc::dynlink(TERM_DL,"fs_index_wrapper")]]int fs_index(char* name);
 [[scinc::dynlink(TERM_DL,"fs_find_wrapper")]]int fs_find(int letter, int start);
 [[scinc::dynlink(TERM_DL,"fs_home_wrapper")]]void fs_home(char* out, int max);
+[[scinc::dynlink(TERM_DL,"fs_subdirs_wrapper")]]int fs_subdirs(char* path, char* out, int max, int showHidden);
 
 [[scinc::dynlink(TERM_DL,"fs_error_wrapper")]]void fs_error(char* out, int max);
 [[scinc::dynlink(TERM_DL,"fs_abspath_wrapper")]]int fs_abspath(char* path, char* out, int max);

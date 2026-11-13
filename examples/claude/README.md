@@ -166,7 +166,7 @@ files of those names do. F1 shows every key.
 | Tab, Enter, Backspace, letters | Other panel, enter a directory, the parent; typing starts a quick search: a box on the panel's bottom line, and the cursor on the next name that starts with what is typed (Backspace takes a letter back; Esc, a cursor key, a click or a command ends it; Preferences sets whether case matters) |
 | Insert, right click, `+` `-` `*` | Mark, mark by pattern, unmark by pattern, invert |
 | Shift+keypad `+`/`-`, Alt+`+`/`-` | Mark or unmark the files with the extension (after the last dot) of the one under the cursor; case matters as Preferences > Case-sensitive file search says |
-| F3, F4, Shift+F4 | View (pictures, text read-only, binary in hex), edit, edit a new file |
+| F3, F4, Shift+F4 | View (pictures, text read-only, binary in hex; a folder as its folder tree), edit, edit a new file |
 | Ctrl+Q, Alt+Q | Quick view in the other panel: the picture, text or hex dump of the file under the cursor; for a folder, how many files and folders it holds and their size, counted in the background for up to 5 s (Options > Preferences sets the seconds; 0 turns it off) |
 | F5, Shift+F5, F6, Shift+F6, F7, F8 | Copy, copy in the same directory under a new name, move, rename, make a directory, delete; with progress, Cancel, and questions before replacing |
 | F2, Alt+Enter, Enter on an executable | Run a program (see below) |
@@ -258,6 +258,14 @@ with no tool for a file, it is viewed in hex like any binary file. Shift+F3 view
 or in hex if it is binary. Options > Edit and view > File type-aware turns the
 special views of F3 and quick view (pictures, archives, programs) off: every file
 is then text or hex.
+
+**Folder tree.** F3 on a folder opens a window with the tree of the folders in it,
+its branch open and the cursor on it. With Options > Panels > "F3 on a folder:
+the whole tree" (off by default) the tree starts at `/` instead, open down to
+the folder. Right and Left (or `+`,
+`-` and Space, or a click on the arrow) open and close a branch, reading it only
+then; Left on a closed one goes up to its parent. Enter, or a double click, takes
+the active panel to the folder under the cursor. Esc or F3 closes the window.
 
 **Colours over ssh.** tui uses 24-bit colour when `COLORTERM` says the terminal
 has it, but ssh does not pass `COLORTERM` on by default. So when it is missing,
