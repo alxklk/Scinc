@@ -60,6 +60,7 @@ typedef char* pchar;
 #define CM_LANCZOS 515   // pictures shown smaller through a Lanczos filter, on or off
 #define CM_PREFPANELS 516 // Options > Panels
 #define CM_PREFEDIT 517  // Options > Edit and view
+#define CM_PREFSYS 518   // Options > System
 #define CM_LINENUMS 506
 #define CM_WRAP 507
 #define CM_LYNX 508
@@ -74,6 +75,7 @@ typedef char* pchar;
 #define CM_RENAME 605
 #define CM_MKDIR 606
 #define CM_DELETE 607
+#define CM_DELPERM 621  // delete, not to the trash
 #define CM_HEXVIEW 608
 #define CM_SELGROUP 609
 #define CM_UNSELGROUP 610
@@ -195,6 +197,10 @@ int fcView[TV_MAXWIN];      // an editor window opened by F3, to close with F3 o
 int fcLocked[TV_MAXWIN];    // the editor made it read-only for its own reasons
 int prefTheme=0;
 char fcTermCmd[200];        // how to open a terminal window, as "xterm -e"; empty finds one
+int fcTrash=1;              // F8: 0 deletes, 1 moves to the trash, 2 asks which
+int fcConfExit=1;           // asks before quitting
+int fcConfRun=0;            // asks before Enter runs a program
+int fcConfPause=1;          // waits for a key (Enter in a terminal window) after a command
 int fcAskAtStart=0;         // FcAsk puts the cursor at the start of the text
 int fcAskHist=0;            // and gives its input this history (H_*), once
 int popPanel=-1;
@@ -991,7 +997,8 @@ void PvSetScale(int s, float scale, int px, int py, int pw, int ph)
 	float wx=pvCX[s]+(px-pw/2.)*cur*pvAspect;
 	float wy=pvCY[s]+(py-ph/2.)*cur;
 	if(scale<PvOwn(s)/8.)scale=PvOwn(s)/8.;
-	if(scale>=fit)
+	// smaller than the view: 100% and more stay as they are, centred, the rest fits
+	if((scale>=fit)&&(scale>PvOwn(s)*1.001))
 	{
 		pvScale[s]=0.;
 		tvDirty=1;
@@ -1005,7 +1012,7 @@ void PvSetScale(int s, float scale, int px, int py, int pw, int ph)
 }
 
 // The zoom levels, as screen pixels per pixel of the picture: 8 4 3 2 1, then
-// 1/2 1/3 1/4 and on by halves. The next one above m (dir 1) or below it (-1),
+// 1/2 1/3 1/4 1/5 and on by halves from 1/8. The next one above m (dir 1) or below it (-1),
 // or 0 when there is none.
 float PvLevel(float m, int dir)
 {
@@ -1022,7 +1029,9 @@ float PvLevel(float m, int dir)
 		if(k<5)l=up[k];
 		else if(k==5)l=1./2.;
 		else if(k==6)l=1./3.;
-		else l=1./(1<<(k-5));        // 1/4 1/8 1/16 ...
+		else if(k==7)l=1./4.;
+		else if(k==8)l=1./5.;
+		else l=1./(1<<(k-6));        // 1/8 1/16 ...
 		if(l<1./4096.)break;
 		if(dir>0)
 		{
@@ -1041,11 +1050,17 @@ void PvZoom(int s, int dir, int px, int py, int pw, int ph)
 	if(cur==0.)cur=PvFit(s,pw,ph);
 	float own=PvOwn(s);
 	float l=PvLevel(own/cur,dir);
-	if(l==0.)
+	float fit=PvFit(s,pw,ph);
+	if((l==0.)||((dir<0)&&(own/l>=fit)&&(l<0.999)))
 	{
+		// out past the whole picture, or below 100% for a picture smaller than the
+		// view: it fits the view, unless it is no bigger than that already
 		if(dir>0)return;           // 8x already
-		pvScale[s]=0.;
-		tvDirty=1;
+		if(cur<fit*0.999)
+		{
+			pvScale[s]=0.;
+			tvDirty=1;
+		}
 		return;
 	}
 	PvSetScale(s,own/l,px,py,pw,ph);
@@ -2002,6 +2017,7 @@ void DrawJob(int win)
 	char* verb="Copying";
 	if(fcJobOp==1)verb="Moving";
 	if(fcJobOp==2)verb="Deleting";
+	if(fcJobOp==3)verb="Moving to the trash";
 	TvText(t.x+3,t.y+2,verb,A_DLG);
 	JobName(0,&name[0],FC_PATH);
 	int w=t.w-6;
@@ -2012,7 +2028,7 @@ void DrawJob(int win)
 		for(int k=0;k<cols-w;k++)
 			TvUtf8(&name[0],i);
 	TvTextN(t.x+3,t.y+3,&name[i],A_DLG,w);
-	if(fcJobOp!=2)
+	if(fcJobOp<2)
 	{
 		TvText(t.x+3,t.y+4,"to",A_DLG);
 		JobName(1,&name[0],FC_PATH);
@@ -2155,7 +2171,7 @@ int FcRunJob(int op, char* title)
 	tvCtl[fcJobFile].count=1000;
 	fcJobTotal=TvAdd(win,C_PROGRESS,3,7,w-6,1,"",0);
 	tvCtl[fcJobTotal].count=1000;
-	if(op==2)
+	if(op>=2)
 	{
 		// one bar is enough when nothing is copied
 		tvCtl[fcJobFile].used=0;
@@ -2329,7 +2345,9 @@ void FcCopyMove(int op, int inPlace)
 		FcLoad(fcActive,FcDirOf(fcActive),&target[EdBase(&target[0])]);
 }
 
-void FcDelete()
+// F8 deletes, or moves to the trash, as Options > System says; Shift+F8 (perm)
+// always deletes.
+void FcDelete(int perm)
 {
 	if(FcReadOnly("Delete"))return;
 	char what[300];
@@ -2337,17 +2355,44 @@ void FcDelete()
 	if(n==0)return;
 	char msg[400];
 	char info[80];
-	snprintf(&msg[0],400,"Delete %s?",&what[0]);
+	char obj[300];
+	StrCpy(&obj[0],&what[0],300);
 	FcUse(fcActive);
+	int oneDir=0;
 	if(LsMarkInfo(&info[0],80)==0)
 	{
 		char name[256];
 		if(FcName(fcActive,fcCur[fcActive],&name[0]))
-			snprintf(&msg[0],400,"Delete the directory \"%s\"\nand everything in it?",&name[0]);
+		{
+			oneDir=1;
+			snprintf(&obj[0],300,"the directory \"%s\"",&name[0]);
+		}
 	}
-	if(TvMessage("Delete",&msg[0],1)!=CM_YES)return;
-	fs_job_start(2,"");
-	int ok=FcRunJob(2,"Delete");
+	int op=2;
+	if(!perm&&(fcTrash==2))
+	{
+		snprintf(&msg[0],400,"Move %s to the trash,\nor delete it for good?",&obj[0]);
+		int r=TvChoose("Delete",&msg[0],"~T~rash|~D~elete|Cancel");
+		if(r==0)op=3;
+		else if(r!=1)return;
+		else
+		{
+			// for good: one more question, as below
+			if(oneDir)snprintf(&msg[0],400,"Delete %s\nand everything in it, for good?",&obj[0]);
+			else snprintf(&msg[0],400,"Delete %s for good?",&obj[0]);
+			if(TvMessage("Delete",&msg[0],1)!=CM_YES)return;
+		}
+	}
+	else
+	{
+		if(!perm&&(fcTrash==1))op=3;
+		if(op==3)snprintf(&msg[0],400,"Move %s to the trash?",&obj[0]);
+		else if(oneDir)snprintf(&msg[0],400,"Delete %s\nand everything in it, for good?",&obj[0]);
+		else snprintf(&msg[0],400,"Delete %s for good?",&obj[0]);
+		if(TvMessage("Delete",&msg[0],1)!=CM_YES)return;
+	}
+	fs_job_start(op,"");
+	int ok=FcRunJob(op,"Delete");
 	if(ok)FcUnmark(fcActive);
 	FcReloadBoth();
 }
@@ -2417,6 +2462,8 @@ void FcEditorTitle(int win)
 #define CM_VIEWEDIT 670
 
 int pvPanel[TV_MAXWIN];      // the panel a picture window came from
+int pvIdx[TV_MAXWIN];        // which of the panel's pictures it shows, from 1 (0 not known)
+int pvTot[TV_MAXWIN];        // and how many the panel has
 int pvDragX=0;
 int pvDragY=0;
 int pvClickMs=0;
@@ -2429,6 +2476,25 @@ int PicFind(char* path)
 		if(tvWin[w].used&&(tvWin[w].type==W_PIC))
 			if(StrCmp(PvPathOf(w),path)==0)return w;
 	return -1;
+}
+
+// Counts the pictures and videos of panel p for window win, and finds its own.
+void PicCount(int win, int p)
+{
+	pvIdx[win]=0;
+	pvTot[win]=0;
+	char name[256];
+	char path[FC_PATH];
+	for(int k=0;k<fcCount[p];k++)
+		if(!FcName(p,k,&name[0]))
+		{
+			FcJoin(&path[0],FcDirOf(p),&name[0]);
+			if(FcIsPicture(&path[0]))
+			{
+				pvTot[win]++;
+				if(StrCmp(&path[0],PvPathOf(win))==0)pvIdx[win]=pvTot[win];
+			}
+		}
 }
 
 // Opens a picture window for a file of panel p.
@@ -2452,6 +2518,7 @@ int PicOpen(char* path, int p)
 	pvPanel[win]=p;
 	PvOpen(win,path);
 	FcSetTitle(win,"Picture: ",path);
+	PicCount(win,p);
 	return win;
 }
 
@@ -2459,6 +2526,21 @@ void PicDraw(int win)
 {
 	TWin& t=tvWin[win];
 	PvDraw(win,t.x+1,t.y+1,t.w-2,t.h-2);
+	// which of the panel's pictures, on the right of the bottom line
+	int right=t.x+t.w-2;
+	if(pvTot[win]>0)
+	{
+		TvClip(t.x,t.y,t.x+t.w-2,t.y+t.h);
+		char n[40];
+		if(pvIdx[win]>0)snprintf(&n[0],40," %i/%i ",pvIdx[win],pvTot[win]);
+		else snprintf(&n[0],40," %i ",pvTot[win]);
+		int sx=t.x+t.w-3-StrLen(&n[0]);
+		if(sx>t.x+t.w/2)
+		{
+			TvText(sx,t.y+t.h-1,&n[0],A_WIN_FRAME);
+			right=sx;
+		}
+	}
 	if(img_state(win)!=2)return;
 	char info[120];
 	char s[160];
@@ -2471,7 +2553,7 @@ void PicDraw(int win)
 	int pct=(int)(px+0.5);
 	if(pvScale[win]==0.)snprintf(&s[0],160," %s  %i%% fit ",&info[0],pct);
 	else snprintf(&s[0],160," %s  %i%% ",&info[0],pct);
-	TvClip(t.x,t.y,t.x+t.w-2,t.y+t.h);
+	TvClip(t.x,t.y,right,t.y+t.h);
 	TvText(t.x+2,t.y+t.h-1,&s[0],A_WIN_FRAME);
 }
 
@@ -2504,6 +2586,7 @@ void PicStep(int win, int dir)
 		FcClamp(p);
 		PvOpen(win,&path[0]);
 		FcSetTitle(win,"Picture: ",&path[0]);
+		if(pvIdx[win]>0)pvIdx[win]=pvIdx[win]+dir;
 	}
 	FcSelect(keep);
 }
@@ -2516,7 +2599,7 @@ int PicKey(int win, int key)
 	int step=pw/8;
 	if(step<2)step=2;
 	// the other keys are commands of the keyboard map (PicCommand)
-	if(img_info(win,4)&&(pvScale[win]==0.))
+	if(img_info(win,4)&&((pvScale[win]==0.)||(pvScale[win]>=PvFit(win,pw,ph)*0.999)))
 	{
 		// a video that fits the window: the arrows go back and on in it
 		if(key==K_LEFT)img_video_ctl(win,3,-5000);
@@ -3096,6 +3179,7 @@ int RunSaveAs(int ew)
 void FcRunIn(char* cmd, char* dir)
 {
 	TvSuspend();
+	run_pause(fcConfPause);
 	run_here(cmd,dir);
 	TvResume();
 	FcReloadAll();
@@ -3124,7 +3208,8 @@ void FcRunIn(char* cmd, char* dir)
 	char quoted[8000];
 	char full[8300];
 	run_quote(dir,&qdir[0],2100);
-	snprintf(&script[0],6000,"cd %s || exit; (%s\n); s=$?; echo; echo \"[exit code $s] Press Enter to close this window\"; read x",&qdir[0],cmd);
+	if(fcConfPause)snprintf(&script[0],6000,"cd %s || exit; (%s\n); s=$?; echo; echo \"[exit code $s] Press Enter to close this window\"; read x",&qdir[0],cmd);
+	else snprintf(&script[0],6000,"cd %s || exit; %s\n",&qdir[0],cmd);
 	run_quote(&script[0],&quoted[0],8000);
 	snprintf(&full[0],8300,"%s sh -c %s",&term[0],&quoted[0]);
 	if(!run_detached(&full[0],dir))
@@ -3158,6 +3243,12 @@ void FcRunCursor()
 	char cmd[600];
 	FcName(p,fcCur[p],&name[0]);
 	snprintf(&rel[0],262,"./%s",&name[0]);
+	if(fcConfRun)
+	{
+		char msg[300];
+		snprintf(&msg[0],300,"Run %s?",&rel[0]);
+		if(TvMessage("Run",&msg[0],1)!=CM_YES)return;
+	}
 	run_quote(&rel[0],&cmd[0],600);
 	FcRunIn(&cmd[0],FcDirOf(p));
 }
@@ -3902,10 +3993,10 @@ void PrefsLoad(char* left, char* right)
 	int n=fs_load(CFG_FILE,&buf[0],2199);
 	if(n<=0)return;
 	buf[n]=0;
-	int v[21];
+	int v[25];
 	int k=0;
 	int i=0;
-	while((k<21)&&(buf[i]!=0)&&(buf[i]!=10))
+	while((k<25)&&(buf[i]!=0)&&(buf[i]!=10))
 	{
 		if((buf[i]>='0')&&(buf[i]<='9'))
 		{
@@ -3949,6 +4040,10 @@ void PrefsLoad(char* left, char* right)
 	if((k>=19)&&(v[18]>=1)&&(v[18]<=16))edTab=v[18];
 	if(k>=20)edInvis=(v[19]!=0);
 	if(k>=21)tvCellPics=(v[20]!=0);
+	if((k>=22)&&(v[21]<=2))fcTrash=v[21];
+	if(k>=23)fcConfExit=(v[22]!=0);
+	if(k>=24)fcConfRun=(v[23]!=0);
+	if(k>=25)fcConfPause=(v[24]!=0);
 	PvSetAspect();
 	img_filter(pvLanczos);
 	if(fcQSecs>600)fcQSecs=600;
@@ -3984,8 +4079,8 @@ void PrefsSave()
 #ifdef TV_GFX
 	scale=GfxScale();
 #endif
-	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
-		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,pvLanczos,fcBarPos[0],fcBarPos[1],edTab,edInvis,tvCellPics,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
+	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
+		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,pvLanczos,fcBarPos[0],fcBarPos[1],edTab,edInvis,tvCellPics,fcTrash,fcConfExit,fcConfRun,fcConfPause,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -4243,6 +4338,45 @@ void RunEditPrefs()
 	TvClose(win);
 }
 
+// Options > System: what F8 does with the trash, and what is confirmed.
+void RunSysPrefs()
+{
+	int win=TvNewCentered(W_PREFS,"System",52,17,WF_DIALOG);
+	if(win<0)return;
+	TvAdd(win,C_LABEL,3,2,40,1,"F8 and Delete",0);
+	int tr[3];
+	tr[0]=TvAdd(win,C_RADIO,2,3,46,1,"~D~elete for good",0);
+	tr[1]=TvAdd(win,C_RADIO,2,4,46,1,"Move to the ~t~rash",0);
+	tr[2]=TvAdd(win,C_RADIO,2,5,46,1,"~A~sk each time",0);
+	for(int k=0;k<3;k++)
+	{
+		tvCtl[tr[k]].group=1;
+		tvCtl[tr[k]].val=(fcTrash==k);
+	}
+	TvAdd(win,C_LABEL,3,6,46,1,"Shift+F8 and Shift+Del always delete for good.",0);
+	TvAdd(win,C_LABEL,3,8,40,1,"Confirm",0);
+	int ce=TvAdd(win,C_CHECK,2,9,46,1,"E~x~it",0);
+	tvCtl[ce].val=fcConfExit;
+	int cr=TvAdd(win,C_CHECK,2,10,46,1,"~R~unning a program with Enter",0);
+	tvCtl[cr].val=fcConfRun;
+	int cp=TvAdd(win,C_CHECK,2,11,46,1,"~W~ait for a key after a command",0);
+	tvCtl[cp].val=fcConfPause;
+	int ok=TvAdd(win,C_BUTTON,12,13,12,2,"O~K~",CM_OK);
+	tvCtl[ok].isDefault=1;
+	TvAdd(win,C_BUTTON,27,13,12,2,"Cancel",CM_CANCEL);
+	tvWin[win].focus=tr[fcTrash];
+	if(TvExec(win)==CM_OK)
+	{
+		for(int k=0;k<3;k++)
+			if(tvCtl[tr[k]].val)fcTrash=k;
+		fcConfExit=tvCtl[ce].val;
+		fcConfRun=tvCtl[cr].val;
+		fcConfPause=tvCtl[cp].val;
+		PrefsSave();
+	}
+	TvClose(win);
+}
+
 void DrawPrefs(int win)
 {
 	TWin& t=tvWin[win];
@@ -4308,7 +4442,9 @@ void OpenHelp()
 		"                       new name\n"
 		"  F6, Shift+F6         move to the other panel, rename\n"
 		"  F7                   make a directory\n"
-		"  F8, Delete           delete\n"
+		"  F8, Delete           delete: to the trash, for good, or ask\n"
+		"                       which, as Options > System says\n"
+		"  Shift+F8, Shift+Del  delete for good, not to the trash\n"
 		"  Copies and moves ask before they replace anything, and\n"
 		"  can be cancelled. A target name may start with ~ for home.\n"
 		"\n"
@@ -4331,12 +4467,19 @@ void OpenHelp()
 		"  key brings t2fc back afterwards. In a graphic window it runs\n"
 		"  in a new terminal window, which stays open until Enter;\n"
 		"  Options > Panels can name the terminal program.\n"
+		"  Options > System: whether to ask before Enter runs a\n"
+		"  program and before quitting, and whether to wait for a key\n"
+		"  after a command.\n"
 		"  Command > Open with the desktop: the desktop's own program\n"
 		"  for the file (xdg-open)\n"
 		"\n"
 		"Picture windows\n"
 		"  + -, mouse wheel     zoom in, out\n"
 		"  0 or f, 1, 2         fit the window, pixels 1:1, 2:1\n"
+		"  1:1 and more hold for a picture smaller than the window,\n"
+		"  which then sits in the middle; zoom goes 8x to 1:1, 1/2,\n"
+		"  1/3, 1/4, 1/5, 1/8, ... The bottom line shows which of the\n"
+		"  panel's pictures and videos this is, and how many there are.\n"
 		"  arrows, drag         move a zoomed picture\n"
 		"  double click         1:1 there, or fit again\n"
 		"  Options > Edit and view > Lanczos scaling down: smoother\n"
@@ -4618,8 +4761,11 @@ void FcQuit()
 	int r=EdCanQuit();
 	if(r==1)tvRunning=0;
 	else if(r==2)
-		if(TvMessage("Quit","Leave t2fc?",1)==CM_YES)
+	{
+		if(!fcConfExit)tvRunning=0;
+		else if(TvMessage("Quit","Leave t2fc?",1)==CM_YES)
 			tvRunning=0;
+	}
 	if(!tvRunning)
 	{
 		PrefsSave();
@@ -4743,7 +4889,8 @@ int FcPanelCommand(int cmd)
 	else if(cmd==CM_MOVE)FcCopyMove(1,0);
 	else if(cmd==CM_RENAME)FcCopyMove(1,1);
 	else if(cmd==CM_MKDIR)FcMkdir();
-	else if(cmd==CM_DELETE)FcDelete();
+	else if(cmd==CM_DELETE)FcDelete(0);
+	else if(cmd==CM_DELPERM)FcDelete(1);
 	else if(cmd==CM_HEXVIEW)FcHex();
 	else if(cmd==CM_SELGROUP)FcMarkGroup(1);
 	else if(cmd==CM_MARKEXT)FcMarkExt(1);
@@ -4860,6 +5007,7 @@ void TvAppCommand(int cmd)
 	else if(cmd==CM_PREFS)RunAppearance();
 	else if(cmd==CM_PREFPANELS)RunPanelPrefs();
 	else if(cmd==CM_PREFEDIT)RunEditPrefs();
+	else if(cmd==CM_PREFSYS)RunSysPrefs();
 	else if(cmd==CM_THEMEED)
 	{
 		int r=TeRun(prefTheme);
@@ -4932,6 +5080,7 @@ void FcKeys()
 	TvKeyCmd(TV_ST_ALL,CM_PREFS,"Appearance options",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_PREFPANELS,"Panel options",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_PREFEDIT,"Edit and view options",0,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_PREFSYS,"System options",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_THEMEED,"Theme editor",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_KEYS,"Keyboard",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_LINENUMS,"Line numbers",0,0,0);
@@ -4957,6 +5106,7 @@ void FcKeys()
 	TvKeyCmd(W_FC,CM_RENAME,"Rename",K_F6+TV_KSHIFT,0,0);
 	TvKeyCmd(W_FC,CM_MKDIR,"Make directory",K_F7,0,0);
 	TvKeyCmd(W_FC,CM_DELETE,"Delete",K_F8,K_DEL,0);
+	TvKeyCmd(W_FC,CM_DELPERM,"Delete for good",K_F8+TV_KSHIFT,K_DEL+TV_KSHIFT,0);
 	TvKeyCmd(W_FC,CM_HEXVIEW,"Hex view",0,0,0);
 	TvKeyCmd(W_FC,CM_MARK,"Mark",K_INS,0,0);
 	TvKeyCmd(W_FC,CM_SELGROUP,"Select group",'+',0,0);
@@ -5068,6 +5218,7 @@ int main(int argc, pchar* argv)
 	TvMenuItem("Rena~m~e...","",CM_RENAME,0);
 	TvMenuItem("Make ~d~irectory...","",CM_MKDIR,0);
 	TvMenuItem("De~l~ete...","",CM_DELETE,0);
+	TvMenuItem("Delete for ~g~ood...","",CM_DELPERM,0);
 	TvMenuItem("~H~ex view","",CM_HEXVIEW,0);
 	TvMenuLine();
 	TvMenuItem("~S~elect group...","",CM_SELGROUP,0);
@@ -5111,6 +5262,7 @@ int main(int argc, pchar* argv)
 	TvMenuItem("~A~ppearance...","",CM_PREFS,0);
 	TvMenuItem("~P~anels...","",CM_PREFPANELS,0);
 	TvMenuItem("~E~dit and view...","",CM_PREFEDIT,0);
+	TvMenuItem("~S~ystem...","",CM_PREFSYS,0);
 	TvMenuLine();
 	TvMenuItem("~T~heme editor...","",CM_THEMEED,0);
 	TvMenuItem("~K~eyboard...","",CM_KEYS,0);
@@ -5141,6 +5293,7 @@ int main(int argc, pchar* argv)
 	TvMenuItem("~M~ove...","",CM_MOVE,0);
 	TvMenuItem("~R~ename...","",CM_RENAME,0);
 	TvMenuItem("~D~elete...","",CM_DELETE,0);
+	TvMenuItem("Delete for ~g~ood...","",CM_DELPERM,0);
 	TvMenuLine();
 	TvMenuItem("~H~ex view","",CM_HEXVIEW,0);
 	TvMenuItem("Make director~y~...","",CM_MKDIR,0);

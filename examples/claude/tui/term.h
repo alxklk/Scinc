@@ -55,6 +55,7 @@
 
 // running programs: on this terminal (after TvSuspend), or detached from it
 [[scinc::dynlink(TERM_DL,"run_here_wrapper")]]int run_here(char* cmd, char* dir);
+[[scinc::dynlink(TERM_DL,"run_pause_wrapper")]]void run_pause(int on);
 [[scinc::dynlink(TERM_DL,"run_detached_wrapper")]]int run_detached(char* cmd, char* dir);
 [[scinc::dynlink(TERM_DL,"run_has_display_wrapper")]]int run_has_display();
 [[scinc::dynlink(TERM_DL,"run_terminal_wrapper")]]int run_terminal(char* out, int max);

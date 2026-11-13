@@ -604,6 +604,21 @@ void GfxGlyph(int ch, int px, int py, int col)
 
 // The window anew with c x r cells at gfxScale, where the old one was: the last
 // real place less the offset in the frame.
+//
+// TO FIX: under the interpreter the new window sometimes comes up behind other
+// windows. CWinSys cannot give a window a bigger render target, so it is deleted
+// and made again. The X window it makes (Cumulus/src/ws_x11.cpp, CreateOSWindow)
+// has no _NET_WM_PID, WM_CLASS or _NET_WM_USER_TIME, and when the old one goes the
+// focus passes to some other window; if the button is still held on the frame
+// (a pause of more than 0.25 s while resizing) the new one is mapped during the
+// window manager's resize grab. Its focus stealing prevention then stacks the
+// new window below the focused one. The GL backend and the native SDL build keep
+// their one window and do not have this.
+// - Here: make the new window before deleting the old one, so that ours still
+//   has the focus when it is mapped, and wait longer before making it.
+// - Better, in the interpreter: a CWinSys call that resizes a window and its
+//   render target (Cumulus has ResizeOSWindow), so that it is never made anew;
+//   or at least those properties on new windows, or _NET_ACTIVE_WINDOW for them.
 void GfxNewWindow(int c, int r)
 {
 	gfxSizedAt=-1.0;

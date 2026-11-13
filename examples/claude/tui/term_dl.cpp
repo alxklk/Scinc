@@ -11,6 +11,7 @@
 #include <ctime>
 #include <csignal>
 #include <cstdlib>
+#include <cctype>
 #include <string>
 #include <vector>
 #include <atomic>
@@ -897,7 +898,7 @@ static int fs_mkdir(const char* path)
 // that the program can show progress and stay responsive. A step stops early to ask
 // when an action fails or its target exists; fs_job_answer says what to do.
 
-enum { A_MKDIR, A_COPY, A_LINK, A_UNLINK, A_RMDIR, A_CHMOD, A_RENAME, A_UNLINKOK, A_RMDIRQ };
+enum { A_MKDIR, A_COPY, A_LINK, A_UNLINK, A_RMDIR, A_CHMOD, A_RENAME, A_UNLINKOK, A_RMDIRQ, A_TRASH };
 
 struct JobAct
 {
@@ -1083,7 +1084,190 @@ static void fs_job_add(const char* path)
 	jobSrc.push_back(path);
 }
 
-// op 0 copies, 1 moves, 2 deletes the sources added. A copy or move into an existing
+// ---------------------------------------------------------------- the trash
+
+// The trash as freedesktop.org describes it, as the desktops keep it: the home
+// trash ($XDG_DATA_HOME/Trash) for files on its file system, else $top/.Trash/$uid
+// (when $top/.Trash is a sticky directory, not a link) or $top/.Trash-$uid at the
+// top of the file's own. Each has files/ with the entries and info/ with a
+// .trashinfo for each: where it was and when it went.
+
+static int mkdirAll(const std::string& path, mode_t mode)
+{
+	struct stat st;
+	if(!stat(path.c_str(),&st))
+		return S_ISDIR(st.st_mode)?0:-1;
+	size_t slash=path.rfind('/');
+	if(slash!=std::string::npos&&slash>0)
+		if(mkdirAll(path.substr(0,slash),mode))
+			return -1;
+	if(mkdir(path.c_str(),mode)&&errno!=EEXIST)
+		return -1;
+	return 0;
+}
+
+static int trashReady(const std::string& dir)
+{
+	return !mkdirAll(dir+"/files",0700)&&!mkdirAll(dir+"/info",0700);
+}
+
+// The top of the file system that path is on.
+static std::string mountTop(const std::string& path)
+{
+	struct stat st;
+	if(stat(path.c_str(),&st))
+		return "";
+	std::string at=path;
+	while(at!="/")
+	{
+		size_t slash=at.rfind('/');
+		std::string up=slash==0?"/":at.substr(0,slash);
+		struct stat su;
+		if(stat(up.c_str(),&su)||su.st_dev!=st.st_dev)
+			break;
+		at=up;
+	}
+	return at;
+}
+
+// The trash for src, and the top its .trashinfo paths are relative to ("" for the
+// home trash, whose paths are absolute). 0 if there is none it can go to.
+static int trashFor(const std::string& src, dev_t dev, std::string& dir, std::string& top)
+{
+	std::string data;
+	const char* x=getenv("XDG_DATA_HOME");
+	if(x&&x[0]=='/')
+		data=x;
+	else
+	{
+		const char* h=getenv("HOME");
+		if(!h)
+			return 0;
+		data=std::string(h)+"/.local/share";
+	}
+	struct stat st;
+	if(!stat(data.c_str(),&st)&&st.st_dev==dev)
+	{
+		dir=data+"/Trash";
+		top="";
+		return trashReady(dir);
+	}
+	size_t slash=src.rfind('/');
+	std::string parent=slash==0?"/":src.substr(0,slash);
+	char real[PATH_MAX];
+	if(!realpath(parent.c_str(),real))
+		return 0;
+	top=mountTop(real);
+	if(top.empty())
+		return 0;
+	std::string uid=std::to_string((long)getuid());
+	std::string base=top=="/"?"":top;
+	std::string shared=base+"/.Trash";
+	if(!lstat(shared.c_str(),&st)&&S_ISDIR(st.st_mode)&&(st.st_mode&S_ISVTX))
+	{
+		dir=shared+"/"+uid;
+		if(trashReady(dir))
+			return 1;
+	}
+	dir=base+"/.Trash-"+uid;
+	if(mkdir(dir.c_str(),0700)&&errno!=EEXIST)
+		return 0;
+	if(lstat(dir.c_str(),&st)||!S_ISDIR(st.st_mode)||st.st_uid!=getuid())
+		return 0;
+	return trashReady(dir);
+}
+
+static std::string urlPath(const std::string& p)
+{
+	std::string out;
+	char hex[4];
+	for(unsigned char c:p)
+	{
+		if(isalnum(c)||c=='/'||c=='-'||c=='_'||c=='.'||c=='~')
+			out+=(char)c;
+		else
+		{
+			snprintf(hex,4,"%%%02X",c);
+			out+=hex;
+		}
+	}
+	return out;
+}
+
+// Moves src (an absolute path) to the trash. 0 when done, else -1 with errno set.
+static int trashOne(const std::string& path)
+{
+	std::string src=path;
+	while(src.size()>1&&src.back()=='/')
+		src.pop_back();
+	struct stat st;
+	if(lstat(src.c_str(),&st))
+		return -1;
+	std::string dir;
+	std::string top;
+	if(!trashFor(src,st.st_dev,dir,top))
+	{
+		if(!errno)errno=ENOTSUP;
+		return -1;
+	}
+	// the trash must be on the file's file system: it goes there by a rename
+	struct stat sd;
+	if(stat((dir+"/files").c_str(),&sd)||sd.st_dev!=st.st_dev)
+	{
+		errno=EXDEV;
+		return -1;
+	}
+	std::string name=baseOf(src);
+	std::string where=src;
+	if(!top.empty()&&top!="/"&&where.compare(0,top.size()+1,top+"/")==0)
+		where=where.substr(top.size()+1);
+	else if(top=="/")
+		where=where.substr(1);
+	char when[32];
+	time_t now=time(0);
+	struct tm lt;
+	localtime_r(&now,&lt);
+	strftime(when,sizeof when,"%Y-%m-%dT%H:%M:%S",&lt);
+	std::string text="[Trash Info]\nPath="+urlPath(where)+"\nDeletionDate="+when+"\n";
+	for(int k=1;k<10000;k++)
+	{
+		std::string as=name;
+		if(k>1)
+			as=name+"."+std::to_string(k);
+		std::string info=dir+"/info/"+as+".trashinfo";
+		std::string to=dir+"/files/"+as;
+		struct stat sx;
+		if(!lstat(to.c_str(),&sx))
+			continue;
+		int fd=open(info.c_str(),O_WRONLY|O_CREAT|O_EXCL,0600);
+		if(fd<0)
+		{
+			if(errno==EEXIST)
+				continue;
+			return -1;
+		}
+		ssize_t n=write(fd,text.data(),text.size());
+		close(fd);
+		if(n!=(ssize_t)text.size())
+		{
+			unlink(info.c_str());
+			errno=EIO;
+			return -1;
+		}
+		if(rename(src.c_str(),to.c_str()))
+		{
+			int e=errno;
+			unlink(info.c_str());
+			errno=e;
+			return -1;
+		}
+		return 0;
+	}
+	errno=EEXIST;
+	return -1;
+}
+
+// op 0 copies, 1 moves, 2 deletes, 3 moves to the trash the sources added. A copy or move into an existing
 // directory puts each source in it under its own name; one source can also go to a
 // new name. Returns 0, with fs_error saying why, if the job cannot start.
 static int fs_job_start(int op, const char* dstPath)
@@ -1096,6 +1280,12 @@ static int fs_job_start(int op, const char* dstPath)
 	{
 		for(const std::string& s:jobSrc)
 			planDelete(s);
+		return 1;
+	}
+	if(op==3)
+	{
+		for(const std::string& s:jobSrc)
+			jobAct(A_TRASH,s,"",0,0,0);
 		return 1;
 	}
 	std::string dst=dstPath;
@@ -1353,6 +1543,24 @@ static int jobRun(std::chrono::steady_clock::time_point until)
 		jobNext();
 		return 1;
 	}
+	if(a.kind==A_TRASH)
+	{
+		errno=0;
+		if(trashOne(a.src))
+		{
+			if(errno==ENOTSUP||errno==EXDEV)
+			{
+				lastError="No trash for \""+baseOf(a.src)+"\" on its file system; Shift+F8 deletes it.";
+				jobCloseFiles();
+				jobState=-1;
+				return -1;
+			}
+			return jobFail("Cannot move to the trash");
+		}
+		a.ok=1;
+		jobNext();
+		return 1;
+	}
 	if(a.kind==A_RMDIR)
 	{
 		if(rmdir(a.src.c_str())&&errno!=ENOENT)
@@ -1531,6 +1739,14 @@ static void closeExtra()
 // The program calls it with the terminal given back (TvSuspend), so the command
 // reads and writes the real terminal. Ctrl+C and Ctrl+\ reach the command only.
 // Returns its exit status, 128+n if signal n ended it, or -1 if it could not start.
+static int runPause=1;
+
+// Whether run_here waits for a key after the command, so that its output can be read.
+static void run_pause(int on)
+{
+	runPause=on;
+}
+
 static int run_here(const char* cmd, const char* dir)
 {
 	printf("\n%s$ %s\n",dir,cmd);
@@ -1587,6 +1803,12 @@ static int run_here(const char* cmd, const char* dir)
 	sigaction(SIGINT,&oldInt,0);
 	sigaction(SIGQUIT,&oldQuit,0);
 	sigaction(SIGTSTP,&oldTstp,0);
+	if(!runPause)
+	{
+		printf("\n");
+		fflush(stdout);
+		return status;
+	}
 	if(status>=0)
 		printf("\n[exit code %d] Press any key to return to t2fc",status);
 	else
@@ -2247,6 +2469,7 @@ extern "C" int fs_job_answer_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_job_
 extern "C" int fs_job_info_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_job_info);return 0;}
 extern "C" int fs_job_name_wrapper(ScincVM* s, void*){ScincBoundCall(s,fs_job_name);return 0;}
 extern "C" int run_here_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_here);return 0;}
+extern "C" int run_pause_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_pause);return 0;}
 extern "C" int run_detached_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_detached);return 0;}
 extern "C" int run_has_display_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_has_display);return 0;}
 extern "C" int run_terminal_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_terminal);return 0;}
