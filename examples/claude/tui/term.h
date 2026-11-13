@@ -60,6 +60,8 @@
 [[scinc::dynlink(TERM_DL,"run_has_display_wrapper")]]int run_has_display();
 [[scinc::dynlink(TERM_DL,"run_terminal_wrapper")]]int run_terminal(char* out, int max);
 [[scinc::dynlink(TERM_DL,"run_quote_wrapper")]]void run_quote(char* s, char* out, int max);
+[[scinc::dynlink(TERM_DL,"run_which_wrapper")]]int run_which(char* prog);
+[[scinc::dynlink(TERM_DL,"run_capture_wrapper")]]int run_capture(char* cmd, char* dir, char* dest, int ms);
 
 // The desktop's clipboard, through wl-copy/wl-paste, xclip or xsel. clip_set returns
 // 1 if a clipboard program took the text, 2 if it was sent to the terminal (OSC 52,

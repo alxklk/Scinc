@@ -75,8 +75,9 @@ typedef char* pchar;
 #define CM_RENAME 605
 #define CM_MKDIR 606
 #define CM_DELETE 607
-#define CM_DELPERM 621  // delete, not to the trash
+#define CM_DELPERM 650  // delete, not to the trash
 #define CM_HEXVIEW 608
+#define CM_VIEWRAW 651  // Shift+F3: text or hex, whatever the file is
 #define CM_SELGROUP 609
 #define CM_UNSELGROUP 610
 #define CM_INVERT 611
@@ -88,7 +89,7 @@ typedef char* pchar;
 #define CM_HOME 617
 #define CM_GODIR 618
 #define CM_NEWPANELS 619
-#define CM_PANEL 620    // + panel*10 + one of the PN_ actions below
+#define CM_PANEL 620    // + panel*10 + one of the PN_ actions below: up to 639
 #define CM_RUN 640
 #define CM_OPENSYS 641
 #define CM_OTHERPANEL 642
@@ -201,6 +202,7 @@ int fcTrash=1;              // F8: 0 deletes, 1 moves to the trash, 2 asks which
 int fcConfExit=1;           // asks before quitting
 int fcConfRun=0;            // asks before Enter runs a program
 int fcConfPause=1;          // waits for a key (Enter in a terminal window) after a command
+int fcTypeView=1;           // F3 and quick view know pictures, archives and programs
 int fcAskAtStart=0;         // FcAsk puts the cursor at the start of the text
 int fcAskHist=0;            // and gives its input this history (H_*), once
 int popPanel=-1;
@@ -789,6 +791,139 @@ void FcRight(int x, int y, char* s, int at, int w)
 	TvTextN(x+w-n,y,s,at,n);
 }
 
+// ---------------------------------------------------------------- programs and libraries
+
+// readelf, objdump and nm (GNU binutils, or LLVM's llvm-readelf, llvm-objdump and
+// llvm-nm) tell what is inside executables, libraries and object files: ELF, Windows
+// PE, Mach-O (llvm-objdump only) and static libraries. The view shows a full account,
+// quick view the start of a short one. Without the tools these files are binary,
+// viewed in hex.
+char fcReadelf[16];
+char fcObjdump[16];
+char fcLlvmObjdump[16];
+char fcNm[16];
+
+// Finds the tools in PATH, once at the start.
+void FcBinFind()
+{
+	fcReadelf[0]=0;
+	fcObjdump[0]=0;
+	fcLlvmObjdump[0]=0;
+	fcNm[0]=0;
+	if(run_which("readelf"))StrCpy(&fcReadelf[0],"readelf",16);
+	else if(run_which("llvm-readelf"))StrCpy(&fcReadelf[0],"llvm-readelf",16);
+	if(run_which("llvm-objdump"))StrCpy(&fcLlvmObjdump[0],"llvm-objdump",16);
+	if(run_which("objdump"))StrCpy(&fcObjdump[0],"objdump",16);
+	else StrCpy(&fcObjdump[0],&fcLlvmObjdump[0],16);
+	if(run_which("nm"))StrCpy(&fcNm[0],"nm",16);
+	else if(run_which("llvm-nm"))StrCpy(&fcNm[0],"llvm-nm",16);
+}
+
+int FcByte(char* head, int i)
+{
+	return head[i]&255;
+}
+
+// What the first n bytes of a file say it is: 1 ELF, 2 Windows PE, 3 Mach-O, 4 a
+// universal (fat) Mach-O, 5 a static library; 0 none of them.
+int FcBinKind(char* head, int n)
+{
+	if(n<8)return 0;
+	int b0=FcByte(head,0);
+	int b1=FcByte(head,1);
+	int b2=FcByte(head,2);
+	int b3=FcByte(head,3);
+	if((b0==127)&&(b1=='E')&&(b2=='L')&&(b3=='F'))return 1;
+	if((b0=='M')&&(b1=='Z')&&(n>=64))
+	{
+		int pe=FcByte(head,60)+FcByte(head,61)*256+FcByte(head,62)*65536;
+		if((FcByte(head,63)==0)&&(pe+4<=n))
+			if((head[pe]=='P')&&(head[pe+1]=='E')&&(head[pe+2]==0)&&(head[pe+3]==0))return 2;
+		return 0;
+	}
+	if((b0==254)&&(b1==237)&&(b2==250)&&((b3==206)||(b3==207)))return 3;
+	if(((b0==206)||(b0==207))&&(b1==250)&&(b2==237)&&(b3==254))return 3;
+	// a Java class file starts the same, with its version where the count of
+	// architectures would be
+	if((b0==202)&&(b1==254)&&(b2==186)&&(b3==190))
+		if((FcByte(head,4)==0)&&(FcByte(head,5)==0)&&(FcByte(head,6)==0)&&(FcByte(head,7)<40))return 4;
+	if((b0=='!')&&(b1=='<')&&(head[6]=='>')&&(head[7]==10))
+	{
+		// not a .deb, which is an ar archive too
+		if((n>=21)&&(head[8]=='d')&&(head[9]=='e')&&(head[10]=='b')&&(head[11]=='i'))return 0;
+		if((head[2]=='a')&&(head[3]=='r')&&(head[4]=='c')&&(head[5]=='h'))return 5;
+		if((head[2]=='t')&&(head[3]=='h')&&(head[4]=='i')&&(head[5]=='n'))return 5;
+	}
+	return 0;
+}
+
+// The command that tells about a file of that kind, the short one for brief: 0 if
+// no tool here can read it.
+// It is run in the file's folder, dir, with the bare name.
+int FcBinCmd(char* local, int kind, int brief, char* cmd, int max, char* dir)
+{
+	int slash=-1;
+	int i=0;
+	while(local[i]!=0)
+	{
+		if(local[i]=='/')slash=i;
+		i++;
+	}
+	StrCpy(dir,".",FC_PATH);
+	if(slash==0)StrCpy(dir,"/",FC_PATH);
+	if(slash>0)
+	{
+		StrCpy(dir,local,FC_PATH);
+		dir[slash]=0;
+	}
+	char q[FC_PATH+64];
+	run_quote(&local[slash+1],&q[0],FC_PATH+64);
+	int o=0;
+	cmd[0]=0;
+	if((kind==1)&&(fcReadelf[0]!=0))
+	{
+		o=TvKAdd(cmd,o,max,&fcReadelf[0]);
+		if(brief)o=TvKAdd(cmd,o,max," -W -h -n -d");
+		else o=TvKAdd(cmd,o,max," -W -C -h -n -d -V -S -l -s");
+	}
+	else if(((kind==1)||(kind==2))&&(fcObjdump[0]!=0))
+	{
+		o=TvKAdd(cmd,o,max,&fcObjdump[0]);
+		if(brief)o=TvKAdd(cmd,o,max," -f -p");
+		else o=TvKAdd(cmd,o,max," -x -C");
+	}
+	else if(((kind==3)||(kind==4))&&(fcLlvmObjdump[0]!=0))
+	{
+		o=TvKAdd(cmd,o,max,&fcLlvmObjdump[0]);
+		o=TvKAdd(cmd,o,max," --macho --universal-headers --private-headers");
+		if(!brief)o=TvKAdd(cmd,o,max," --syms -C");
+	}
+	else if((kind==5)&&(fcNm[0]!=0))
+	{
+		o=TvKAdd(cmd,o,max,&fcNm[0]);
+		o=TvKAdd(cmd,o,max," -C");
+	}
+	else if((kind==5)&&(fcObjdump[0]!=0))
+	{
+		o=TvKAdd(cmd,o,max,&fcObjdump[0]);
+		o=TvKAdd(cmd,o,max," -t -C");
+	}
+	else return 0;
+	o=TvKAdd(cmd,o,max," -- ");
+	o=TvKAdd(cmd,o,max,&q[0]);
+	return 1;
+}
+
+// Runs cmd in dir with its output into the file dest: 0, with a message, if it
+// could not.
+int FcBinRun(char* cmd, char* dir, char* dest, int ms, char* err)
+{
+	int st=run_capture(cmd,dir,dest,ms);
+	if(st>=0)return 1;
+	fs_error(err,300);
+	return 0;
+}
+
 // ---------------------------------------------------------------- pictures
 
 // img_dl.so (build_so.sh here) decodes pictures on threads of its own. In a terminal
@@ -1218,10 +1353,14 @@ void PvTick()
 // the start of a text, a hex dump, or what a directory is.
 int fcQuick[FC_MAXP];
 char fcQPath[12288];        // FC_MAXP paths: what each quick view shows
-int fcQKind[FC_MAXP];       // 1 picture, 2 text, 3 binary, 4 directory, 5 unreadable
-char fcQText[16384];        // the start of the last text or binary file shown
-int fcQTextN=0;
+int fcQKind[FC_MAXP];       // 1 picture, 2 text, 3 binary, 4 directory, 5 unreadable,
+                            // 6 archive, 7 program or library (readelf, objdump)
+char fcQText[16384];        // the start of the last text or binary file shown, or of
+int fcQTextN=0;             // the report on it (fcQTextInfo)
 char fcQTextPath[FC_PATH];
+int fcQTextInfo=0;
+int fcQBinKind=0;           // and what kind of program file it is (FcBinKind)
+char fcQBinCmd[FC_PATH+200]; // and the command that told
 char fcQArcPath[FC_PATH];   // the archive whose tree quick view shows
 int fcQArcN=0;
 int fcQScanSeen[FC_MAXP];   // the scan state at the last draw, to draw again when it changes
@@ -1229,9 +1368,43 @@ int fcQScanSeen[FC_MAXP];   // the scan state at the last draw, to draw again wh
 // Reads the start of a file into fcQText, unless it is there already.
 void FcQLoad(char* path)
 {
-	if(StrCmp(&fcQTextPath[0],path)==0)return;
+	if((StrCmp(&fcQTextPath[0],path)==0)&&!fcQTextInfo)return;
 	fcQTextN=FcLoadFile(path,&fcQText[0],16384);
 	StrCpy(&fcQTextPath[0],path,FC_PATH);
+	fcQTextInfo=0;
+}
+
+// The start of a short account of a program or library (readelf or objdump) into
+// fcQText, unless it is there already. A file in an archive is taken out first, if
+// it is not too big to wait for. 0 if there is no account of it.
+int FcQLoadInfo(char* path, int kind)
+{
+	if((StrCmp(&fcQTextPath[0],path)==0)&&fcQTextInfo)return fcQTextN>0;
+	char local[FC_PATH];
+	StrCpy(&local[0],path,FC_PATH);
+	if(FcArcWhere(path)==2)
+	{
+		int size=arc_size(path);
+		if((size<0)||(size>16777216))return 0;
+		if(!arc_temp(path,&local[0],FC_PATH))return 0;
+	}
+	char cmd[FC_PATH+200];
+	char dir[FC_PATH];
+	if(!FcBinCmd(&local[0],kind,1,&cmd[0],FC_PATH+200,&dir[0]))return 0;
+	fcQBinKind=kind;
+	StrCpy(&fcQBinCmd[0],&cmd[0],FC_PATH+200);
+	char temp[FC_PATH];
+	char err[300];
+	if(!arc_tmpname("quick.txt",&temp[0],FC_PATH))return 0;
+	int ok=FcBinRun(&cmd[0],&dir[0],&temp[0],3000,&err[0]);
+	int n=-1;
+	if(ok)n=fs_load(&temp[0],&fcQText[0],16384);
+	arc_tmpdrop(&temp[0]);
+	if(n<=0)return 0;
+	fcQTextN=n;
+	StrCpy(&fcQTextPath[0],path,FC_PATH);
+	fcQTextInfo=1;
+	return 1;
 }
 
 void FcQText(int x, int y, int w, int h)
@@ -1314,8 +1487,9 @@ void FcQUpdate(int p, char* path, int isDir)
 	int kind=4;
 	if(!isDir)
 	{
-		if(FcArcWhere(path)==1)kind=6;
-		else if(FcIsPicture(path))kind=1;
+		// without fcTypeView only text and hex
+		if(fcTypeView&&(FcArcWhere(path)==1))kind=6;
+		else if(fcTypeView&&FcIsPicture(path))kind=1;
 		else
 		{
 			fcQTextPath[0]=0;
@@ -1324,6 +1498,12 @@ void FcQUpdate(int p, char* path, int isDir)
 			if(fcQTextN<0)kind=5;
 			for(int i=0;i<fcQTextN;i++)
 				if(fcQText[i]==0)kind=3;
+			if(fcTypeView&&(fcQTextN>0))
+				if(FcBinKind(&fcQText[0],fcQTextN)!=0)
+				{
+					if(FcQLoadInfo(path,FcBinKind(&fcQText[0],fcQTextN)))kind=7;
+					else FcQLoad(path);
+				}
 		}
 	}
 	fcQKind[p]=kind;
@@ -1516,6 +1696,23 @@ void FcDrawQuick(int p, int x, int y, int w, int h)
 		FcQHex(x,cy,w,chh);
 		StrCpy(&info[0],"binary",120);
 	}
+	else if(kind==7)
+	{
+		// the account, which another panel window's quick view may have replaced
+		if(!FcQLoadInfo(&path[0],fcQBinKind))FcQLoad(&path[0]);
+		FcQText(x,cy,w,chh);
+		// what the file is, and which tool tells
+		int k=0;
+		if(fcQBinKind==1)k=TvKAdd(&info[0],k,120,"ELF");
+		else if(fcQBinKind==2)k=TvKAdd(&info[0],k,120,"Windows PE");
+		else if(fcQBinKind==5)k=TvKAdd(&info[0],k,120,"static library");
+		else k=TvKAdd(&info[0],k,120,"Mach-O");
+		k=TvKAdd(&info[0],k,120,", ");
+		int t=0;
+		while((fcQBinCmd[t]!=0)&&(fcQBinCmd[t]!=' ')&&(t<30))t++;
+		fcQBinCmd[t]=0;
+		k=TvKAdd(&info[0],k,120,&fcQBinCmd[0]);
+	}
 	else if(kind==6)FcQArc(&path[0],x,cy,w,chh,&info[0]);
 	else if(kind==5)
 	{
@@ -1551,6 +1748,7 @@ void FcQInit()
 	}
 	fcQTextPath[0]=0;
 	fcQTextN=0;
+	fcQTextInfo=0;
 }
 
 // Panel p was read again: its files may have changed under the other's quick view.
@@ -2694,15 +2892,62 @@ int PicMouse(int win, int ev, int x, int y)
 	return 0;
 }
 
+// F3 on a program, library or object file: what readelf, objdump or nm say of it, in
+// a read-only window "Info: name", from a temporary file that is gone once it is
+// read. 0 if no tool here reads that kind of file.
+int FcInfoOpen(char* local, char* path, int kind)
+{
+	char cmd[FC_PATH+200];
+	char dir[FC_PATH];
+	if(!FcBinCmd(local,kind,0,&cmd[0],FC_PATH+200,&dir[0]))return 0;
+	// the command is the first line, so it is clear where the rest comes from
+	char shown[FC_PATH+220];
+	char run[FC_PATH*2+500];
+	int o=TvKAdd(&shown[0],0,FC_PATH+220,"$ ");
+	o=TvKAdd(&shown[0],o,FC_PATH+220,&cmd[0]);
+	run_quote(&shown[0],&run[0],FC_PATH*2+500);
+	char line[FC_PATH*2+500];
+	o=TvKAdd(&line[0],0,FC_PATH*2+500,"printf '%s\\n\\n' ");
+	o=TvKAdd(&line[0],o,FC_PATH*2+500,&run[0]);
+	o=TvKAdd(&line[0],o,FC_PATH*2+500,"; ");
+	o=TvKAdd(&line[0],o,FC_PATH*2+500,&cmd[0]);
+	char temp[FC_PATH];
+	char err[300];
+	if(!arc_tmpname("info.txt",&temp[0],FC_PATH))
+	{
+		arc_error(&err[0],300);
+		TvMessage("View",&err[0],0);
+		return 1;
+	}
+	if(!FcBinRun(&line[0],&dir[0],&temp[0],30000,&err[0]))
+	{
+		arc_tmpdrop(&temp[0]);
+		TvMessage("View",&err[0],0);
+		return 1;
+	}
+	int win=OpenFile(&temp[0]);
+	arc_tmpdrop(&temp[0]);
+	if(win<0)return 1;
+	fcLocked[win]=1;
+	ed[win].ro=1;
+	ed[win].path[0]=0;
+	ed[win].stamp=-1;
+	fcView[win]=1;
+	FcSetTitle(win,"Info: ",path);
+	return 1;
+}
+
 // F3: directories are entered, binary files go to the hex viewer, and text opens in a
-// read-only editor window.
+// read-only editor window. With fcTypeView (Options > Edit and view), and unless
+// raw (Shift+F3), archives, pictures and programs get views of their own.
 int ArcOpen(char* path);
 
-void FcViewPath(char* path)
+void FcViewAs(char* path, int raw)
 {
 	if(FcIsDir(path))return;
+	int aware=fcTypeView&&!raw;
 	// an archive opens in an archive window, its tree
-	if(FcArcWhere(path)==1)
+	if(aware&&(FcArcWhere(path)==1))
 	{
 		ArcOpen(path);
 		return;
@@ -2717,7 +2962,7 @@ void FcViewPath(char* path)
 		TvMessage("View",&err[0],0);
 		return;
 	}
-	if(FcIsPicture(path))
+	if(aware&&FcIsPicture(path))
 	{
 		PicOpen(path,fcActive);
 		return;
@@ -2731,11 +2976,13 @@ void FcViewPath(char* path)
 		TvMessage("View",&err[0],0);
 		return;
 	}
-	if(arc_is(&local[0]))
+	if(aware&&arc_is(&local[0]))
 	{
 		ArcOpen(&local[0]);
 		return;
 	}
+	if(aware&&(FcBinKind(&head[0],n)!=0))
+		if(FcInfoOpen(&local[0],path,FcBinKind(&head[0],n)))return;
 	path=&local[0];
 	int binary=0;
 	for(int i=0;i<n;i++)
@@ -2785,13 +3032,28 @@ void FcEditPath(char* path)
 	}
 }
 
+void FcViewPath(char* path)
+{
+	FcViewAs(path,0);
+}
+
 void FcView()
 {
 	int p=fcActive;
 	if(fcCount[p]==0)return;
 	char path[FC_PATH];
 	FcPathOf(p,fcCur[p],&path[0]);
-	FcViewPath(&path[0]);
+	FcViewAs(&path[0],0);
+}
+
+// Shift+F3: the file as text, or in hex if it is binary, whatever kind it is.
+void FcViewRaw()
+{
+	int p=fcActive;
+	if(fcCount[p]==0)return;
+	char path[FC_PATH];
+	FcPathOf(p,fcCur[p],&path[0]);
+	FcViewAs(&path[0],1);
 }
 
 void FcEdit()
@@ -4044,6 +4306,8 @@ void PrefsLoad(char* left, char* right)
 	if(k>=23)fcConfExit=(v[22]!=0);
 	if(k>=24)fcConfRun=(v[23]!=0);
 	if(k>=25)fcConfPause=(v[24]!=0);
+	fcTypeView=1;
+	if(k>=26)fcTypeView=(v[25]!=0);
 	PvSetAspect();
 	img_filter(pvLanczos);
 	if(fcQSecs>600)fcQSecs=600;
@@ -4079,8 +4343,8 @@ void PrefsSave()
 #ifdef TV_GFX
 	scale=GfxScale();
 #endif
-	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
-		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,pvLanczos,fcBarPos[0],fcBarPos[1],edTab,edInvis,tvCellPics,fcTrash,fcConfExit,fcConfRun,fcConfPause,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
+	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
+		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,pvLanczos,fcBarPos[0],fcBarPos[1],edTab,edInvis,tvCellPics,fcTrash,fcConfExit,fcConfRun,fcConfPause,fcTypeView,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -4269,11 +4533,11 @@ void RunPanelPrefs()
 // window, whether they are drawn in pixels or in character cells as in a terminal.
 void RunEditPrefs()
 {
-	int by=11;
+	int by=15;
 #ifdef TV_GFX
-	by=13;
+	by=17;
 #endif
-	int win=TvNewCentered(W_PREFS,"Edit and view",50,by+4,WF_DIALOG);
+	int win=TvNewCentered(W_PREFS,"Edit and view",56,by+4,WF_DIALOG);
 	if(win<0)return;
 	TvAdd(win,C_LABEL,3,2,20,1,"Editor",0);
 	int ln=TvAdd(win,C_CHECK,2,3,30,1,"~L~ine numbers",0);
@@ -4286,21 +4550,25 @@ void RunEditPrefs()
 	int ts=TvAdd(win,C_INPUT,25,6,6,1,"",0);
 	snprintf(&tvCtl[ts].text[0],16,"%d",edTab);
 	tvCtl[ts].val=StrLen(&tvCtl[ts].text[0]);
-	TvAdd(win,C_LABEL,3,8,30,1,"Pictures and videos",0);
-	int lz=TvAdd(win,C_CHECK,2,9,46,1,"Lan~c~zos scaling down (smoother, slower)",0);
+	TvAdd(win,C_LABEL,3,8,40,1,"View (F3) and quick view",0);
+	int tv=TvAdd(win,C_CHECK,2,9,52,1,"~F~ile type-aware: pictures, archives, programs",0);
+	tvCtl[tv].val=fcTypeView;
+	TvAdd(win,C_LABEL,6,10,48,1,"(off: text or hex; Shift+F3 is that always)",0);
+	TvAdd(win,C_LABEL,3,12,30,1,"Pictures and videos",0);
+	int lz=TvAdd(win,C_CHECK,2,13,46,1,"Lan~c~zos scaling down (smoother, slower)",0);
 	tvCtl[lz].val=pvLanczos;
 #ifdef TV_GFX
-	TvAdd(win,C_LABEL,3,10,10,1,"Draw in",0);
-	int pp=TvAdd(win,C_RADIO,13,10,12,1,"~P~ixels",0);
-	int pc=TvAdd(win,C_RADIO,26,10,22,1,"Character c~e~lls",0);
+	TvAdd(win,C_LABEL,3,14,10,1,"Draw in",0);
+	int pp=TvAdd(win,C_RADIO,13,14,12,1,"~P~ixels",0);
+	int pc=TvAdd(win,C_RADIO,26,14,22,1,"Character c~e~lls",0);
 	tvCtl[pp].group=1;
 	tvCtl[pc].group=1;
 	tvCtl[pp].val=!tvCellPics;
 	tvCtl[pc].val=tvCellPics;
 #endif
-	int ok=TvAdd(win,C_BUTTON,11,by,12,2,"O~K~",CM_OK);
+	int ok=TvAdd(win,C_BUTTON,14,by,12,2,"O~K~",CM_OK);
 	tvCtl[ok].isDefault=1;
-	TvAdd(win,C_BUTTON,26,by,12,2,"Cancel",CM_CANCEL);
+	TvAdd(win,C_BUTTON,29,by,12,2,"Cancel",CM_CANCEL);
 	tvWin[win].focus=ln;
 	int res=TvExec(win);
 	if(res==CM_OK)
@@ -4320,6 +4588,17 @@ void RunEditPrefs()
 			else if(tx[k]!=' ')tab=-1000;
 		}
 		if((tab>=1)&&(tab<=16))edTab=tab;
+		if(tvCtl[tv].val!=fcTypeView)
+		{
+			fcTypeView=tvCtl[tv].val;
+			// quick views work out again what to show
+			for(int p=0;p<FC_MAXP;p++)
+				if(fcQuick[p])
+				{
+					fcQPath[p*FC_PATH]=0;
+					PvFree(PV_QUICK+p);
+				}
+		}
 		if(tvCtl[lz].val!=pvLanczos)
 		{
 			pvLanczos=tvCtl[lz].val;
@@ -4425,14 +4704,21 @@ void OpenHelp()
 		"                       or archive\n"
 		"  Ctrl+N               another panel window (up to six)\n"
 		"  Ctrl+Q, Alt+Q        quick view in the other panel: the\n"
-		"                       picture, text or hex dump of the file\n"
+		"                       picture, text or hex dump of the file,\n"
+		"                       or what a program or library holds,\n"
 		"                       under the cursor (Left, Right menus);\n"
 		"                       for a folder what it holds, counted\n"
 		"                       for up to 5 s (Options > Panels)\n"
 		"\n"
 		"Files (the marked ones, or the one under the cursor)\n"
 		"  F3                   view: pictures, text read-only, binary\n"
-		"                       in hex\n"
+		"                       in hex; programs, libraries and object\n"
+		"                       files as readelf, objdump or nm (if\n"
+		"                       installed) tell what is in them: ELF,\n"
+		"                       Windows PE, .a; Mach-O with llvm-objdump\n"
+		"  Shift+F3             view as text or hex, whatever the file\n"
+		"  Options > Edit and view > File type-aware: off, F3 and quick\n"
+		"  view show every file as text or hex.\n"
 		"  F4, Shift+F4         edit, edit a new file\n"
 		"  F5                   copy to the other panel\n"
 		"  Ctrl+C, Ctrl+Insert  the full path to the clipboard (the\n"
@@ -4881,6 +5167,7 @@ int FcPanelCommand(int cmd)
 	TvToFront(fcWin);
 	int p=fcActive;
 	if(cmd==CM_VIEW)FcView();
+	else if(cmd==CM_VIEWRAW)FcViewRaw();
 	else if(cmd==CM_EDIT)FcEdit();
 	else if(cmd==CM_NEWFILE)FcNewFile();
 	else if(cmd==CM_FCOPY)FcCopyMove(0,0);
@@ -5097,6 +5384,7 @@ void FcKeys()
 	TvKeyCmd(W_FC,CM_OTHERPANEL,"Other panel",K_TAB,0,0);
 	TvKeyCmd(W_FC,CM_RUN,"Run",K_F2,K_ALT+K_ENTER,0);
 	TvKeyCmd(W_FC,CM_VIEW,"View",K_F3,0,0);
+	TvKeyCmd(W_FC,CM_VIEWRAW,"View as text or hex",K_F3+TV_KSHIFT,0,0);
 	TvKeyCmd(W_FC,CM_EDIT,"Edit",K_F4,0,0);
 	TvKeyCmd(W_FC,CM_NEWFILE,"New file",K_F4+TV_KSHIFT,0,0);
 	TvKeyCmd(W_FC,CM_FCOPY,"Copy",K_F5,0,0);
@@ -5189,6 +5477,7 @@ int main(int argc, pchar* argv)
 	FcInitState();
 	PvInit();
 	FcQInit();
+	FcBinFind();
 	char left[FC_PATH];
 	char right[FC_PATH];
 	StrCpy(&left[0],".",FC_PATH);
@@ -5209,6 +5498,7 @@ int main(int argc, pchar* argv)
 	itemPanel[0]=PanelMenu("~L~eft",0);
 	TvMenuAdd("~F~ile");
 	TvMenuItem("~V~iew","",CM_VIEW,0);
+	TvMenuItem("View as text o~r~ hex","",CM_VIEWRAW,0);
 	TvMenuItem("~E~dit","",CM_EDIT,0);
 	TvMenuItem("~N~ew file...","",CM_NEWFILE,0);
 	TvMenuItem("~C~opy...","",CM_FCOPY,0);
@@ -5287,6 +5577,7 @@ int main(int argc, pchar* argv)
 	TvMenuItem("R~u~n...","",CM_RUN,0);
 	TvMenuItem("~O~pen with the desktop","",CM_OPENSYS,0);
 	TvMenuItem("~V~iew","",CM_VIEW,0);
+	TvMenuItem("View as te~x~t or hex","",CM_VIEWRAW,0);
 	TvMenuItem("~E~dit","",CM_EDIT,0);
 	TvMenuItem("~C~opy...","",CM_FCOPY,0);
 	TvMenuItem("Copy ~a~s...","",CM_COPYAS,0);

@@ -155,7 +155,7 @@ mouse and Ctrl+Q always work.
 Panel windows in the manner of Midnight Commander, built from `../tui`: its
 desktop, editor, hex viewer, theme editor and dialogs, and `term_dl.so` for the
 file system. Build `../tui/build_so.sh` and this folder's `build_so.sh` (the
-picture decoder `img_dl.so`) once (and `../opengl/build_so.sh` for the OpenGL
+picture decoder `img_dl.so` and archives `arc_dl.so`) once (and `../opengl/build_so.sh` for the OpenGL
 versions), then from this folder run `Scinc t2fc.cpp [left [right]]` in a
 terminal. `t2fc_gfx.cpp`, `t2fc_raster.cpp`, `t2fc_small.cpp`, `t2fc_gl.cpp` and
 `t2fc_gl_small.cpp` show the same thing in a graphic or OpenGL window, as tvdemo's
@@ -245,6 +245,19 @@ within 0.3 s gets a dialog with the entries so far, how much of the file is read
 and Cancel, and quick view shows the same without waiting, and stops the reading
 when the cursor moves on. Options > Lynx-like motion makes Left and Right leave and
 enter directories and archives.
+
+**Programs and libraries.** F3 on an executable, shared library, object file or
+static library shows what `readelf`, `objdump` or `nm` say of it, in a read-only
+window ("Info: name") headed by the command that was run; quick view shows the
+start of a shorter account. ELF files go to `readelf` (header, notes, dynamic
+section, symbol versions, sections, segments and symbols, C++ names demangled),
+Windows PE to `objdump -x` (imports and exports included), `.a` libraries to `nm`,
+and Mach-O to `llvm-objdump`, as GNU objdump does not read it. LLVM's
+`llvm-readelf`, `llvm-objdump` and `llvm-nm` stand in when binutils is missing;
+with no tool for a file, it is viewed in hex like any binary file. Shift+F3 views any file as text,
+or in hex if it is binary. Options > Edit and view > File type-aware turns the
+special views of F3 and quick view (pictures, archives, programs) off: every file
+is then text or hex.
 
 **Colours over ssh.** tui uses 24-bit colour when `COLORTERM` says the terminal
 has it, but ssh does not pass `COLORTERM` on by default. So when it is missing,

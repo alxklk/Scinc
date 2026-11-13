@@ -28,6 +28,7 @@
 #include <sys/wait.h>
 #include <sys/statvfs.h>
 #include <sys/ioctl.h>
+#include <sys/resource.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -1956,6 +1957,82 @@ static void run_quote(const char* s, char* out, int max)
 	copyOut(out,max,q);
 }
 
+// 1 if prog is a program found in PATH.
+static int run_which(const char* prog)
+{
+	return prog[0]&&inPath(prog);
+}
+
+// Runs a shell command in dir with no terminal: its output and errors go to the file
+// dest, at most 16 MB of them. Waits for it at most ms milliseconds, then kills it.
+// Returns its exit status, or -1 if it could not start or took too long.
+static int run_capture(const char* cmd, const char* dir, const char* dest, int ms)
+{
+	int fd=open(dest,O_WRONLY|O_CREAT|O_TRUNC,0600);
+	if(fd<0)
+	{
+		noteError((std::string("Cannot write ")+dest).c_str());
+		return -1;
+	}
+	pid_t pid=fork();
+	if(pid<0)
+	{
+		close(fd);
+		noteError("Cannot start the command");
+		return -1;
+	}
+	if(pid==0)
+	{
+		// a process group of its own, so that a timeout kills the whole pipeline
+		setpgid(0,0);
+		int null=open("/dev/null",O_RDONLY);
+		if(null>=0)
+			dup2(null,0);
+		dup2(fd,1);
+		dup2(fd,2);
+		closeExtra();
+		struct rlimit lim;
+		lim.rlim_cur=16<<20;
+		lim.rlim_max=16<<20;
+		setrlimit(RLIMIT_FSIZE,&lim);
+		signal(SIGINT,SIG_DFL);
+		signal(SIGQUIT,SIG_DFL);
+		signal(SIGTERM,SIG_DFL);
+		signal(SIGHUP,SIG_DFL);
+		signal(SIGPIPE,SIG_DFL);
+		signal(SIGXFSZ,SIG_IGN);
+		if(chdir(dir))
+			_exit(126);
+		execl("/bin/sh","sh","-c",cmd,(char*)0);
+		_exit(127);
+	}
+	close(fd);
+	setpgid(pid,pid);
+	auto start=std::chrono::steady_clock::now();
+	int st=0;
+	while(1)
+	{
+		pid_t r=waitpid(pid,&st,WNOHANG);
+		if(r==pid)
+			break;
+		if(r<0&&errno!=EINTR)
+			return -1;
+		int took=(int)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();
+		if(took>=ms)
+		{
+			kill(-pid,SIGKILL);
+			while(waitpid(pid,&st,0)<0&&errno==EINTR)
+				;
+			lastError="The command took too long";
+			return -1;
+		}
+		usleep(took<20?1000:5000);
+	}
+	if(WIFEXITED(st))
+		return WEXITSTATUS(st);
+	return WIFSIGNALED(st)?128+WTERMSIG(st):-1;
+}
+
 // ---------------------------------------------------------------- the desktop's clipboard
 
 // Runs argv[0] from PATH with in (n bytes) on its stdin, and collects its stdout in
@@ -2474,6 +2551,8 @@ extern "C" int run_detached_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_deta
 extern "C" int run_has_display_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_has_display);return 0;}
 extern "C" int run_terminal_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_terminal);return 0;}
 extern "C" int run_quote_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_quote);return 0;}
+extern "C" int run_which_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_which);return 0;}
+extern "C" int run_capture_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_capture);return 0;}
 extern "C" int clip_set_wrapper(ScincVM* s, void*){ScincBoundCall(s,clip_set);return 0;}
 extern "C" int clip_get_wrapper(ScincVM* s, void*){ScincBoundCall(s,clip_get);return 0;}
 extern "C" int dir_scan_wrapper(ScincVM* s, void*){ScincBoundCall(s,dir_scan);return 0;}
