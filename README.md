@@ -34,11 +34,15 @@ Name|example|meaning
 `int`|`3`, `0xff`|signed integer, underlying type is default 32 bit signed int
 `float`|`3.14`, `.5f`, `-1.5e+3`|IEEE float. Underlying native type is `double`, so, `sizeof(float)` equals `8` in Scinc
 
-Arrays with compile time known sizes, structs, classes, pointers and references can be used to extend types. Struct can contain arrays or other structs, array can contain structs.
+`double` is accepted and is the same as `float`. There are no `long`, `short` or `unsigned` types.
+
+Arrays with compile time known sizes (a literal or a macro; `const int` cannot be used as a size), structs, classes, pointers and references can be used to extend types. Struct can contain arrays or other structs, array can contain structs.
 
 Non capturing lambdas are supported, however not in all contexts: it is possible to init or assign variable or class member with compatible pointer to function type, passing lambda as an argument to a function also possible.
 
-Major type conversions between base types are supported, however, they can cause extra operations and sometimes buggy or missing. It is known issue and author works on fixes and improvements
+Major type conversions between base types are supported, however, they can cause extra operations and sometimes buggy or missing. It is known issue and author works on fixes and improvements. For example, `float += int` fails (write `y += 36.0`), and a `char` array element read directly in a boolean context (`if (s[i])`) is always true (compare with `!= 0`).
+
+Conditional operator `?:` with a function call in either branch silently ends the program, use `if` instead.
 
 `struct`, `class` correspond to their C++ analogs. For now, there are some limitations:
 * no bit fields
@@ -55,6 +59,7 @@ Local variable declarations support initialization, arrays can be initialized wi
 
 Pointer and references are supported, with some (reasonable, from author's sight) limitations:
  * their usage in type and variable declarations is limited to one at a time, i.e. `int * ptrx;` is OK, `int ** ptrptrx;` is not. Need pointer to pointer? Declare intermediate type.
+ * no pointer arithmetic (`p + 1`), index a pointer instead (`p[1]`).
  * multiple star is not supported, including implicit reference. Only one at a time. Need more? Use temporary variable. This is because one star pointer dereference is supported at the byte code level and adding additional indirection would bring significant complications. However, this feature may be implemented later.
 
 
@@ -80,7 +85,7 @@ There is experimental JS backend. VM bytecode is transformed into simplified Jav
 
 ## Runtime library
 
-Interpreter has some bindings to native functions, some kind of runtime library. This is not a part of the language and provided as an example. Can (and probably will) be changed in future.
+Interpreter has some bindings to native functions, some kind of runtime library. This is not a part of the language and provided as an example. Can (and probably will) be changed in future. Many standard functions are missing, for example `floor()`, `fabs()`, `rand()`, `usleep()`.
 
 Following code can be automatically generated, for latter using on IDE for code completion. Run Scinc -hdr <source.cpp>
 
