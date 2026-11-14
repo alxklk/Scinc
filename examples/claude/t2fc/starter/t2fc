@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Starts t2fc (Scinc examples/claude/t2fc) with the left panel on the current
+# directory (this script may be symlinked from PATH; t2fc is found in the folder
+# above the real script). t2fc must run from its own folder (its includes and plugins are found
+# from there), so this goes there first. Folders given as arguments are opened
+# instead, relative ones taken from the current directory.
+# An optional first argument picks a flavour: "t2fc gl" runs t2fc_gl.cpp.
+here="$PWD"
+dir=$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")
+
+usage() {
+	cat <<EOF
+Usage: t2fc [flavour] [left [right]]
+       t2fc -h | --help
+
+Starts the t2fc file manager under Scinc. Without a flavour the usual console
+version (t2fc.cpp) runs; with one, t2fc_<flavour>.cpp runs instead.
+The left panel opens on the current directory unless folders are given
+(relative ones are taken from the current directory).
+
+Flavours:
+EOF
+	for f in "$dir"/t2fc_*.cpp; do
+		[ -e "$f" ] || continue
+		name=${f##*/t2fc_}; name=${name%.cpp}
+		desc=$(sed -n '1s#^// *##p' "$f")
+		printf '  %-10s %s\n' "$name" "$desc"
+	done
+	cat <<EOF
+
+A folder whose name matches a flavour is opened if written as a path (./gl).
+EOF
+}
+
+src=t2fc.cpp
+case "$1" in
+	-h|--help) usage; exit 0 ;;
+esac
+if [ $# -gt 0 ] && [[ "$1" != */* ]] && [ -f "$dir/t2fc_$1.cpp" ]; then
+	src="t2fc_$1.cpp"
+	shift
+elif [ $# -gt 0 ] && [ ! -d "$1" ]; then
+	echo "t2fc: '$1' is neither a flavour nor a folder (see t2fc --help)" >&2
+	exit 1
+fi
+
+args=()
+if [ $# -eq 0 ]; then
+	args=("$here")
+else
+	for a in "$@"; do
+		case "$a" in
+			/*) args+=("$a") ;;
+			*) args+=("$here/$a") ;;
+		esac
+	done
+fi
+cd "$dir" || exit 1
+exec Scinc "$src" "${args[@]}"
