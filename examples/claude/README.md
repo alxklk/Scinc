@@ -128,6 +128,13 @@ Found empirically while writing and running these:
   index a base pointer with an offset instead), and a `?:` that picks between
   two `char*` values crashes at runtime; use an `if`. A `?:` with a function
   call in either branch silently ends the program. Found in `sectorly.cpp`.
+- Globals are not zeroed: the VM fills its memory with `0x12` at the start
+  (small programs happen to get zeros), so a global array without an
+  initializer must be cleared by code before it is read. Found in t2fc.
+- A cast `malloc` result cannot go straight into an array element indexed by
+  a variable (`a[s]=(int*)malloc(n);` gives "impossible type conversion from
+  'void*' to 'int*&'"); assign it to a local pointer first. `malloc` grows the
+  VM's memory and `free` does nothing, so allocate once and reuse.
 
 ## tui/ — a Turbo Vision style text UI (ANSI terminal)
 
@@ -166,7 +173,7 @@ files of those names do. F1 shows every key.
 | Tab, Enter, Backspace, letters | Other panel, enter a directory, the parent; typing starts a quick search: a box on the panel's bottom line, and the cursor on the next name that starts with what is typed (Backspace takes a letter back; Esc, a cursor key, a click or a command ends it; Preferences sets whether case matters) |
 | Insert, right click, `+` `-` `*` | Mark, mark by pattern, unmark by pattern, invert |
 | Shift+keypad `+`/`-`, Alt+`+`/`-` | Mark or unmark the files with the extension (after the last dot) of the one under the cursor; case matters as Preferences > Case-sensitive file search says |
-| F3, F4, Shift+F4 | View (pictures, text read-only, binary in hex; a folder as its folder tree), edit, edit a new file |
+| F3, F4, Shift+F4 | View (pictures, text read-only, binary in hex; a folder as its folder tree; JSON and XML as a tree read by Python's parsers through `datatree.py`, when python3 is installed, with errors and warnings as rows where they occur: `n`/`p` go to them, `*` opens a whole branch; up to 4 tree windows, folder or JSON/XML, are open at once, and a 5th closes the oldest after a warning), edit, edit a new file |
 | Ctrl+Q, Alt+Q | Quick view in the other panel: the picture, text or hex dump of the file under the cursor; for a folder, how many files and folders it holds and their size, counted in the background for up to 5 s (Options > Preferences sets the seconds; 0 turns it off) |
 | F5, Shift+F5, F6, Shift+F6, F7, F8 | Copy, copy in the same directory under a new name, move, rename, make a directory, delete; with progress, Cancel, and questions before replacing |
 | F2, Alt+Enter, Enter on an executable | Run a program (see below) |

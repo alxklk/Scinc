@@ -57,9 +57,12 @@ Variable declarations support only one variable at a time: `int a; int b;` is OK
 
 Local variable declarations support initialization, arrays can be initialized with initialization lists: `int x[3]={1,2,3};`, missing items are implicitly 0. Be aware of the fact, that list is stored in constant segment and event empty list will occupy space, for example, `int x[4]={};` will be compiled into 4*sizeof(int) zero bytes.
 
+Unlike C++, global variables without initializer are not zeroed: VM memory is filled with `0x12` at start (small programs may get zeros by chance). Clear them in code before use.
+
 Pointer and references are supported, with some (reasonable, from author's sight) limitations:
  * their usage in type and variable declarations is limited to one at a time, i.e. `int * ptrx;` is OK, `int ** ptrptrx;` is not. Need pointer to pointer? Declare intermediate type.
  * no pointer arithmetic (`p + 1`), index a pointer instead (`p[1]`).
+ * a cast `malloc` result cannot be assigned directly to an array element indexed by a variable (`a[i]=(int*)malloc(n);` fails), assign it to a local pointer first.
  * multiple star is not supported, including implicit reference. Only one at a time. Need more? Use temporary variable. This is because one star pointer dereference is supported at the byte code level and adding additional indirection would bring significant complications. However, this feature may be implemented later.
 
 
@@ -85,7 +88,7 @@ There is experimental JS backend. VM bytecode is transformed into simplified Jav
 
 ## Runtime library
 
-Interpreter has some bindings to native functions, some kind of runtime library. This is not a part of the language and provided as an example. Can (and probably will) be changed in future. Many standard functions are missing, for example `floor()`, `fabs()`, `rand()`, `usleep()`.
+Interpreter has some bindings to native functions, some kind of runtime library. This is not a part of the language and provided as an example. Can (and probably will) be changed in future. Many standard functions are missing, for example `floor()`, `fabs()`, `rand()`, `usleep()`. `malloc()` grows VM memory and `free()` does nothing, so allocate once and reuse.
 
 Following code can be automatically generated, for latter using on IDE for code completion. Run Scinc -hdr <source.cpp>
 

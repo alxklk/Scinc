@@ -2944,6 +2944,8 @@ int FcInfoOpen(char* local, char* path, int kind)
 // raw (Shift+F3), archives, pictures and programs get views of their own.
 int ArcOpen(char* path);
 int TreeOpen(char* path);
+int FcDataKind(char* path, char* head, int n);
+int DtOpen(char* local, char* path, int kind);
 
 void FcViewAs(char* path, int raw)
 {
@@ -2991,6 +2993,9 @@ void FcViewAs(char* path, int raw)
 	}
 	if(aware&&(FcBinKind(&head[0],n)!=0))
 		if(FcInfoOpen(&local[0],path,FcBinKind(&head[0],n)))return;
+	// JSON and XML: their tree, when python3 is here to read them
+	if(aware&&(FcDataKind(path,&head[0],n)!=0))
+		if(DtOpen(&local[0],path,FcDataKind(path,&head[0],n)))return;
 	path=&local[0];
 	int binary=0;
 	for(int i=0;i<n;i++)
@@ -3349,6 +3354,68 @@ int ArcMouse(int win, int ev, int x, int y)
 	return 1;
 }
 
+// ---------------------------------------------------------------- tree windows
+
+// Folder trees and JSON/XML trees share 4 slots, a window each; up to 4 tree
+// windows are open at once. A slot's tables are allocated the first time it is used
+// (some MB for a JSON/XML tree), and kept. The code of either kind works on global
+// names (trDepth, dtBuf, dtCur...) that TrUse and DtUse point at a slot's tables,
+// saving the counters of the slot that was in use.
+#define TS_N 4
+int tsWin[TS_N];            // the slot's window, -1 free
+int tsAge[TS_N];            // when it opened: the smallest is the oldest
+int tsAgeN=0;
+
+int tsTrHas[TS_N];           // the slot's folder tree tables are allocated
+int tsDtHas[TS_N];           // and its JSON/XML tree tables
+int tsIsTree[TS_N];          // its window is a folder tree
+
+// Scinc fills memory with 0x12 at the start, so globals are not 0 until set.
+void TsInit()
+{
+	for(int s=0;s<TS_N;s++)
+	{
+		tsWin[s]=-1;
+		tsAge[s]=0;
+		tsTrHas[s]=0;
+		tsDtHas[s]=0;
+		tsIsTree[s]=0;
+	}
+}
+
+int TsOf(int win)
+{
+	if(win<0)return -1;
+	for(int s=0;s<TS_N;s++)
+		if(tsWin[s]==win)return s;
+	return -1;
+}
+
+// A slot for a new tree window: a free one, or, all 4 in use, the oldest one's,
+// which closes once the warning is answered with Close. -1 for Cancel.
+int TsGet(char* what)
+{
+	for(int s=0;s<TS_N;s++)
+		if(tsWin[s]<0)return s;
+	int old=0;
+	for(int s=1;s<TS_N;s++)
+		if(tsAge[s]<tsAge[old])old=s;
+	char msg[300];
+	snprintf(&msg[0],300,"4 tree windows are open, as many as there can be.\nThe oldest, %s, closes for the new one.",&tvWin[tsWin[old]].title[0]);
+	if(TvChoose(what,&msg[0],"~C~lose it|Cancel")!=0)return -1;
+	TvClose(tsWin[old]);
+	tsWin[old]=-1;
+	return old;
+}
+
+// A new tree window takes slot s.
+void TsTake(int s, int win)
+{
+	tsWin[s]=win;
+	tsAgeN++;
+	tsAge[s]=tsAgeN;
+}
+
 // ---------------------------------------------------------------- the folder tree
 
 // F3 on a folder: the folders from / down to it and in it, in a window. Right and
@@ -3360,11 +3427,11 @@ int ArcMouse(int win, int ev, int x, int y)
 #define CM_TREEGO 652
 #define TR_MAX 8000
 
-int trDepth[TR_MAX];
-int trState[TR_MAX];        // 0 holds no folders, 1 closed, 2 open
-int trSlot[TR_MAX];
-char trNames[2048000];      // TR_MAX names of 256
-int trFree[TR_MAX];
+int* trDepth;
+int* trState;               // 0 holds no folders, 1 closed, 2 open
+int* trSlot;
+char* trNames;              // TR_MAX names of 256
+int* trFree;
 int trFreeN=0;
 int trN=0;
 int trCur=0;
@@ -3373,6 +3440,17 @@ int trWin=-1;
 char trList[262144];
 int trClickMs=0;
 int trClickRow=-1;
+int trS=-1;                 // the slot those are of
+
+// each slot's, kept while another is in use
+int* tsTrInt[TS_N];
+char* tsTrNames[TS_N];
+int tsTrFreeN[TS_N];
+int tsTrN[TS_N];
+int tsTrCur[TS_N];
+int tsTrTop[TS_N];
+char tsTrRoot[TS_N*FC_PATH];
+char tsTrOpened[TS_N*FC_PATH];   // the folder F3 opened it for
 
 void TrReset()
 {
@@ -3382,6 +3460,62 @@ void TrReset()
 }
 
 char trRoot[FC_PATH];        // the root row's name: / or a whole path
+
+// The folder tree globals to slot s, its tables allocated if they are not yet.
+void TrUse(int s)
+{
+	if(s==trS)return;
+	if(trS>=0)
+	{
+		tsTrFreeN[trS]=trFreeN;
+		tsTrN[trS]=trN;
+		tsTrCur[trS]=trCur;
+		tsTrTop[trS]=trTop;
+		StrCpy(&tsTrRoot[trS*FC_PATH],&trRoot[0],FC_PATH);
+	}
+	trS=s;
+	trClickRow=-1;
+	if(s<0)
+	{
+		trWin=-1;
+		return;
+	}
+	if(!tsTrHas[s])
+	{
+		// (a cast malloc does not go straight into an array element)
+		int* mi=(int*)malloc(4*TR_MAX*4);
+		char* mc=(char*)malloc(TR_MAX*256);
+		tsTrInt[s]=mi;
+		tsTrNames[s]=mc;
+		tsTrHas[s]=1;
+		tsTrN[s]=0;
+		tsTrFreeN[s]=0;
+		tsTrCur[s]=0;
+		tsTrTop[s]=0;
+		tsTrRoot[s*FC_PATH]=0;
+	}
+	int* m=tsTrInt[s];
+	trDepth=&m[0];
+	trState=&m[TR_MAX];
+	trSlot=&m[TR_MAX*2];
+	trFree=&m[TR_MAX*3];
+	trNames=tsTrNames[s];
+	trFreeN=tsTrFreeN[s];
+	trN=tsTrN[s];
+	trCur=tsTrCur[s];
+	trTop=tsTrTop[s];
+	StrCpy(&trRoot[0],&tsTrRoot[s*FC_PATH],FC_PATH);
+	trWin=tsWin[s];
+}
+
+// The slot of a folder tree window, its globals in use: 0 if it is not one.
+int TrFor(int win)
+{
+	int s=TsOf(win);
+	if(s<0)return 0;
+	TrUse(s);
+	return 1;
+}
 
 char* TrName(int i)
 {
@@ -3537,6 +3671,14 @@ int TreeOpen(char* path)
 {
 	char full[FC_PATH];
 	if(!fs_abspath(path,&full[0],FC_PATH))StrCpy(&full[0],path,FC_PATH);
+	// a tree already open for the folder comes to the front, read again
+	int s=-1;
+	for(int k=0;k<TS_N;k++)
+		if((tsWin[k]>=0)&&tsIsTree[k]&&(StrCmp(&tsTrOpened[k*FC_PATH],&full[0])==0))s=k;
+	if(s<0)s=TsGet("Folder tree");
+	if(s<0)return -1;
+	TrUse(s);
+	StrCpy(&tsTrOpened[s*FC_PATH],&full[0],FC_PATH);
 	TrReset();
 	trFreeN--;
 	trSlot[0]=trFree[trFreeN];
@@ -3593,12 +3735,20 @@ int TreeOpen(char* path)
 		if(w>90)w=90;
 		if(w<30)w=tvW;
 		int h=tvH-4;
-		trWin=TvNew(W_TREE,"Folder tree",(tvW-w)/2,2,w,h,WF_RESIZE);
+		// each one a little lower and to the right of the one before
+		int n=0;
+		for(int k=0;k<TS_N;k++)
+			if(tsWin[k]>=0)n++;
+		trWin=TvNew(W_TREE,"Folder tree",(tvW-w)/2+n*2,2+n,w,h-n,WF_RESIZE);
 		if(trWin<0)
 		{
 			TvMessage("Folder tree","Too many windows are open.",0);
 			return -1;
 		}
+		TsTake(s,trWin);
+		tsIsTree[s]=1;
+		FcSetTitle(trWin,"Folders: ",&full[0]);
+		if(full[1]==0)StrCpy(&tvWin[trWin].title[0],"Folders: /",48);
 	}
 	else TvToFront(trWin);
 	// the cursor a third of the way down, so that what is above shows too
@@ -3609,6 +3759,7 @@ int TreeOpen(char* path)
 
 void TrDraw(int win)
 {
+	if(!TrFor(win))return;
 	TWin& t=tvWin[win];
 	TrClamp();
 	TvFill(t.x+1,t.y+1,t.w-2,t.h-2,' ',FC_BG);
@@ -3675,6 +3826,7 @@ void TrDraw(int win)
 // Enter: the active panel goes to the folder, and the tree is done.
 void TrGo(int win)
 {
+	if(!TrFor(win))return;
 	if(trN==0)return;
 	char path[FC_PATH];
 	TrPath(trCur,&path[0]);
@@ -3705,6 +3857,7 @@ int TrParent(int i)
 
 int TrKey(int win, int key)
 {
+	if(!TrFor(win))return 0;
 	int rows=TrRows();
 	if(key==K_UP)trCur--;
 	else if(key==K_DOWN)trCur++;
@@ -3735,6 +3888,7 @@ int TrKey(int win, int key)
 
 int TrMouse(int win, int ev, int x, int y)
 {
+	if(!TrFor(win))return 0;
 	if(ev==EV_WHEEL)
 	{
 		int rows=TrRows();
@@ -3774,6 +3928,645 @@ int TrMouse(int win, int ev, int x, int y)
 	trClickRow=i;
 	trClickMs=now;
 	TrClamp();
+	return 1;
+}
+
+// ---------------------------------------------------------------- JSON and XML trees
+
+// F3 on a JSON or XML file: its tree, in a window like the folder tree. Python's own
+// parsers (json, xml.parsers.expat) read the file, through datatree.py here, which
+// prints a row a line: "depth kind seg<tab>text" (kind b a branch, l a leaf, e an
+// error, w a warning, s a source line). Errors and warnings are rows where they
+// occur, a parse error with the source lines around it. Without python3 the file is
+// text, as before. The rows stay in dtBuf, where the tool's output was read.
+#define W_DATA 69
+#define CM_DATAALL 653
+#define CM_DATANEXT 654
+#define CM_DATAPREV 655
+#define DT_ROWS 200000
+#define DT_BUF 8388608
+#define DT_ERR 0x1C
+#define DT_WARN 0x1E
+
+char fcPython[16];
+char fcDataTool[FC_PATH];
+char* dtBuf;
+int* dtText;                // where the row's text starts in dtBuf
+int* dtSeg;                 // and its part of the path
+int* dtDepth;
+int* dtKind;
+int* dtOpen;
+int* dtVis;                 // the rows shown, those not in closed branches
+int dtN=0;
+int dtVN=0;
+int dtCur=0;                // in dtVis
+int dtTop=0;
+int dtWin=-1;
+char dtInfo[300];
+char dtPath[FC_PATH];       // the file the window shows
+int dtClickMs=0;
+int dtClickRow=-1;
+int dtS=-1;                 // the slot those are of
+
+// each slot's, kept while another is in use
+char* tsDtBuf[TS_N];
+int* tsDtInt[TS_N];
+int tsDtN[TS_N];
+int tsDtVN[TS_N];
+int tsDtCur[TS_N];
+int tsDtTop[TS_N];
+char tsDtInfo[TS_N*300];
+char tsDtPath[TS_N*FC_PATH];
+
+// The JSON/XML tree globals to slot s, its tables allocated if they are not yet.
+void DtUse(int s)
+{
+	if(s==dtS)return;
+	if(dtS>=0)
+	{
+		tsDtN[dtS]=dtN;
+		tsDtVN[dtS]=dtVN;
+		tsDtCur[dtS]=dtCur;
+		tsDtTop[dtS]=dtTop;
+		StrCpy(&tsDtInfo[dtS*300],&dtInfo[0],300);
+		StrCpy(&tsDtPath[dtS*FC_PATH],&dtPath[0],FC_PATH);
+	}
+	dtS=s;
+	dtClickRow=-1;
+	if(s<0)
+	{
+		dtWin=-1;
+		return;
+	}
+	if(!tsDtHas[s])
+	{
+		char* mc=(char*)malloc(DT_BUF);
+		int* mi=(int*)malloc(6*DT_ROWS*4);
+		tsDtBuf[s]=mc;
+		tsDtInt[s]=mi;
+		tsDtHas[s]=1;
+		tsDtN[s]=0;
+		tsDtVN[s]=0;
+		tsDtCur[s]=0;
+		tsDtTop[s]=0;
+		tsDtInfo[s*300]=0;
+		tsDtPath[s*FC_PATH]=0;
+	}
+	int* m=tsDtInt[s];
+	dtText=&m[0];
+	dtSeg=&m[DT_ROWS];
+	dtDepth=&m[DT_ROWS*2];
+	dtKind=&m[DT_ROWS*3];
+	dtOpen=&m[DT_ROWS*4];
+	dtVis=&m[DT_ROWS*5];
+	dtBuf=tsDtBuf[s];
+	dtN=tsDtN[s];
+	dtVN=tsDtVN[s];
+	dtCur=tsDtCur[s];
+	dtTop=tsDtTop[s];
+	StrCpy(&dtInfo[0],&tsDtInfo[s*300],300);
+	StrCpy(&dtPath[0],&tsDtPath[s*FC_PATH],FC_PATH);
+	dtWin=tsWin[s];
+}
+
+// The slot of a JSON/XML tree window, its globals in use: 0 if it is not one.
+int DtFor(int win)
+{
+	int s=TsOf(win);
+	if(s<0)return 0;
+	DtUse(s);
+	return 1;
+}
+
+// python3 and datatree.py, once at the start (from t2fc's folder, where it runs).
+void DtFind()
+{
+	fcPython[0]=0;
+	fcDataTool[0]=0;
+	if(run_which("python3"))StrCpy(&fcPython[0],"python3",16);
+	if(fs_size("datatree.py")>0)
+		if(!fs_abspath("datatree.py",&fcDataTool[0],FC_PATH))fcDataTool[0]=0;
+}
+
+int DtLower(int c)
+{
+	if((c>='A')&&(c<='Z'))return c+32;
+	return c;
+}
+
+// 1 if the name ends with .ext, case aside.
+int DtExt(char* path, char* ext)
+{
+	int n=StrLen(path);
+	int m=StrLen(ext);
+	if(n<m+1)return 0;
+	if(path[n-m-1]!='.')return 0;
+	for(int i=0;i<m;i++)
+		if(DtLower(path[n-m+i])!=ext[i])return 0;
+	return 1;
+}
+
+// What the file is for the tree: 1 JSON, 2 XML (by its name, or for XML a start
+// with <?xml), 0 neither.
+int FcDataKind(char* path, char* head, int n)
+{
+	if(DtExt(path,"json")||DtExt(path,"jsonl")||DtExt(path,"ndjson")||DtExt(path,"geojson"))return 1;
+	if(DtExt(path,"xml")||DtExt(path,"xsd")||DtExt(path,"xsl")||DtExt(path,"xslt")||DtExt(path,"xhtml"))return 2;
+	if(DtExt(path,"rss")||DtExt(path,"atom")||DtExt(path,"gpx")||DtExt(path,"kml")||DtExt(path,"plist"))
+		if((n>0)&&(head[0]=='<'))return 2;
+	int i=0;
+	if((n>=3)&&((head[0]&255)==239)&&((head[1]&255)==187)&&((head[2]&255)==191))i=3;
+	while((i<n)&&((head[i]==' ')||(head[i]==9)||(head[i]==10)||(head[i]==13)))i++;
+	if((i+5<=n)&&(head[i]=='<')&&(head[i+1]=='?')&&(head[i+2]=='x')&&(head[i+3]=='m')&&(head[i+4]=='l'))return 2;
+	return 0;
+}
+
+int DtKids(int i)
+{
+	if(i+1>=dtN)return 0;
+	return dtDepth[i+1]>dtDepth[i];
+}
+
+// The rows shown, keeping the cursor on its row, or on the closed branch it is in.
+void DtBuild()
+{
+	int keep=-1;
+	if((dtVN>0)&&(dtCur<dtVN))keep=dtVis[dtCur];
+	dtVN=0;
+	int i=0;
+	while(i<dtN)
+	{
+		dtVis[dtVN]=i;
+		dtVN++;
+		if(DtKids(i)&&(dtOpen[i]==0))
+		{
+			int d=dtDepth[i];
+			i++;
+			while((i<dtN)&&(dtDepth[i]>d))i++;
+		}
+		else i++;
+	}
+	dtCur=0;
+	for(int k=0;k<dtVN;k++)
+		if(dtVis[k]<=keep)dtCur=k;
+}
+
+// Opens the branches row i is in.
+void DtShow(int i)
+{
+	int d=dtDepth[i];
+	int j=i-1;
+	while((j>=0)&&(d>0))
+	{
+		if(dtDepth[j]<d)
+		{
+			dtOpen[j]=1;
+			d=dtDepth[j];
+		}
+		j--;
+	}
+}
+
+// The cursor to row i, which is shown first.
+void DtGoRow(int i)
+{
+	DtShow(i);
+	DtBuild();
+	for(int k=0;k<dtVN;k++)
+		if(dtVis[k]==i)dtCur=k;
+}
+
+// Reads n bytes of the tool's output in dtBuf into rows; cut: there was more.
+void DtParse(int n, int cut)
+{
+	dtN=0;
+	dtInfo[0]=0;
+	int c=0;
+	while((c<n)&&(dtN<DT_ROWS))
+	{
+		int s=c;
+		while((c<n)&&(dtBuf[c]!=10))c++;
+		if((c>=n)&&cut)break;     // a line cut off
+		dtBuf[c]=0;
+		c++;
+		if((dtBuf[s]=='H')&&(dtBuf[s+1]==' ')&&(dtBuf[s+2]==9))
+		{
+			StrCpy(&dtInfo[0],&dtBuf[s+3],300);
+			continue;
+		}
+		// depth, kind, path part, tab, text; anything else (Python's own
+		// complaints) is an error row as it is
+		int k=s;
+		int d=0;
+		while((dtBuf[k]>='0')&&(dtBuf[k]<='9'))
+		{
+			d=d*10+dtBuf[k]-'0';
+			k++;
+		}
+		int ok=(k>s)&&(dtBuf[k]==' ')&&(dtBuf[k+1]!=0)&&(dtBuf[k+2]==' ');
+		int t=k+3;
+		if(ok)
+		{
+			while((dtBuf[t]!=0)&&(dtBuf[t]!=9))t++;
+			ok=(dtBuf[t]==9);
+		}
+		if(ok)
+		{
+			dtDepth[dtN]=d;
+			dtKind[dtN]=dtBuf[k+1];
+			dtSeg[dtN]=k+3;
+			dtBuf[t]=0;
+			dtText[dtN]=t+1;
+		}
+		else
+		{
+			dtDepth[dtN]=0;
+			dtKind[dtN]='e';
+			dtSeg[dtN]=c-1;       // the line's end: empty
+			dtText[dtN]=s;
+		}
+		dtOpen[dtN]=0;
+		dtN++;
+	}
+	// a row deeper than one under its parent would break the branches
+	for(int i=1;i<dtN;i++)
+		if(dtDepth[i]>dtDepth[i-1]+1)dtDepth[i]=dtDepth[i-1]+1;
+	if(dtN>0)dtDepth[0]=0;
+	if((cut||(c<n))&&(dtN>0))
+	{
+		// the last row says so, a row of its own
+		if(dtN==DT_ROWS)dtN--;
+		dtDepth[dtN]=0;
+		dtKind[dtN]='w';
+		dtBuf[DT_BUF-61]=0;
+		dtSeg[dtN]=DT_BUF-61;
+		dtText[dtN]=DT_BUF-60;
+		StrCpy(&dtBuf[DT_BUF-60],"the tree is too big: the rest is not shown",60);
+		dtOpen[dtN]=0;
+		dtN++;
+	}
+}
+
+// The path of row i, from the path parts of the branches it is in.
+void DtPath(int i, char* out, int max)
+{
+	int chain[256];
+	int n=0;
+	int d=dtDepth[i]+1;
+	int j=i;
+	while((j>=0)&&(n<256)&&(d>0))
+	{
+		if(dtDepth[j]<d)
+		{
+			chain[n]=j;
+			n++;
+			d=dtDepth[j];
+		}
+		j--;
+	}
+	int o=0;
+	out[0]=0;
+	for(int k=n-1;k>=0;k--)o=TvKAdd(out,o,max,&dtBuf[dtSeg[chain[k]]]);
+}
+
+int DtRows()
+{
+	if(dtWin<0)return 1;
+	int r=tvWin[dtWin].h-5;
+	if(r<1)r=1;
+	return r;
+}
+
+void DtClamp()
+{
+	int rows=DtRows();
+	if(dtCur>=dtVN)dtCur=dtVN-1;
+	if(dtCur<0)dtCur=0;
+	if(dtCur<dtTop)dtTop=dtCur;
+	if(dtCur>=dtTop+rows)dtTop=dtCur-rows+1;
+	if(dtTop>dtVN-rows)dtTop=dtVN-rows;
+	if(dtTop<0)dtTop=0;
+}
+
+// Opens the tree of a JSON (kind 1) or XML (2) file, local the file itself (a copy
+// for one in an archive), path its name. 0 if python3 or datatree.py is missing.
+int DtOpen(char* local, char* path, int kind)
+{
+	if((fcPython[0]==0)||(fcDataTool[0]==0))return 0;
+	// a window already showing the file shows it again, read anew
+	int s=-1;
+	for(int k=0;k<TS_N;k++)
+		if((tsWin[k]>=0)&&!tsIsTree[k]&&(StrCmp(&tsDtPath[k*FC_PATH],path)==0))s=k;
+	if(s>=0)
+	{
+		DtUse(s);
+		StrCpy(&dtPath[0],path,FC_PATH);
+	}
+	if(s<0)s=TsGet("View");
+	if(s<0)return 1;
+	DtUse(s);
+	char full[FC_PATH];
+	if(!fs_abspath(local,&full[0],FC_PATH))StrCpy(&full[0],local,FC_PATH);
+	char q[FC_PATH+64];
+	run_quote(&full[0],&q[0],FC_PATH+64);
+	char tq[FC_PATH+64];
+	run_quote(&fcDataTool[0],&tq[0],FC_PATH+64);
+	char cmd[FC_PATH*2+200];
+	int o=TvKAdd(&cmd[0],0,FC_PATH*2+200,&fcPython[0]);
+	o=TvKAdd(&cmd[0],o,FC_PATH*2+200," ");
+	o=TvKAdd(&cmd[0],o,FC_PATH*2+200,&tq[0]);
+	if(kind==1)o=TvKAdd(&cmd[0],o,FC_PATH*2+200," json ");
+	else o=TvKAdd(&cmd[0],o,FC_PATH*2+200," xml ");
+	o=TvKAdd(&cmd[0],o,FC_PATH*2+200,&q[0]);
+	char rows[32];
+	snprintf(&rows[0],32," %i",DT_ROWS-1);
+	o=TvKAdd(&cmd[0],o,FC_PATH*2+200,&rows[0]);
+	char temp[FC_PATH];
+	char err[300];
+	if(!arc_tmpname("tree.txt",&temp[0],FC_PATH))
+	{
+		arc_error(&err[0],300);
+		TvMessage("View",&err[0],0);
+		return 1;
+	}
+	if(!FcBinRun(&cmd[0],"/",&temp[0],60000,&err[0]))
+	{
+		arc_tmpdrop(&temp[0]);
+		TvMessage("View",&err[0],0);
+		return 1;
+	}
+	int n=fs_load(&temp[0],&dtBuf[0],DT_BUF-61);
+	if(n<0)fs_error(&err[0],300);
+	arc_tmpdrop(&temp[0]);
+	if(n<0)
+	{
+		TvMessage("View",&err[0],0);
+		return 1;
+	}
+	DtParse(n,n>=DT_BUF-61);
+	if(dtN==0)
+	{
+		TvMessage("View","python3 said nothing of the file.",0);
+		return 1;
+	}
+	// a small tree opens whole, a big one two levels down; the branches with
+	// errors and warnings open, and the cursor goes to the first error, or else
+	// the first warning
+	for(int i=0;i<dtN;i++)
+	{
+		if(dtN<=3000)dtOpen[i]=1;
+		else if(dtDepth[i]<2)dtOpen[i]=1;
+	}
+	int first=-1;
+	int warn=-1;
+	for(int i=0;i<dtN;i++)
+	{
+		if(dtKind[i]=='e')
+		{
+			dtOpen[i]=1;
+			DtShow(i);
+			if(first<0)first=i;
+		}
+		if(dtKind[i]=='w')
+		{
+			DtShow(i);
+			if(warn<0)warn=i;
+		}
+	}
+	if(first<0)first=warn;
+	if(first<0)first=0;
+	dtVN=0;
+	DtBuild();
+	DtGoRow(first);
+	if(dtWin<0)
+	{
+		int w=tvW-8;
+		if(w>110)w=110;
+		if(w<30)w=tvW;
+		int h=tvH-4;
+		// each one a little lower and to the right of the one before
+		int n=0;
+		for(int k=0;k<TS_N;k++)
+			if(tsWin[k]>=0)n++;
+		dtWin=TvNew(W_DATA,"Tree",(tvW-w)/2+n*2,2+n,w,h-n,WF_RESIZE);
+		if(dtWin<0)
+		{
+			TvMessage("View","Too many windows are open.",0);
+			return 1;
+		}
+		TsTake(s,dtWin);
+		tsIsTree[s]=0;
+	}
+	else TvToFront(dtWin);
+	StrCpy(&dtPath[0],path,FC_PATH);
+	FcSetTitle(dtWin,"Tree: ",path);
+	dtTop=dtCur-DtRows()/3;
+	DtClamp();
+	return 1;
+}
+
+void DtDraw(int win)
+{
+	if(!DtFor(win))return;
+	TWin& t=tvWin[win];
+	DtClamp();
+	TvFill(t.x+1,t.y+1,t.w-2,t.h-2,' ',FC_BG);
+	FcCut(t.x+2,t.y+1,&dtInfo[0],FC_HEAD,t.w-4);
+	char path[FC_PATH];
+	path[0]=0;
+	if(dtVN>0)DtPath(dtVis[dtCur],&path[0],FC_PATH);
+	// a long path shows its end, as panel headers do
+	int start=0;
+	int pw=t.w-4;
+	if(TvCols(&path[0])>pw)
+	{
+		while((path[start]!=0)&&(TvCols(&path[start])>pw-1))
+		{
+			start++;
+			while((path[start]&192)==128)start++;
+		}
+		TvPut(t.x+2,t.y+2,G_LEFT,FC_FILE);
+		TvText(t.x+3,t.y+2,&path[start],FC_FILE);
+	}
+	else TvText(t.x+2,t.y+2,&path[0],FC_FILE);
+	for(int k=1;k<t.w-1;k++)
+		TvPut(t.x+k,t.y+3,G_HORZ,FC_FRAME);
+	int rows=DtRows();
+	int w=t.w-2;
+	// a deep branch shifts left, so that the text stays readable
+	int shift=0;
+	if(dtVN>0)
+	{
+		int dc=dtDepth[dtVis[dtCur]]*2+30-w;
+		if(dc>0)shift=dc;
+	}
+	char line[400];
+	for(int r=0;r<rows;r++)
+	{
+		int v=dtTop+r;
+		if(v>=dtVN)break;
+		int i=dtVis[v];
+		int y=t.y+4+r;
+		int kind=dtKind[i];
+		int at=FC_FILE;
+		if(DtKids(i))at=FC_DIR;
+		if(kind=='e')at=DT_ERR;
+		if(kind=='w')at=DT_WARN;
+		if(kind=='s')at=FC_LINK;
+		if(v==dtCur)
+		{
+			at=FC_CUR;
+			TvFill(t.x+1,y,w,1,' ',at);
+		}
+		int x=t.x+2+dtDepth[i]*2-shift;
+		if((x>=t.x+1)&&DtKids(i))
+		{
+			if(dtOpen[i])TvPut(x,y,G_DOWN,at);
+			else TvPut(x,y,G_RIGHT,at);
+		}
+		int o=0;
+		line[0]=0;
+		if(kind=='e')o=TvKAdd(&line[0],o,400,"error: ");
+		if(kind=='w')o=TvKAdd(&line[0],o,400,"warning: ");
+		o=TvKAdd(&line[0],o,400,&dtBuf[dtText[i]]);
+		int nx=x+2;
+		int cut=0;
+		while(nx<t.x+1)
+		{
+			// a character at a time, whole UTF-8 sequences
+			if(line[cut]==0)break;
+			cut++;
+			while((line[cut]&192)==128)cut++;
+			nx++;
+		}
+		if(line[cut]!=0)FcCut(nx,y,&line[cut],at,t.x+t.w-1-nx);
+	}
+}
+
+// The row above i that holds it, or i at the top.
+int DtParent(int i)
+{
+	int j=i-1;
+	while(j>=0)
+	{
+		if(dtDepth[j]<dtDepth[i])return j;
+		j--;
+	}
+	return i;
+}
+
+void DtToggle(int i)
+{
+	if(!DtKids(i))return;
+	dtOpen[i]=1-dtOpen[i];
+	DtBuild();
+}
+
+// '*': the branch under the cursor opens all the way down.
+void DtOpenAll()
+{
+	if(dtVN==0)return;
+	int i=dtVis[dtCur];
+	int d=dtDepth[i];
+	dtOpen[i]=1;
+	int j=i+1;
+	while((j<dtN)&&(dtDepth[j]>d))
+	{
+		dtOpen[j]=1;
+		j++;
+	}
+	DtBuild();
+	DtClamp();
+}
+
+// n and p: the next or the previous error or warning, wherever it is.
+void DtNextProblem(int dir)
+{
+	if(dtVN==0)return;
+	int i=dtVis[dtCur]+dir;
+	while((i>=0)&&(i<dtN))
+	{
+		if((dtKind[i]=='e')||(dtKind[i]=='w'))
+		{
+			DtGoRow(i);
+			DtClamp();
+			return;
+		}
+		i=i+dir;
+	}
+}
+
+int DtKey(int win, int key)
+{
+	if(!DtFor(win))return 0;
+	int rows=DtRows();
+	if(dtVN==0)return 0;
+	int i=dtVis[dtCur];
+	if(key==K_UP)dtCur--;
+	else if(key==K_DOWN)dtCur++;
+	else if(key==K_PGUP)dtCur=dtCur-rows+1;
+	else if(key==K_PGDN)dtCur=dtCur+rows-1;
+	else if(key==K_HOME)dtCur=0;
+	else if(key==K_END)dtCur=dtVN-1;
+	else if((key==K_RIGHT)||(key=='+'))
+	{
+		if(DtKids(i)&&(dtOpen[i]==0))DtToggle(i);
+		else if((key==K_RIGHT)&&DtKids(i))dtCur++;
+	}
+	else if((key==K_LEFT)||(key=='-'))
+	{
+		if(DtKids(i)&&(dtOpen[i]!=0))DtToggle(i);
+		else if(key==K_LEFT)DtGoRow(DtParent(i));
+	}
+	else if((key==' ')||(key==K_ENTER))DtToggle(i);
+	else if(key==K_BACKSPACE)DtGoRow(DtParent(i));
+	else return 0;
+	DtClamp();
+	return 1;
+}
+
+int DtMouse(int win, int ev, int x, int y)
+{
+	if(!DtFor(win))return 0;
+	if(ev==EV_WHEEL)
+	{
+		int rows=DtRows();
+		dtTop=dtTop-evWheel*3;
+		if(dtTop>dtVN-rows)dtTop=dtVN-rows;
+		if(dtTop<0)dtTop=0;
+		if(dtCur<dtTop)dtCur=dtTop;
+		if(dtCur>=dtTop+rows)dtCur=dtTop+rows-1;
+		return 1;
+	}
+	if(ev!=EV_MDOWN)return 0;
+	int r=y-4;
+	if((r<0)||(r>=DtRows()))return 0;
+	int v=dtTop+r;
+	if(v>=dtVN)return 1;
+	int shift=dtDepth[dtVis[dtCur]]*2+30-(tvWin[win].w-2);
+	if(shift<0)shift=0;
+	dtCur=v;
+	int i=dtVis[v];
+	// the arrow opens or closes the branch, so does a double click
+	int ax=2+dtDepth[i]*2-shift;
+	if((x==ax)&&DtKids(i))
+	{
+		DtToggle(i);
+		dtClickRow=-1;
+		DtClamp();
+		return 1;
+	}
+	int now=term_ms();
+	if((dtClickRow==v)&&(now-dtClickMs<400))
+	{
+		dtClickRow=-1;
+		DtToggle(i);
+		DtClamp();
+		return 1;
+	}
+	dtClickRow=v;
+	dtClickMs=now;
+	DtClamp();
 	return 1;
 }
 
@@ -5163,6 +5956,14 @@ void OpenHelp()
 		"                       files as readelf, objdump or nm (if\n"
 		"                       installed) tell what is in them: ELF,\n"
 		"                       Windows PE, .a; Mach-O with llvm-objdump\n"
+		"  F3 on JSON or XML    its tree, read by Python's parsers (if\n"
+		"                       python3 is installed): Right, Left (+,\n"
+		"                       -, Space, Enter) open and close a\n"
+		"                       branch, * opens all of it; errors and\n"
+		"                       warnings are rows where they occur, n\n"
+		"                       and p go to the next and previous one\n"
+		"  Up to 4 folder, JSON and XML tree windows are open at once;\n"
+		"  a 5th closes the oldest, after a warning.\n"
 		"  Shift+F3             view as text or hex, whatever the file\n"
 		"  F3 on a folder       the tree of folders in it (from / with\n"
 		"                       Options > Panels > whole tree): Right,\n"
@@ -5320,6 +6121,7 @@ void TvAppDraw(int win)
 	else if(type==W_PIC)PicDraw(win);
 	else if(type==W_ARC)ArcDraw(win);
 	else if(type==W_TREE)TrDraw(win);
+	else if(type==W_DATA)DtDraw(win);
 	else if(type==W_THEME)TeDraw(win);
 	else if(type==W_JOB)DrawJob(win);
 	else if(type==W_ARCWAIT)DrawArcWait(win);
@@ -5340,7 +6142,7 @@ int TvAppKey(int win, int key)
 		return FcKey(win,key);
 	}
 	// view windows close with Esc, and F3 as in MC (a command of the keyboard map)
-	if((type==W_HEX)||(type==W_PIC)||(type==W_ARC)||(type==W_TREE)||((type==W_VIEW)&&fcView[win]))
+	if((type==W_HEX)||(type==W_PIC)||(type==W_ARC)||(type==W_TREE)||(type==W_DATA)||((type==W_VIEW)&&fcView[win]))
 	{
 		if(key==K_ESC)
 		{
@@ -5370,6 +6172,7 @@ int TvAppKey(int win, int key)
 	if(type==W_PIC)return PicKey(win,key);
 	if(type==W_ARC)return ArcKey(win,key);
 	if(type==W_TREE)return TrKey(win,key);
+	if(type==W_DATA)return DtKey(win,key);
 	if(type==W_HEX)return HxKey(win,key);
 	if(type==W_THEME)return TeKey(win,key);
 	return 0;
@@ -5406,6 +6209,7 @@ int TvAppMouse(int win, int ev, int x, int y)
 	if(type==W_PIC)return PicMouse(win,ev,x,y);
 	if(type==W_ARC)return ArcMouse(win,ev,x,y);
 	if(type==W_TREE)return TrMouse(win,ev,x,y);
+	if(type==W_DATA)return DtMouse(win,ev,x,y);
 	if(type==W_HEX)return HxMouse(win,ev,x,y);
 	return 0;
 }
@@ -5442,7 +6246,14 @@ void TvAppClosed(int win)
 		free(hxBuf);
 		hxWin=-1;
 	}
-	if(win==trWin)trWin=-1;
+	int ts=TsOf(win);
+	if(ts>=0)
+	{
+		tsWin[ts]=-1;
+		// its counters are not saved over the slot's next tree
+		if(trS==ts)TrUse(-1);
+		if(dtS==ts)DtUse(-1);
+	}
 	if(tvWin[win].type==W_PIC)PvFree(win);
 	if(tvWin[win].type==W_FC)
 	{
@@ -5750,6 +6561,17 @@ void TvAppCommand(int cmd)
 			if(tvWin[top].type==W_TREE)TrGo(top);
 		return;
 	}
+	if((cmd==CM_DATAALL)||(cmd==CM_DATANEXT)||(cmd==CM_DATAPREV))
+	{
+		if(top>=0)
+			if((tvWin[top].type==W_DATA)&&DtFor(top))
+			{
+				if(cmd==CM_DATAALL)DtOpenAll();
+				if(cmd==CM_DATANEXT)DtNextProblem(1);
+				if(cmd==CM_DATAPREV)DtNextProblem(-1);
+			}
+		return;
+	}
 	if((cmd==CM_ARCOPEN)||(cmd==CM_ARCCOPY))
 	{
 		if(top>=0)
@@ -5844,6 +6666,7 @@ void FcKeys()
 	TvKeyContext(W_HEX,TV_ST_ALL,"Hex view");
 	TvKeyContext(W_ARC,TV_ST_ALL,"Archive windows");
 	TvKeyContext(W_TREE,TV_ST_ALL,"Folder tree");
+	TvKeyContext(W_DATA,TV_ST_ALL,"JSON and XML trees");
 
 	TvKeyCmd(TV_ST_ALL,CM_QUIT,"Quit",K_F10,K_ALT+'x',0);
 	TvKeyCmd(TV_ST_ALL,CM_HELP,"Help",K_F1,0,0);
@@ -5942,6 +6765,11 @@ void FcKeys()
 
 	TvKeyCmd(W_TREE,CM_TREEGO,"Go to the folder",K_ENTER,0,0);
 	TvKeyCmd(W_TREE,CM_CLOSE,"Close",K_F3,0,0);
+
+	TvKeyCmd(W_DATA,CM_DATANEXT,"Next error or warning",'n',0,0);
+	TvKeyCmd(W_DATA,CM_DATAPREV,"Previous error or warning",'p',0,0);
+	TvKeyCmd(W_DATA,CM_DATAALL,"Open the whole branch",'*',0,0);
+	TvKeyCmd(W_DATA,CM_CLOSE,"Close",K_F3,0,0);
 }
 
 // A panel's menu: listing mode, sort keys, reverse. Returns its first item.
@@ -5970,6 +6798,8 @@ int main(int argc, pchar* argv)
 	PvInit();
 	FcQInit();
 	FcBinFind();
+	DtFind();
+	TsInit();
 	char left[FC_PATH];
 	char right[FC_PATH];
 	StrCpy(&left[0],".",FC_PATH);
@@ -6140,6 +6970,11 @@ int main(int argc, pchar* argv)
 	TvStatusFor(W_TREE);
 	TvStatusCmd("Go",CM_TREEGO);
 	TvStatusAdd("~Left~ ~Right~ Branch",0,0);
+	TvStatusCmd("Close",CM_CLOSE);
+	TvStatusFor(W_DATA);
+	TvStatusAdd("~Left~ ~Right~ Branch",0,0);
+	TvStatusCmd("All",CM_DATAALL);
+	TvStatusCmd("Next problem",CM_DATANEXT);
 	TvStatusCmd("Close",CM_CLOSE);
 	TvStatusFor(TV_ST_DESK);
 	TvStatusCmd("Panels",CM_NEWPANELS);
