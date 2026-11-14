@@ -62,6 +62,7 @@
 [[scinc::dynlink(TERM_DL,"run_terminal_wrapper")]]int run_terminal(char* out, int max);
 [[scinc::dynlink(TERM_DL,"run_quote_wrapper")]]void run_quote(char* s, char* out, int max);
 [[scinc::dynlink(TERM_DL,"run_which_wrapper")]]int run_which(char* prog);
+[[scinc::dynlink(TERM_DL,"run_env_wrapper")]]int run_env(char* name, char* out, int max);
 [[scinc::dynlink(TERM_DL,"run_capture_wrapper")]]int run_capture(char* cmd, char* dir, char* dest, int ms);
 
 // The desktop's clipboard, through wl-copy/wl-paste, xclip or xsel. clip_set returns

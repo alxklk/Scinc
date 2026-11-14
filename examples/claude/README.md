@@ -267,6 +267,14 @@ the folder. Right and Left (or `+`,
 then; Left on a closed one goes up to its parent. Enter, or a double click, takes
 the active panel to the folder under the cursor. Esc or F3 closes the window.
 
+**Staying in the folder on exit.** A program cannot change the folder of the
+shell that started it, so, as Midnight Commander does with `mc-wrapper.sh`,
+`t2fc/t2fc-cd.sh` defines a shell function `t2fc` that runs the `t2fc` launcher
+found in PATH and then goes to the folder t2fc wrote to the file
+`$T2FC_PWD_FILE` names. t2fc writes it only with Options > System > "Go to the
+panel's folder on exit" on (off by default): the active panel's folder, or the
+folder of the archive it is in. Source the file from `~/.bashrc` to use it.
+
 **Colours over ssh.** tui uses 24-bit colour when `COLORTERM` says the terminal
 has it, but ssh does not pass `COLORTERM` on by default. So when it is missing,
 term_dl asks the terminal itself, which works through ssh too: the 24-bit DECRQSS

@@ -2036,6 +2036,14 @@ static int fs_subdirs(const char* path, char* out, int max, int showHidden)
 	return (int)names.size();
 }
 
+// The environment variable name into out: 1 if it is set and not empty.
+static int run_env(const char* name, char* out, int max)
+{
+	const char* v=getenv(name);
+	copyOut(out,max,v?v:"");
+	return v&&*v;
+}
+
 // 1 if prog is a program found in PATH.
 static int run_which(const char* prog)
 {
@@ -2632,6 +2640,7 @@ extern "C" int run_has_display_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_h
 extern "C" int run_terminal_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_terminal);return 0;}
 extern "C" int run_quote_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_quote);return 0;}
 extern "C" int run_which_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_which);return 0;}
+extern "C" int run_env_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_env);return 0;}
 extern "C" int run_capture_wrapper(ScincVM* s, void*){ScincBoundCall(s,run_capture);return 0;}
 extern "C" int clip_set_wrapper(ScincVM* s, void*){ScincBoundCall(s,clip_set);return 0;}
 extern "C" int clip_get_wrapper(ScincVM* s, void*){ScincBoundCall(s,clip_get);return 0;}

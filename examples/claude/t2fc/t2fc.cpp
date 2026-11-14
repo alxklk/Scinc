@@ -204,6 +204,7 @@ int fcConfRun=0;            // asks before Enter runs a program
 int fcConfPause=1;          // waits for a key (Enter in a terminal window) after a command
 int fcTypeView=1;           // F3 and quick view know pictures, archives and programs
 int fcTreeAll=0;            // F3's folder tree starts at /, not at the folder
+int fcCdExit=0;             // on exit, the shell goes to the active panel's folder
 int fcAskAtStart=0;         // FcAsk puts the cursor at the start of the text
 int fcAskHist=0;            // and gives its input this history (H_*), once
 int popPanel=-1;
@@ -4745,6 +4746,8 @@ void PrefsLoad(char* left, char* right)
 	if(k>=26)fcTypeView=(v[25]!=0);
 	fcTreeAll=0;
 	if(k>=27)fcTreeAll=(v[26]!=0);
+	fcCdExit=0;
+	if(k>=28)fcCdExit=(v[27]!=0);
 	PvSetAspect();
 	img_filter(pvLanczos);
 	if(fcQSecs>600)fcQSecs=600;
@@ -4780,8 +4783,8 @@ void PrefsSave()
 #ifdef TV_GFX
 	scale=GfxScale();
 #endif
-	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
-		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,pvLanczos,fcBarPos[0],fcBarPos[1],edTab,edInvis,tvCellPics,fcTrash,fcConfExit,fcConfRun,fcConfPause,fcTypeView,fcTreeAll,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
+	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
+		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,pvLanczos,fcBarPos[0],fcBarPos[1],edTab,edInvis,tvCellPics,fcTrash,fcConfExit,fcConfRun,fcConfPause,fcTypeView,fcTreeAll,fcCdExit,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -5060,7 +5063,7 @@ void RunEditPrefs()
 // Options > System: what F8 does with the trash, and what is confirmed.
 void RunSysPrefs()
 {
-	int win=TvNewCentered(W_PREFS,"System",52,17,WF_DIALOG);
+	int win=TvNewCentered(W_PREFS,"System",52,21,WF_DIALOG);
 	if(win<0)return;
 	TvAdd(win,C_LABEL,3,2,40,1,"F8 and Delete",0);
 	int tr[3];
@@ -5080,9 +5083,12 @@ void RunSysPrefs()
 	tvCtl[cr].val=fcConfRun;
 	int cp=TvAdd(win,C_CHECK,2,11,46,1,"~W~ait for a key after a command",0);
 	tvCtl[cp].val=fcConfPause;
-	int ok=TvAdd(win,C_BUTTON,12,13,12,2,"O~K~",CM_OK);
+	int cd=TvAdd(win,C_CHECK,2,13,46,1,"~G~o to the panel's folder on exit",0);
+	tvCtl[cd].val=fcCdExit;
+	TvAdd(win,C_LABEL,6,14,44,1,"(the shell function in t2fc-cd.sh does it)",0);
+	int ok=TvAdd(win,C_BUTTON,12,17,12,2,"O~K~",CM_OK);
 	tvCtl[ok].isDefault=1;
-	TvAdd(win,C_BUTTON,27,13,12,2,"Cancel",CM_CANCEL);
+	TvAdd(win,C_BUTTON,27,17,12,2,"Cancel",CM_CANCEL);
 	tvWin[win].focus=tr[fcTrash];
 	if(TvExec(win)==CM_OK)
 	{
@@ -5091,6 +5097,7 @@ void RunSysPrefs()
 		fcConfExit=tvCtl[ce].val;
 		fcConfRun=tvCtl[cr].val;
 		fcConfPause=tvCtl[cp].val;
+		fcCdExit=tvCtl[cd].val;
 		PrefsSave();
 	}
 	TvClose(win);
@@ -5489,6 +5496,31 @@ void TvAppListItem(int win, int ctl, int i, char* out, int max)
 	out[0]=0;
 }
 
+// With fcCdExit, the active panel's folder goes to the file $T2FC_PWD_FILE names,
+// for the shell function in t2fc-cd.sh to go there once t2fc ends: a program cannot
+// change its shell's folder itself. Inside an archive, the archive's folder.
+void FcCdOnExit()
+{
+	if(!fcCdExit)return;
+	char file[FC_PATH];
+	if(!run_env("T2FC_PWD_FILE",&file[0],FC_PATH))return;
+	char dir[FC_PATH];
+	StrCpy(&dir[0],FcDirOf(fcActive),FC_PATH);
+	while((FcArcWhere(&dir[0])!=0)||!fs_isdir(&dir[0]))
+	{
+		int b=EdBase(&dir[0]);
+		if(b<=1)
+		{
+			StrCpy(&dir[0],"/",FC_PATH);
+			break;
+		}
+		dir[b-1]=0;
+	}
+	if(!fs_save_begin(&file[0]))return;
+	fs_save_write(&dir[0],StrLen(&dir[0]));
+	fs_save_end(1);
+}
+
 void FcQuit()
 {
 	// the settings keep the directories of the panel window in front
@@ -5505,6 +5537,7 @@ void FcQuit()
 	{
 		PrefsSave();
 		TvHistSave(HIST_FILE);
+		FcCdOnExit();
 	}
 }
 
