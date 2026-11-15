@@ -2357,6 +2357,81 @@ void TvDrawCtl(int id, TWin& t)
 	}
 }
 
+// Resize handles: both lower corners, an arm up and an arm along, and the middle
+// of the left, right and bottom edges, in single lines over the frame. 3 cells
+// along an edge of 7 cells or more, 1 along a shorter one.
+int TvHandleLen(int n)
+{
+	if(n<7)return 1;
+	return 3;
+}
+
+// The first row of the side handles, below the title row.
+int TvSideHandleY(int h, int n)
+{
+	int s=(h-n)/2;
+	if(s<1)s=1;
+	return s;
+}
+
+void TvResizeHandles(int id, int at)
+{
+	TWin& t=tvWin[id];
+	int x0=t.x;
+	int x1=t.x+t.w-1;
+	int y1=t.y+t.h-1;
+	int ah=TvHandleLen(t.w);
+	int av=TvHandleLen(t.h);
+	TvPut(x0,y1,G_BL,at);
+	TvPut(x1,y1,G_BR,at);
+	for(int i=1;i<ah;i++)
+	{
+		TvPut(x0+i,y1,G_HORZ,at);
+		TvPut(x1-i,y1,G_HORZ,at);
+	}
+	for(int j=1;j<av;j++)
+	{
+		TvPut(x0,y1-j,G_VERT,at);
+		TvPut(x1,y1-j,G_VERT,at);
+	}
+	int sx=(t.w-ah)/2;
+	for(int i=0;i<ah;i++)
+		TvPut(t.x+sx+i,y1,G_HORZ,at);
+	int sy=TvSideHandleY(t.h,av);
+	for(int j=0;j<av;j++)
+	{
+		TvPut(x0,t.y+sy+j,G_VERT,at);
+		TvPut(x1,t.y+sy+j,G_VERT,at);
+	}
+}
+
+// The edges a handle at rx,ry in window win moves: 1 left, 2 right, 4 bottom,
+// added up; 0 if there is no handle there.
+int TvResizePart(int win, int rx, int ry)
+{
+	TWin& t=tvWin[win];
+	if(!(t.flags&WF_RESIZE))return 0;
+	int ah=TvHandleLen(t.w);
+	int av=TvHandleLen(t.h);
+	if(ry==t.h-1)
+	{
+		if((rx>=0)&&(rx<ah))return 5;
+		if((rx>=t.w-ah)&&(rx<t.w))return 6;
+		int sx=(t.w-ah)/2;
+		if((rx>=sx)&&(rx<sx+ah))return 4;
+		return 0;
+	}
+	if((ry<1)||(ry>=t.h))return 0;
+	int side=0;
+	if(rx==0)side=1;
+	if(rx==t.w-1)side=2;
+	if(side==0)return 0;
+	if(ry>=t.h-av)return side+4;
+	int sy=TvSideHandleY(t.h,av);
+	if((ry>=sy)&&(ry<sy+av))return side;
+	return 0;
+}
+
 void TvDrawWin(int id)
 {
 	TWin& t=tvWin[id];
@@ -2419,8 +2494,7 @@ void TvDrawWin(int id)
 			TvPut(t.x+t.w-5,t.y,'[',at);
 			TvPut(t.x+t.w-4,t.y,zoomCh,zoomAt);
 			TvPut(t.x+t.w-3,t.y,']',at);
-			TvPut(t.x+t.w-1,t.y+t.h-1,G_BR,icon);
-			TvPut(t.x+t.w-2,t.y+t.h-1,G_HORZ,icon);
+			TvResizeHandles(id,icon);
 		}
 	}
 	if((t.num>0)&&(t.w>12))
@@ -4810,8 +4884,18 @@ void TvMouse()
 		}
 		else if(dragMode==2)
 		{
-			t.w=evX-t.x+1;
-			t.h=evY-t.y+1;
+			// dragCtl: the edges that move, 1 left, 2 right, 4 bottom
+			if(dragCtl&2)t.w=evX+dragDX-t.x+1;
+			if(dragCtl&4)t.h=evY+dragDY-t.y+1;
+			if(dragCtl&1)
+			{
+				// the right edge stays
+				int right=t.x+t.w-1;
+				int nx=evX+dragDX;
+				if(nx>right-15)nx=right-15;
+				t.w=right-nx+1;
+				t.x=nx;
+			}
 			if(t.w<16)t.w=16;
 			if(t.h<5)t.h=5;
 		}
@@ -4903,13 +4987,24 @@ void TvMouse()
 		dragDY=ry;
 		return;
 	}
-	if((ry==t.h-1)&&(rx>=t.w-2))
-		if(t.flags&WF_RESIZE)
+	// a resize handle, where one shows: a scroll bar or text the application put
+	// on the frame over it keeps its clicks
+	int edges=TvResizePart(win,rx,ry);
+	if(edges>0)
+	{
+		int g=tvCh[evY*TV_MAXW+evX];
+		if((g==G_HORZ)||(g==G_VERT)||(g==G_BL)||(g==G_BR))
 		{
 			dragWin=win;
 			dragMode=2;
+			dragCtl=edges;
+			// how far the edges are from the pointer, so that they do not jump
+			dragDX=t.x+t.w-1-evX;
+			if(edges&1)dragDX=t.x-evX;
+			dragDY=t.y+t.h-1-evY;
 			return;
 		}
+	}
 	int c=TvCtlAt(win,evX,evY);
 	if(c>=0)
 	{
