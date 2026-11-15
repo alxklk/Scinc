@@ -119,6 +119,8 @@ int tvPasteLost=0;  // set if it did not all fit
 #define G_TR 0x2510
 #define G_BL 0x2514
 #define G_BR 0x2518
+#define G_DASHH 0x2504   // ┄
+#define G_DASHV 0x2506   // ┆
 #define G_LIGHT 0x2591
 #define G_MEDIUM 0x2592
 #define G_QUADS 0x259A     // the upper left and lower right quadrants
@@ -1524,7 +1526,7 @@ struct TWin
 	int zy;
 	int zw;
 	int zh;
-	int snapped;  // 1..4: dropped on the left, right, top or bottom edge (tvSnap)
+	int snapped;  // 1 or 2: dropped on the left or right edge (tvSnap)
 	int sw;       // the size before that, back when it is dragged away
 	int sh;
 	int mw;       // a dialog's size when first resized (tvDlgResize), its smallest;
@@ -2377,19 +2379,26 @@ void TvDrawCtl(int id, TWin& t)
 }
 
 // Resize handles: both lower corners, an arm up and an arm along, and the middle
-// of the left, right and bottom edges, in single lines over the frame. 3 cells
-// along an edge of 7 cells or more, 1 along a shorter one.
+// of the left, right and bottom edges, in single lines over the frame. Along the
+// bottom 3 cells (1 below 7), up the sides 2 (1 below 7).
 int TvHandleLen(int n)
 {
 	if(n<7)return 1;
 	return 3;
 }
 
-// The first row of the side handles, below the title row.
+int TvHandleHigh(int h)
+{
+	if(h<7)return 1;
+	return 2;
+}
+
+// The first row of the side handles, or -1 where they would touch a corner.
 int TvSideHandleY(int h, int n)
 {
 	int s=(h-n)/2;
-	if(s<1)s=1;
+	if(s<2)return -1;
+	if(s+n>=h-n)return -1;
 	return s;
 }
 
@@ -2415,7 +2424,7 @@ void TvResizeHandles(int id, int at)
 	int x1=t.x+t.w-1;
 	int y1=t.y+t.h-1;
 	int ah=TvHandleLen(t.w);
-	int av=TvHandleLen(t.h);
+	int av=TvHandleHigh(t.h);
 	TvPut(x0,y1,G_BL,at);
 	TvPut(x1,y1,G_BR,at);
 	for(int i=1;i<ah;i++)
@@ -2432,6 +2441,7 @@ void TvResizeHandles(int id, int at)
 	for(int i=0;i<ah;i++)
 		TvPut(t.x+sx+i,y1,G_HORZ,at);
 	int sy=TvSideHandleY(t.h,av);
+	if(sy<0)return;
 	for(int j=0;j<av;j++)
 	{
 		TvPut(x0,t.y+sy+j,G_VERT,at);
@@ -2451,7 +2461,7 @@ int TvResizePart(int win, int rx, int ry)
 		return 0;
 	}
 	int ah=TvHandleLen(t.w);
-	int av=TvHandleLen(t.h);
+	int av=TvHandleHigh(t.h);
 	if(ry==t.h-1)
 	{
 		if((rx>=0)&&(rx<ah))return 5;
@@ -2467,7 +2477,7 @@ int TvResizePart(int win, int rx, int ry)
 	if(side==0)return 0;
 	if(ry>=t.h-av)return side+4;
 	int sy=TvSideHandleY(t.h,av);
-	if((ry>=sy)&&(ry<sy+av))return side;
+	if((sy>=0)&&(ry>=sy)&&(ry<sy+av))return side;
 	return 0;
 }
 
@@ -3617,6 +3627,8 @@ void TvDrawStatus()
 	}
 }
 
+void TvSnapOutline();
+
 void TvRedraw()
 {
 	tvCurX=-1;
@@ -3625,6 +3637,7 @@ void TvRedraw()
 	TvFill(0,1,tvW,tvH-2,tvDeskCh,A_DESK);
 	for(int i=0;i<tvNZ;i++)
 		TvDrawWin(tvZ[i]);
+	TvSnapOutline();
 	TvDrawMenuBar();
 	TvDrawStatus();
 	TvDrawCombo();
@@ -4062,35 +4075,72 @@ void TvDlgLayout(int win, int ow, int oh)
 	}
 }
 
-// A window dropped with the pointer on a screen edge (tvSnap) takes that half of
-// the desktop: side 1 left, 2 right, 3 top, 4 bottom. It keeps the size it had
-// for when it is dragged away.
+// A window dropped with the pointer on the left or right edge of the screen
+// (tvSnap) takes that half of the desktop, side 1 or 2, and keeps the size it had
+// for when it is dragged away; on the top edge, side 3, it is zoomed to the whole
+// desktop. The bottom edge does nothing.
+void TvSnapRect(int side, int& x, int& y, int& w, int& h)
+{
+	int dh=tvH-2;
+	x=0;
+	y=1;
+	w=tvW;
+	h=dh;
+	if(side==1)w=tvW/2;
+	if(side==2)
+	{
+		x=tvW/2;
+		w=tvW-x;
+	}
+}
+
 void TvSnapPlace(int id)
 {
 	TWin& t=tvWin[id];
-	int dh=tvH-2;
-	t.x=0;
-	t.y=1;
-	t.w=tvW;
-	t.h=dh;
-	if(t.snapped==1)t.w=tvW/2;
-	if(t.snapped==2)
-	{
-		t.x=tvW/2;
-		t.w=tvW-t.x;
-	}
-	if(t.snapped==3)t.h=dh/2;
-	if(t.snapped==4)
-	{
-		t.y=1+dh/2;
-		t.h=dh-dh/2;
-	}
+	TvSnapRect(t.snapped,t.x,t.y,t.w,t.h);
 	tvDirty=1;
 }
+
+// While a window is dragged with the pointer on a screen edge, a dashed frame
+// shows the half it would take.
+int tvSnapShow=0;
+
+void TvSnapOutline()
+{
+	if((dragMode!=1)||(tvSnapShow==0))return;
+	int x=0;
+	int y=0;
+	int w=0;
+	int h=0;
+	TvSnapRect(tvSnapShow,x,y,w,h);
+	int at=A_WIN_ICON;
+	TvClip(0,1,tvW,tvH-1);
+	for(int i=1;i<w-1;i++)
+	{
+		TvPut(x+i,y,G_DASHH,at);
+		TvPut(x+i,y+h-1,G_DASHH,at);
+	}
+	for(int j=1;j<h-1;j++)
+	{
+		TvPut(x,y+j,G_DASHV,at);
+		TvPut(x+w-1,y+j,G_DASHV,at);
+	}
+	TvPut(x,y,G_TL,at);
+	TvPut(x+w-1,y,G_TR,at);
+	TvPut(x,y+h-1,G_BL,at);
+	TvPut(x+w-1,y+h-1,G_BR,at);
+}
+
+void TvZoom(int id);
 
 void TvSnap(int id, int side)
 {
 	TWin& t=tvWin[id];
+	if(side==3)
+	{
+		if(!t.zoomed)TvZoom(id);
+		return;
+	}
 	if(!t.snapped)
 	{
 		t.sw=t.w;
@@ -4107,7 +4157,6 @@ int TvSnapSide(int x, int y)
 	if(x<=0)return 1;
 	if(x>=tvW-1)return 2;
 	if(y<=0)return 3;
-	if(y>=tvH-1)return 4;
 	return 0;
 }
 
@@ -5017,6 +5066,7 @@ void TvMouse()
 		{
 			int mode=dragMode;
 			int win=dragWin;
+			tvSnapShow=0;
 			int ctl=dragCtl;
 			dragMode=0;
 			dragWin=-1;
@@ -5083,8 +5133,18 @@ void TvMouse()
 				t.h=t.sh;
 				if(dragDX>=t.w-6)dragDX=t.w/2;
 			}
+			if(t.zoomed&&tvSnap)
+			{
+				// a zoomed window likewise
+				t.zoomed=0;
+				t.w=t.zw;
+				t.h=t.zh;
+				if(dragDX>=t.w-6)dragDX=t.w/2;
+			}
 			t.x=evX-dragDX;
 			t.y=evY-dragDY;
+			tvSnapShow=0;
+			if(tvSnap&&(t.flags&WF_RESIZE))tvSnapShow=TvSnapSide(evX,evY);
 			if(t.y<1)t.y=1;
 			if(t.y>tvH-2)t.y=tvH-2;
 			if(t.x>tvW-4)t.x=tvW-4;

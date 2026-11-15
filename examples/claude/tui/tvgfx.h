@@ -283,10 +283,26 @@ void GfxV(int x, int y0, int y1, int th, int col)
 	tvG.fillrect(x-th/2,y0,th,y1-y0+1,col);
 }
 
+// Dashes of 2 px with gaps of 2, on the screen's own grid so that they run on
+// from cell to cell.
+void GfxDashH(int x0, int x1, int y, int col)
+{
+	for(int x=x0;x<=x1;x++)
+		if((x&3)<2)tvG.fillrect(x,y,1,1,col);
+}
+
+void GfxDashV(int x, int y0, int y1, int col)
+{
+	for(int y=y0;y<=y1;y++)
+		if((y&3)<2)tvG.fillrect(x,y,1,1,col);
+}
+
 // Arms of a light or heavy box character, as 2 bits per direction N,E,S,W:
-// 0 none, 1 light, 2 heavy. Returns -1 if ch is not one of them.
+// 0 none, 1 light, 2 heavy, 3 light dashed. Returns -1 if ch is not one of them.
 int GfxArms(int ch)
 {
+	if(ch==0x2504)return 0x33<<2;      // ┄
+	if(ch==0x2506)return 0x33;         // ┆
 	if(ch==0x2500)return 0x11<<2;      // ─  E,W
 	if(ch==0x2501)return 0x22<<2;      // ━
 	if(ch==0x2502)return 0x11;         // │  N,S
@@ -340,6 +356,10 @@ void GfxArmsDraw(int arms, int px, int py, int col)
 	if(w==2)GfxH(px,cx+1,cy,3,col);
 	if(e==1)GfxH(cx,r,cy,1,col);
 	if(e==2)GfxH(cx-1,r,cy,3,col);
+	if(n==3)GfxDashV(cx,py,cy,col);
+	if(s==3)GfxDashV(cx,cy,b,col);
+	if(w==3)GfxDashH(px,cx,cy,col);
+	if(e==3)GfxDashH(cx,r,cy,col);
 }
 
 // The double lines of window frames run 2 px either side of the middle.

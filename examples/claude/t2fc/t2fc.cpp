@@ -5906,7 +5906,7 @@ void RunUiPrefs()
 	int win=TvNewCentered(W_PREFS,"Interface",56,14,WF_DIALOG);
 	if(win<0)return;
 	TvAdd(win,C_LABEL,3,2,40,1,"Windows",0);
-	int sn=TvAdd(win,C_CHECK,2,3,50,1,"~H~alf the screen when dropped on a screen edge",0);
+	int sn=TvAdd(win,C_CHECK,2,3,50,1,"~H~alf the screen when dropped on a side, all on the top",0);
 	tvCtl[sn].val=tvSnap;
 	int mh=TvAdd(win,C_CHECK,2,4,50,1,"~R~esize handles on the corners and edges",0);
 	tvCtl[mh].val=tvMoreHandles;
@@ -6046,9 +6046,10 @@ void OpenHelp()
 		"Windows\n"
 		"  Drag a title bar to move a window, and the handles on its\n"
 		"  lower corners and left, right and bottom edges to resize it.\n"
-		"  Dropped with the pointer on an edge of the screen, a window\n"
-		"  takes that half of it, and its own size again when dragged\n"
-		"  away. Options > Interface: dropping on an edge, the handles\n"
+		"  Dropped with the pointer on the left or right edge of the\n"
+		"  screen, a window takes that half of it, and its own size\n"
+		"  again when dragged away; on the top edge it is zoomed.\n"
+		"  Options > Interface: dropping on an edge, the handles\n"
 		"  (or the bottom right corner alone), and dialogs that can be\n"
 		"  made bigger, their lists and fields growing.\n"
 		"\n"

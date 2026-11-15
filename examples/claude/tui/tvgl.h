@@ -142,9 +142,12 @@ void GlV(int slot, int x, int y0, int y1, int th)
 }
 
 // Arms of a light or heavy box character, 2 bits per direction packed as
-// N | E<<2 | S<<4 | W<<6: 0 none, 1 light, 2 heavy. -1 if ch is not one of them.
+// N | E<<2 | S<<4 | W<<6: 0 none, 1 light, 2 heavy, 3 light dashed. -1 if ch is
+// not one of them.
 int GlArms(int ch)
 {
+	if(ch==0x2504)return 0x33<<2;      // ┄
+	if(ch==0x2506)return 0x33;         // ┆
 	if(ch==0x2500)return 0x11<<2;      // ─
 	if(ch==0x2501)return 0x22<<2;      // ━
 	if(ch==0x2502)return 0x11;         // │
@@ -203,6 +206,19 @@ int GlShape(int slot, int ch)
 		if(w==2)GlH(slot,0,cx+1,cy,3);
 		if(e==1)GlH(slot,cx,r,cy,1);
 		if(e==2)GlH(slot,cx-1,r,cy,3);
+		// dashes of 2 px with gaps of 2
+		for(int k=0;k<GL_H;k++)
+			if((k&3)<2)
+			{
+				if((n==3)&&(k<=cy))GlRect(slot,cx,k,1,1,255);
+				if((s==3)&&(k>=cy))GlRect(slot,cx,k,1,1,255);
+			}
+		for(int k=0;k<GL_W;k++)
+			if((k&3)<2)
+			{
+				if((w==3)&&(k<=cx))GlRect(slot,k,cy,1,1,255);
+				if((e==3)&&(k>=cx))GlRect(slot,k,cy,1,1,255);
+			}
 		return 1;
 	}
 	// double lines run 2 px either side of the middle

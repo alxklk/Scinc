@@ -746,7 +746,7 @@ void RunPrefs()
 	tvCtl[prefMinCtl].count=29;
 	tvCtl[prefMinCtl].val=svMinutes-1;
 	TvAdd(win,C_LABEL,3,10,40,1,"Interface",0);
-	int sn=TvAdd(win,C_CHECK,2,11,44,1,"~H~alf the screen when dropped on an edge",0);
+	int sn=TvAdd(win,C_CHECK,2,11,44,1,"~H~alf screen on a side, all on the top",0);
 	tvCtl[sn].val=tvSnap;
 	int mh=TvAdd(win,C_CHECK,2,12,44,1,"~R~esize handles on corners and edges",0);
 	tvCtl[mh].val=tvMoreHandles;
@@ -1344,8 +1344,9 @@ void OpenHelp()
 		"Mouse\n"
 		"  Drag a title bar to move a window, and the handles on its\n"
 		"  lower corners and on its left, right and bottom edges to\n"
-		"  resize it. Dropped with the pointer on an edge of the\n"
-		"  screen, a window takes that half of it. Options,\n"
+		"  resize it. Dropped with the pointer on the left or right\n"
+		"  edge of the screen, a window takes that half of it, and on\n"
+		"  the top edge the whole of it. Options,\n"
 		"  Preferences, Interface turns these off, and lets dialogs\n"
 		"  be made bigger.\n"
 		"  Click the box on the left of the title to close the\n"
