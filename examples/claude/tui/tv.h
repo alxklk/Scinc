@@ -1524,6 +1524,11 @@ struct TWin
 	int zy;
 	int zw;
 	int zh;
+	int snapped;  // 1..4: dropped on the left, right, top or bottom edge (tvSnap)
+	int sw;       // the size before that, back when it is dragged away
+	int sh;
+	int mw;       // a dialog's size when first resized (tvDlgResize), its smallest;
+	int mh;       // 0 before
 	int focus;
 	int a;
 	int b;
@@ -1552,6 +1557,8 @@ struct TCtl
 	int count;  // the item count of a virtual list
 	int hist;   // an input's history list (TvInputHistory), 0 for none
 	int hpos;   // the entry it shows, -1 for what was being typed
+	int anchor; // how it follows a resized dialog: 1 wider, 2 taller, 4 down,
+	            // 8 right, 16 right by half (TvDlgAnchors)
 	char text[200];
 };
 
@@ -1730,9 +1737,17 @@ int dragMode=0;      // 1 move, 2 resize, 3 pressed control, 4 captured by the a
 int dragDX=0;
 int dragDY=0;
 int dragCtl=-1;
+int dragW=0;         // the size of a window being resized, before the last move
+int dragH=0;
 int pressedInside=0;
 int tvTitleWin=-1;   // the window whose title was clicked last, and when, for double clicks
 int tvTitleMs=0;
+
+// Interface options, for the program to set and save:
+int tvSnap=1;         // a window dropped with the pointer on a screen edge takes that half
+int tvMoreHandles=1;  // resize handles on both lower corners and three edges, or the
+                      // bottom right corner only
+int tvDlgResize=0;    // dialogs can be made bigger, their lists and fields growing
 
 int TvTop()
 {
@@ -1803,6 +1818,9 @@ int TvNew(int type, char* title, int x, int y, int w, int h, int flags)
 	t.w=w;
 	t.h=h;
 	t.zoomed=0;
+	t.snapped=0;
+	t.mw=0;
+	t.mh=0;
 	t.focus=-1;
 	t.a=0;
 	t.b=0;
@@ -1889,6 +1907,7 @@ int TvAdd(int win, int type, int x, int y, int w, int h, char* text, int cmd)
 	c.count=0;
 	c.hist=0;
 	c.hpos=-1;
+	c.anchor=0;
 	StrCpy(&c.text[0],text,200);
 	if(TvFocusable(type))
 		if(tvWin[win].focus<0)tvWin[win].focus=id;
@@ -2374,9 +2393,24 @@ int TvSideHandleY(int h, int n)
 	return s;
 }
 
+// A window that can be resized: an ordinary one, or a dialog with tvDlgResize.
+int TvCanResize(int id)
+{
+	TWin& t=tvWin[id];
+	if(t.flags&WF_RESIZE)return 1;
+	if(tvDlgResize&&(t.flags&WF_DIALOG))return 1;
+	return 0;
+}
+
 void TvResizeHandles(int id, int at)
 {
 	TWin& t=tvWin[id];
+	if(!tvMoreHandles)
+	{
+		TvPut(t.x+t.w-1,t.y+t.h-1,G_BR,at);
+		TvPut(t.x+t.w-2,t.y+t.h-1,G_HORZ,at);
+		return;
+	}
 	int x0=t.x;
 	int x1=t.x+t.w-1;
 	int y1=t.y+t.h-1;
@@ -2410,7 +2444,12 @@ void TvResizeHandles(int id, int at)
 int TvResizePart(int win, int rx, int ry)
 {
 	TWin& t=tvWin[win];
-	if(!(t.flags&WF_RESIZE))return 0;
+	if(!TvCanResize(win))return 0;
+	if(!tvMoreHandles)
+	{
+		if((ry==t.h-1)&&(rx>=t.w-2)&&(rx<t.w))return 6;
+		return 0;
+	}
 	int ah=TvHandleLen(t.w);
 	int av=TvHandleLen(t.h);
 	if(ry==t.h-1)
@@ -2494,8 +2533,8 @@ void TvDrawWin(int id)
 			TvPut(t.x+t.w-5,t.y,'[',at);
 			TvPut(t.x+t.w-4,t.y,zoomCh,zoomAt);
 			TvPut(t.x+t.w-3,t.y,']',at);
-			TvResizeHandles(id,icon);
 		}
+		if(TvCanResize(id))TvResizeHandles(id,icon);
 	}
 	if((t.num>0)&&(t.w>12))
 		TvPut(t.x+t.w-7,t.y,TvNumChar(t.num),at);
@@ -3919,6 +3958,159 @@ void TvReadEvent(int timeoutMs)
 
 // ---------------------------------------------------------------- behaviour
 
+// A dialog made bigger (tvDlgResize): a list, field or progress bar with nothing
+// to its right grows wider (a slider keeps its width, for the value programs write
+// beside it), and a list or view with no other below it taller; what is to the
+// right of a widening control or below a growing one moves with it, and buttons
+// below everything else go down and stay centred. Worked out once, from the
+// dialog's own layout, when it is first resized.
+int TvRowsMeet(TCtl& a, TCtl& b)
+{
+	return (a.y<b.y+b.h)&&(b.y<a.y+a.h);
+}
+
+int TvColsMeet(TCtl& a, TCtl& b)
+{
+	return (a.x<b.x+b.w)&&(b.x<a.x+a.w);
+}
+
+int TvTallCtl(TCtl& c)
+{
+	if((c.type==C_LIST)||(c.type==C_VIEW))
+		if(c.h>=3)return 1;
+	return 0;
+}
+
+void TvDlgAnchors(int win)
+{
+	int low=0;   // the bottom of the lowest control that is not a button
+	for(int i=0;i<TV_MAXCTL;i++)
+	{
+		TCtl& c=tvCtl[i];
+		if(c.used&&(c.win==win))
+		{
+			c.anchor=0;
+			if((c.type!=C_BUTTON)&&(c.y+c.h>low))low=c.y+c.h;
+		}
+	}
+	for(int i=0;i<TV_MAXCTL;i++)
+	{
+		TCtl& c=tvCtl[i];
+		if(c.used&&(c.win==win))
+		{
+			int wide=(c.type==C_LIST)||(c.type==C_VIEW)||(c.type==C_INPUT)||(c.type==C_COMBO)||(c.type==C_PROGRESS);
+			int tall=TvTallCtl(c);
+			for(int j=0;j<TV_MAXCTL;j++)
+			{
+				TCtl& d=tvCtl[j];
+				if(d.used&&(d.win==win)&&(j!=i))
+				{
+					if((d.x>=c.x+c.w)&&TvRowsMeet(c,d))wide=0;
+					if((d.y>=c.y+c.h)&&TvColsMeet(c,d)&&TvTallCtl(d))tall=0;
+				}
+			}
+			if(wide)c.anchor=c.anchor|1;
+			if(tall)c.anchor=c.anchor|2;
+		}
+	}
+	for(int i=0;i<TV_MAXCTL;i++)
+	{
+		TCtl& c=tvCtl[i];
+		if(c.used&&(c.win==win))
+		{
+			int right=0;
+			int down=0;
+			for(int j=0;j<TV_MAXCTL;j++)
+			{
+				TCtl& d=tvCtl[j];
+				if(d.used&&(d.win==win)&&(j!=i))
+				{
+					if((d.anchor&1)&&(d.x+d.w<=c.x)&&TvRowsMeet(c,d))right=1;
+					if((d.anchor&2)&&(d.y+d.h<=c.y)&&TvColsMeet(c,d))down=1;
+				}
+			}
+			if((c.type==C_BUTTON)&&(c.y>=low))down=1;
+			if(!(c.anchor&1))
+			{
+				if(right)c.anchor=c.anchor|8;
+				else if((c.type==C_BUTTON)&&(c.y>=low))c.anchor=c.anchor|16;
+			}
+			if(!(c.anchor&2))
+				if(down)c.anchor=c.anchor|4;
+		}
+	}
+}
+
+// Moves and sizes the controls of dialog win, which was ow*oh, for its size now.
+void TvDlgLayout(int win, int ow, int oh)
+{
+	TWin& t=tvWin[win];
+	int dw=t.w-ow;
+	int dh=t.h-oh;
+	int half=(t.w-t.mw)/2-(ow-t.mw)/2;
+	for(int i=0;i<TV_MAXCTL;i++)
+	{
+		TCtl& c=tvCtl[i];
+		if(c.used&&(c.win==win))
+		{
+			if(c.anchor&1)c.w=c.w+dw;
+			if(c.anchor&2)c.h=c.h+dh;
+			if(c.anchor&4)c.y=c.y+dh;
+			if(c.anchor&8)c.x=c.x+dw;
+			if(c.anchor&16)c.x=c.x+half;
+		}
+	}
+}
+
+// A window dropped with the pointer on a screen edge (tvSnap) takes that half of
+// the desktop: side 1 left, 2 right, 3 top, 4 bottom. It keeps the size it had
+// for when it is dragged away.
+void TvSnapPlace(int id)
+{
+	TWin& t=tvWin[id];
+	int dh=tvH-2;
+	t.x=0;
+	t.y=1;
+	t.w=tvW;
+	t.h=dh;
+	if(t.snapped==1)t.w=tvW/2;
+	if(t.snapped==2)
+	{
+		t.x=tvW/2;
+		t.w=tvW-t.x;
+	}
+	if(t.snapped==3)t.h=dh/2;
+	if(t.snapped==4)
+	{
+		t.y=1+dh/2;
+		t.h=dh-dh/2;
+	}
+	tvDirty=1;
+}
+
+void TvSnap(int id, int side)
+{
+	TWin& t=tvWin[id];
+	if(!t.snapped)
+	{
+		t.sw=t.w;
+		t.sh=t.h;
+	}
+	t.snapped=side;
+	t.zoomed=0;
+	TvSnapPlace(id);
+}
+
+// The edge the pointer is on for a drop, or 0.
+int TvSnapSide(int x, int y)
+{
+	if(x<=0)return 1;
+	if(x>=tvW-1)return 2;
+	if(y<=0)return 3;
+	if(y>=tvH-1)return 4;
+	return 0;
+}
+
 void TvZoom(int id)
 {
 	if(id<0)return;
@@ -3943,6 +4135,7 @@ void TvZoom(int id)
 		t.w=tvW;
 		t.h=tvH-2;
 		t.zoomed=1;
+		t.snapped=0;
 	}
 	tvDirty=1;
 }
@@ -3954,6 +4147,7 @@ void TvCascade()
 	{
 		TWin& t=tvWin[tvZ[i]];
 		t.zoomed=0;
+		t.snapped=0;
 		t.x=n*2;
 		t.y=1+n;
 		if(t.flags&WF_RESIZE)
@@ -3984,6 +4178,7 @@ void TvTile()
 		if(t.flags&WF_RESIZE)
 		{
 			t.zoomed=0;
+			t.snapped=0;
 			t.x=(n%cols)*cw;
 			t.y=1+(n/cols)*ch;
 			t.w=cw;
@@ -4826,6 +5021,11 @@ void TvMouse()
 			dragMode=0;
 			dragWin=-1;
 			dragCtl=-1;
+			if((mode==1)&&tvSnap&&(tvWin[win].flags&WF_RESIZE))
+			{
+				int side=TvSnapSide(evX,evY);
+				if(side>0)TvSnap(win,side);
+			}
 			if(!pressedInside)return;
 			if(mode==3)
 				if(tvCtl[ctl].used)TvSelect(win,ctl);
@@ -4875,6 +5075,14 @@ void TvMouse()
 		}
 		if(dragMode==1)
 		{
+			if(t.snapped)
+			{
+				// dragged away from its edge: its own size again, under the pointer
+				t.snapped=0;
+				t.w=t.sw;
+				t.h=t.sh;
+				if(dragDX>=t.w-6)dragDX=t.w/2;
+			}
 			t.x=evX-dragDX;
 			t.y=evY-dragDY;
 			if(t.y<1)t.y=1;
@@ -4896,8 +5104,23 @@ void TvMouse()
 				t.w=right-nx+1;
 				t.x=nx;
 			}
-			if(t.w<16)t.w=16;
-			if(t.h<5)t.h=5;
+			int mw=16;
+			int mh=5;
+			if(t.flags&WF_DIALOG)
+			{
+				mw=t.mw;
+				mh=t.mh;
+			}
+			if(t.w<mw)
+			{
+				if(dragCtl&1)t.x=t.x+t.w-mw;
+				t.w=mw;
+			}
+			if(t.h<mh)t.h=mh;
+			t.snapped=0;
+			if(t.flags&WF_DIALOG)TvDlgLayout(dragWin,dragW,dragH);
+			dragW=t.w;
+			dragH=t.h;
 		}
 		t.zoomed=0;
 		return;
@@ -5002,6 +5225,14 @@ void TvMouse()
 			dragDX=t.x+t.w-1-evX;
 			if(edges&1)dragDX=t.x-evX;
 			dragDY=t.y+t.h-1-evY;
+			if((t.flags&WF_DIALOG)&&(t.mw==0))
+			{
+				t.mw=t.w;
+				t.mh=t.h;
+				TvDlgAnchors(win);
+			}
+			dragW=t.w;
+			dragH=t.h;
 			return;
 		}
 	}
@@ -5156,6 +5387,7 @@ void TvCheckSize()
 				t.w=tvW;
 				t.h=tvH-2;
 			}
+			if(t.snapped)TvSnapPlace(i);
 			if(t.y>tvH-2)t.y=tvH-2;
 			if(t.x>tvW-4)t.x=tvW-4;
 		}

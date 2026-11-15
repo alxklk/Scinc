@@ -652,17 +652,18 @@ int prefsThemeCtl=-1; // the theme combo box of the open Preferences
 
 // The settings file holds: theme, saver on, saver minutes, saver kind, line numbers,
 // wrap, the saver numbering (3 has Random at 7, 2 had it at 6, none at 4), and the
-// pixel size of a graphic window, and the desktop pattern.
+// pixel size of a graphic window, the desktop pattern, and the Interface options
+// (tvSnap, tvMoreHandles, tvDlgResize).
 void PrefsLoad()
 {
 	char buf[64];
 	int n=fs_load(CFG_FILE,&buf[0],63);
 	if(n<=0)return;
 	buf[n]=0;
-	int v[9];
+	int v[12];
 	int k=0;
 	int i=0;
-	while((k<9)&&(buf[i]!=0))
+	while((k<12)&&(buf[i]!=0))
 	{
 		if((buf[i]>='0')&&(buf[i]<='9'))
 		{
@@ -697,6 +698,12 @@ void PrefsLoad()
 	}
 	if((k>=8)&&(v[7]<=4))prefScale=v[7];
 	if((k>=9)&&(v[8]<TE_DESKN))teDeskPick=v[8];
+	if(k>=12)
+	{
+		tvSnap=(v[9]!=0);
+		tvMoreHandles=(v[10]!=0);
+		tvDlgResize=(v[11]!=0);
+	}
 }
 
 void PrefsSave()
@@ -705,7 +712,7 @@ void PrefsSave()
 #ifdef TV_GFX
 	prefScale=GfxScale();
 #endif
-	snprintf(&buf[0],64,"%i %i %i %i %i %i 6 %i %i\n",prefTheme,svOn,svMinutes,svKind,edLineNums,edWrap,prefScale,teDeskPick);
+	snprintf(&buf[0],64,"%i %i %i %i %i %i 6 %i %i %i %i %i\n",prefTheme,svOn,svMinutes,svKind,edLineNums,edWrap,prefScale,teDeskPick,tvSnap,tvMoreHandles,tvDlgResize);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -717,7 +724,7 @@ int prefMinCtl=-1;   // the saver delay slider of the open dialog
 
 void RunPrefs()
 {
-	int win=TvNewCentered(W_PREFS,"Preferences",48,15,WF_DIALOG);
+	int win=TvNewCentered(W_PREFS,"Preferences",48,19,WF_DIALOG);
 	if(win<0)return;
 	TvAdd(win,C_LABEL,3,2,10,1,"~T~heme",0);
 	char names[200];
@@ -738,9 +745,16 @@ void RunPrefs()
 	prefMinCtl=TvAdd(win,C_SLIDER,14,8,20,1,"",0);
 	tvCtl[prefMinCtl].count=29;
 	tvCtl[prefMinCtl].val=svMinutes-1;
-	int ok=TvAdd(win,C_BUTTON,10,11,12,2,"O~K~",CM_OK);
+	TvAdd(win,C_LABEL,3,10,40,1,"Interface",0);
+	int sn=TvAdd(win,C_CHECK,2,11,44,1,"~H~alf the screen when dropped on an edge",0);
+	tvCtl[sn].val=tvSnap;
+	int mh=TvAdd(win,C_CHECK,2,12,44,1,"~R~esize handles on corners and edges",0);
+	tvCtl[mh].val=tvMoreHandles;
+	int dr=TvAdd(win,C_CHECK,2,13,44,1,"Dialogs can be made ~b~igger",0);
+	tvCtl[dr].val=tvDlgResize;
+	int ok=TvAdd(win,C_BUTTON,10,16,12,2,"O~K~",CM_OK);
 	tvCtl[ok].isDefault=1;
-	TvAdd(win,C_BUTTON,25,11,12,2,"Cancel",CM_CANCEL);
+	TvAdd(win,C_BUTTON,25,16,12,2,"Cancel",CM_CANCEL);
 	tvWin[win].focus=th;
 	int res=TvExec(win);
 	if(res==CM_OK)
@@ -750,6 +764,9 @@ void RunPrefs()
 		svKind=tvCtl[kind].val;
 		svMinutes=tvCtl[prefMinCtl].val+1;
 		teDeskPick=tvCtl[dk].val;
+		tvSnap=tvCtl[sn].val;
+		tvMoreHandles=tvCtl[mh].val;
+		tvDlgResize=tvCtl[dr].val;
 		PrefsSave();
 	}
 	else teDeskPick=oldDesk;
@@ -1327,7 +1344,10 @@ void OpenHelp()
 		"Mouse\n"
 		"  Drag a title bar to move a window, and the handles on its\n"
 		"  lower corners and on its left, right and bottom edges to\n"
-		"  resize it.\n"
+		"  resize it. Dropped with the pointer on an edge of the\n"
+		"  screen, a window takes that half of it. Options,\n"
+		"  Preferences, Interface turns these off, and lets dialogs\n"
+		"  be made bigger.\n"
 		"  Click the box on the left of the title to close the\n"
 		"  window, and the arrow on the right to zoom it.\n"
 		"  Drag a scroll bar thumb, or use the wheel, to scroll.\n"

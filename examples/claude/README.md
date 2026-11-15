@@ -149,7 +149,7 @@ Run `./build_so.sh` once, then `Scinc tvdemo.cpp [file]` from this folder.
 
 | File | What it does |
 |------|--------------|
-| `tv.h` | The framework: screen buffer that sends only changed cells, key and xterm mouse decoding, windows (move, resize, zoom, cascade, tile), menus, and button, check box, radio button, input line and list box controls |
+| `tv.h` | The framework: screen buffer that sends only changed cells, key and xterm mouse decoding, windows (move, resize by corners and edges, snap to half the screen on an edge, zoom, cascade, tile; dialogs optionally resizable), menus, and button, check box, radio button, input line and list box controls |
 | `tvedit.h` | The text editor: C/C++ syntax colours, selection by keyboard and mouse (Shift with the cursor keys, by words with Ctrl too; Alt+Shift selects a block of columns, which is cut, copied, deleted and pasted as a block, padding short lines with spaces; in t2fc F3 and Shift+F3 start selecting with the plain cursor keys, for terminals that keep Shift+Up and the like for themselves), the selected text, when within one line, lit wherever else it occurs on screen, undo and redo, clipboard, find and replace, go to line, auto-indent, UTF-8. It keeps line ends and permissions, saves through a temporary file, warns about unsaved changes and about files changed on disk, and opens as read-only any file it could not save unchanged |
 | `tvdemo.cpp` | File browser and editor windows, calculator, calendar, ASCII table, sliding puzzle and a dialog using every control |
 | `term.h`, `term_dl.cpp` | The native terminal library. It restores the terminal on exit, on a crash and on most signals |

@@ -61,6 +61,7 @@ typedef char* pchar;
 #define CM_PREFPANELS 516 // Options > Panels
 #define CM_PREFEDIT 517  // Options > Edit and view
 #define CM_PREFSYS 518   // Options > System
+#define CM_PREFUI 519    // Options > Interface
 #define CM_LINENUMS 506
 #define CM_WRAP 507
 #define CM_LYNX 508
@@ -5541,6 +5542,9 @@ void PrefsLoad(char* left, char* right)
 	if(k>=27)fcTreeAll=(v[26]!=0);
 	fcCdExit=0;
 	if(k>=28)fcCdExit=(v[27]!=0);
+	if(k>=29)tvSnap=(v[28]!=0);
+	if(k>=30)tvMoreHandles=(v[29]!=0);
+	if(k>=31)tvDlgResize=(v[30]!=0);
 	PvSetAspect();
 	img_filter(pvLanczos);
 	if(fcQSecs>600)fcQSecs=600;
@@ -5576,8 +5580,8 @@ void PrefsSave()
 #ifdef TV_GFX
 	scale=GfxScale();
 #endif
-	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
-		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,pvLanczos,fcBarPos[0],fcBarPos[1],edTab,edInvis,tvCellPics,fcTrash,fcConfExit,fcConfRun,fcConfPause,fcTypeView,fcTreeAll,fcCdExit,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
+	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
+		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,pvLanczos,fcBarPos[0],fcBarPos[1],edTab,edInvis,tvCellPics,fcTrash,fcConfExit,fcConfRun,fcConfPause,fcTypeView,fcTreeAll,fcCdExit,tvSnap,tvMoreHandles,tvDlgResize,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -5896,6 +5900,33 @@ void RunSysPrefs()
 	TvClose(win);
 }
 
+// Options > Interface: how windows are moved and resized.
+void RunUiPrefs()
+{
+	int win=TvNewCentered(W_PREFS,"Interface",56,14,WF_DIALOG);
+	if(win<0)return;
+	TvAdd(win,C_LABEL,3,2,40,1,"Windows",0);
+	int sn=TvAdd(win,C_CHECK,2,3,50,1,"~H~alf the screen when dropped on a screen edge",0);
+	tvCtl[sn].val=tvSnap;
+	int mh=TvAdd(win,C_CHECK,2,4,50,1,"~R~esize handles on the corners and edges",0);
+	tvCtl[mh].val=tvMoreHandles;
+	TvAdd(win,C_LABEL,6,5,46,1,"(off: the bottom right corner only)",0);
+	int dr=TvAdd(win,C_CHECK,2,7,50,1,"~D~ialogs can be made bigger",0);
+	tvCtl[dr].val=tvDlgResize;
+	int ok=TvAdd(win,C_BUTTON,14,10,12,2,"O~K~",CM_OK);
+	tvCtl[ok].isDefault=1;
+	TvAdd(win,C_BUTTON,29,10,12,2,"Cancel",CM_CANCEL);
+	tvWin[win].focus=sn;
+	if(TvExec(win)==CM_OK)
+	{
+		tvSnap=tvCtl[sn].val;
+		tvMoreHandles=tvCtl[mh].val;
+		tvDlgResize=tvCtl[dr].val;
+		PrefsSave();
+	}
+	TvClose(win);
+}
+
 void DrawPrefs(int win)
 {
 	TWin& t=tvWin[win];
@@ -6011,6 +6042,15 @@ void OpenHelp()
 		"  after a command.\n"
 		"  Command > Open with the desktop: the desktop's own program\n"
 		"  for the file (xdg-open)\n"
+		"\n"
+		"Windows\n"
+		"  Drag a title bar to move a window, and the handles on its\n"
+		"  lower corners and left, right and bottom edges to resize it.\n"
+		"  Dropped with the pointer on an edge of the screen, a window\n"
+		"  takes that half of it, and its own size again when dragged\n"
+		"  away. Options > Interface: dropping on an edge, the handles\n"
+		"  (or the bottom right corner alone), and dialogs that can be\n"
+		"  made bigger, their lists and fields growing.\n"
 		"\n"
 		"Picture windows\n"
 		"  + -, mouse wheel     zoom in, out\n"
@@ -6605,6 +6645,7 @@ void TvAppCommand(int cmd)
 	else if(cmd==CM_PREFPANELS)RunPanelPrefs();
 	else if(cmd==CM_PREFEDIT)RunEditPrefs();
 	else if(cmd==CM_PREFSYS)RunSysPrefs();
+	else if(cmd==CM_PREFUI)RunUiPrefs();
 	else if(cmd==CM_THEMEED)
 	{
 		int r=TeRun(prefTheme);
@@ -6680,6 +6721,7 @@ void FcKeys()
 	TvKeyCmd(TV_ST_ALL,CM_PREFPANELS,"Panel options",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_PREFEDIT,"Edit and view options",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_PREFSYS,"System options",0,0,0);
+	TvKeyCmd(TV_ST_ALL,CM_PREFUI,"Interface options",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_THEMEED,"Theme editor",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_KEYS,"Keyboard",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_LINENUMS,"Line numbers",0,0,0);
@@ -6875,6 +6917,7 @@ int main(int argc, pchar* argv)
 	TvMenuItem("~P~anels...","",CM_PREFPANELS,0);
 	TvMenuItem("~E~dit and view...","",CM_PREFEDIT,0);
 	TvMenuItem("~S~ystem...","",CM_PREFSYS,0);
+	TvMenuItem("~I~nterface...","",CM_PREFUI,0);
 	TvMenuLine();
 	TvMenuItem("~T~heme editor...","",CM_THEMEED,0);
 	TvMenuItem("~K~eyboard...","",CM_KEYS,0);
