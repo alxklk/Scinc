@@ -1454,12 +1454,27 @@ void TvFrame(int x, int y, int w, int h, int dbl, int at)
 // A cell under a window's shadow. Cells of the theme's colours take the shadow's;
 // cells of colours of their own (the desktop gradient, pictures) keep their pattern
 // and get darker, since the shadow's two colours would turn their half blocks into
-// stripes.
+// stripes. A shadow falls on a cell once a redraw: a cell already in shadow (it has
+// the attribute a shadow gave it this redraw) stays as it is.
+int tvShadeGen=0;            // counts redraws
+int tvShadeG[TV_CELLS];      // the redraw a shadow last fell on the cell in
+int tvShadeAt[TV_CELLS];     // and the attribute it gave it
+
+void TvShadowSet(int i, int at);
+
 void TvShadowCell(int px, int py)
 {
 	if((px<clipX0)||(px>=clipX1)||(py<clipY0)||(py>=clipY1))return;
 	int i=py*TV_MAXW+px;
 	int at=tvAt[i];
+	if((tvShadeG[i]==tvShadeGen)&&(tvShadeAt[i]==at))return;
+	TvShadowSet(i,at);
+	tvShadeG[i]=tvShadeGen;
+	tvShadeAt[i]=tvAt[i];
+}
+
+void TvShadowSet(int i, int at)
+{
 	if(at&TV_RGB)
 	{
 		int f=TvTo15(TvShade(TvAtFg(at)));
@@ -1475,6 +1490,8 @@ void TvShadowCell(int px, int py)
 			tvAt[i]=TV_ROLE|(r+TV_MAXH);
 			return;
 		}
+		// already a gradient row in shadow
+		if((r>=R_GRAD+TV_MAXH)&&(r<R_GRAD+TV_MAXH*2))return;
 	}
 	else if(at&TV_C256)
 	{
@@ -3845,6 +3862,11 @@ void TvDrawDesk()
 
 void TvRedraw()
 {
+	// a new redraw for TvShadowCell; the marks start cleared, as globals may not be
+	if(tvShadeGen==0)
+		for(int i=0;i<TV_CELLS;i++)
+			tvShadeG[i]=0;
+	tvShadeGen++;
 	tvCurX=-1;
 	tvPixN=0;
 	TvClip(0,0,tvW,tvH);
