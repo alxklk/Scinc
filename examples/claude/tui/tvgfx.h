@@ -464,6 +464,20 @@ int GfxShape(int ch, int px, int py, int fg, int bg)
 		return 1;
 	}
 	if(GfxDouble(ch,px,py,fg))return 1;
+	if((ch==0x2571)||(ch==0x2572))
+	{
+		// corner to corner, 2 px wide, so that they join from cell to cell
+		for(int y=0;y<GFX_CH;y++)
+		{
+			int x=y*(GFX_CW-1)/(GFX_CH-1);
+			if(ch==0x2571)x=GFX_CW-1-x;
+			int x2=x+1;
+			if(x2>=GFX_CW)x2=x-1;
+			tvG.fillrect(px+x,py+y,1,1,fg);
+			tvG.fillrect(px+x2,py+y,1,1,fg);
+		}
+		return 1;
+	}
 	if(ch==0x2591)tvG.fillrect(px,py,GFX_CW,GFX_CH,GfxMix(bg,fg,64));
 	else if(ch==0x2592)tvG.fillrect(px,py,GFX_CW,GFX_CH,GfxMix(bg,fg,128));
 	else if(ch==0x2593)tvG.fillrect(px,py,GFX_CW,GFX_CH,GfxMix(bg,fg,192));

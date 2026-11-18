@@ -168,7 +168,10 @@ int tvVga[8];
 #define TH_MONO 2
 #define TH_CUSTOM 3
 int tvTheme=0;
-int tvDeskCh=G_LIGHT;      // the desktop's pattern, as the theme in use wants it
+int tvDeskCh=G_LIGHT;      // the desktop's pattern, as the theme in use wants it, or
+                           // one of the striped ones below
+#define TV_DESK_VSTRIPES -1   // columns of light and medium shade by turns
+#define TV_DESK_DIAGONAL -2   // diagonal stripes of space, light and medium shade
 int tvFg[16];
 int tvBg[16];
 int tvTrueColor=1;   // the terminal shows 24-bit colours; otherwise themes use xterm's 256
@@ -3629,12 +3632,37 @@ void TvDrawStatus()
 
 void TvSnapOutline();
 
+void TvDrawDesk()
+{
+	if(tvDeskCh>=0)
+	{
+		TvFill(0,1,tvW,tvH-2,tvDeskCh,A_DESK);
+		return;
+	}
+	for(int y=1;y<tvH-1;y++)
+		for(int x=0;x<tvW;x++)
+		{
+			int ch=G_LIGHT;
+			if(tvDeskCh==TV_DESK_VSTRIPES)
+			{
+				if(x&1)ch=G_MEDIUM;
+			}
+			else
+			{
+				int k=(x+y)%3;
+				if(k==0)ch=' ';
+				if(k==2)ch=G_MEDIUM;
+			}
+			TvPut(x,y,ch,A_DESK);
+		}
+}
+
 void TvRedraw()
 {
 	tvCurX=-1;
 	tvPixN=0;
 	TvClip(0,0,tvW,tvH);
-	TvFill(0,1,tvW,tvH-2,tvDeskCh,A_DESK);
+	TvDrawDesk();
 	for(int i=0;i<tvNZ;i++)
 		TvDrawWin(tvZ[i]);
 	TvSnapOutline();

@@ -1727,9 +1727,9 @@ void TeLoadThemes()
 
 // The desktop's pattern: 0 as the theme has it, or one of these.
 int teDeskPick=0;
-char* teDeskNames="As the theme has it|Light shade \xe2\x96\x91|Medium shade \xe2\x96\x92|Quadrants \xe2\x96\x9a|Checker board \xf0\x9f\xae\x95|Braille dots \xe2\xa2\x95";
-int teDeskChars[5]={G_LIGHT,G_MEDIUM,G_QUADS,G_CHECKER,G_BRAILLE};
-#define TE_DESKN 6
+char* teDeskNames="As the theme has it|Light shade \xe2\x96\x91|Medium shade \xe2\x96\x92|Quadrants \xe2\x96\x9a|Checker board \xf0\x9f\xae\x95|Braille dots \xe2\xa2\x95|Vertical stripes \xe2\x96\x91\xe2\x96\x92|Diagonal stripes  \xe2\x96\x91\xe2\x96\x92";
+int teDeskChars[7]={G_LIGHT,G_MEDIUM,G_QUADS,G_CHECKER,G_BRAILLE,TV_DESK_VSTRIPES,TV_DESK_DIAGONAL};
+#define TE_DESKN 8
 
 // Puts theme i in use.
 void TeUseTheme(int i)

@@ -716,8 +716,10 @@ int LfMouse(int win, int ev, int x, int y)
 #define SV_MAZE 7
 #define SV_OBJ 8
 #define SV_NYAN 9
-#define SV_KINDS 10
-#define SV_RANDOM 10   // the setting only: a kind chosen at each start
+#define SV_PRINT 10    // 10 PRINT: a maze of random diagonals, typed line by line
+#define SV_SOLVE 11    // a maze built and then solved, step by step
+#define SV_KINDS 12
+#define SV_RANDOM 12   // the setting only: a kind chosen at each start
 #define SV_NSTARS 220
 
 int svOn=1;
@@ -4146,6 +4148,320 @@ void SvInit()
 	}
 }
 
+// ---- 10 PRINT
+// The one-line maze of the old home computers: a cursor types / or \ at random,
+// line after line, and the screen scrolls up when it is full. The lines change
+// colour slowly down the screen.
+int prCell[TV_CELLS];  // 0 space, 1 /, 2 \, rows of TV_MAXW
+int prRowCol[TV_MAXH]; // each row's colour, xterm-256
+int prRow=0;           // where the cursor is
+int prCol=0;
+int prW=0;             // the size typed at, the biggest view's; 0 before the start
+int prH=0;
+int prSeenW=0;         // the biggest view drawn since the last frame
+int prSeenH=0;
+int prLine=0;          // lines typed, for the colours
+int prPal[12]={196,202,208,214,220,154,48,51,45,33,99,201};
+
+void PrReset()
+{
+	prW=prSeenW;
+	prH=prSeenH;
+	if(prW<1)prW=tvW;
+	if(prH<1)prH=tvH;
+	if(prW>TV_MAXW)prW=TV_MAXW;
+	if(prH>TV_MAXH)prH=TV_MAXH;
+	for(int i=0;i<TV_CELLS;i++)
+		prCell[i]=0;
+	prRow=0;
+	prCol=0;
+	prRowCol[0]=prPal[(prLine/3)%12];
+}
+
+void PrFrame()
+{
+	if((prSeenW>0)&&((prW!=prSeenW)||(prH!=prSeenH)))PrReset();
+	prSeenW=0;
+	prSeenH=0;
+	int n=2+prW/12;
+	for(int k=0;k<n;k++)
+	{
+		prCell[prRow*TV_MAXW+prCol]=1+ToyRandom()%2;
+		prCol++;
+		if(prCol>=prW)
+		{
+			prCol=0;
+			prRow++;
+			prLine++;
+			if(prRow>=prH)
+			{
+				for(int r=0;r<prH-1;r++)
+				{
+					for(int c=0;c<prW;c++)
+						prCell[r*TV_MAXW+c]=prCell[(r+1)*TV_MAXW+c];
+					prRowCol[r]=prRowCol[r+1];
+				}
+				prRow=prH-1;
+				for(int c=0;c<prW;c++)
+					prCell[prRow*TV_MAXW+c]=0;
+			}
+			prRowCol[prRow]=prPal[(prLine/3)%12];
+		}
+	}
+}
+
+// The lines that end with the cursor's, as many as fit.
+void PrDraw(int x0, int y0, int wc, int hc)
+{
+	if(wc>prSeenW)prSeenW=wc;
+	if(hc>prSeenH)prSeenH=hc;
+	if(prW==0)PrReset();
+	int top=prRow-hc+1;
+	if(top<0)top=0;
+	for(int r=0;r<hc;r++)
+	{
+		int gr=top+r;
+		int at=TV_C256|(prRowCol[gr%TV_MAXH]<<8)|16;
+		for(int c=0;c<wc;c++)
+		{
+			int ch=' ';
+			if((gr<=prRow)&&(c<prW))
+			{
+				int v=prCell[gr*TV_MAXW+c];
+				if(v==1)ch=0x2571;
+				if(v==2)ch=0x2572;
+				if((gr==prRow)&&(c==prCol)&&((svT/8)%2==0))ch=G_FULL;
+			}
+			TvPut(x0+c,y0+r,ch,at);
+		}
+	}
+}
+
+// ---- maze solver
+// A maze of MS_N x MS_N cells is carved by a random depth-first walk, the walk's
+// path in blue and its head in yellow; then a depth-first search goes from the top
+// left cell to the bottom right one, its path in green and the dead ends it backs
+// out of in brown. The way out stays a while, then a new maze starts. Drawn on a
+// grid of 2*MS_N+1 pixels (cells, and the walls between them), MS_ZOOM times
+// bigger where the view has room.
+#define MS_N 16
+#define MS_CELLS 256      // MS_N*MS_N
+#define MS_ZOOM 3
+#define MS_STEPS 2        // steps a frame
+#define MS_HOLD 120       // frames the way out stays
+int msOpen[MS_CELLS];     // passages: 1 to the right, 2 down
+int msState[MS_CELLS];    // 0 not carved, 1 carved, 2 on the carving path, 3 a dead
+                          // end of the search, 4 on the search's path
+int msStack[MS_CELLS];
+int msSp=0;
+int msPhase=-1;           // 0 building, 1 solving, 2 showing the way out; -1 before
+int msHold=0;
+int msTried[MS_CELLS];    // the next direction the search tries from each cell
+
+void MsNew()
+{
+	for(int i=0;i<MS_CELLS;i++)
+	{
+		msOpen[i]=0;
+		msState[i]=0;
+	}
+	int s=ToyRandom()%MS_CELLS;
+	msState[s]=2;
+	msStack[0]=s;
+	msSp=1;
+	msPhase=0;
+}
+
+// Whether cells a and b, next to each other, have a passage between them.
+int MsOpenTo(int a, int b)
+{
+	if(b==a+1)return msOpen[a]&1;
+	if(b==a-1)return msOpen[b]&1;
+	if(b==a+MS_N)return msOpen[a]&2;
+	return msOpen[b]&2;
+}
+
+// Cell c's neighbour in direction d (0 right, 1 down, 2 left, 3 up), or -1.
+int MsNext(int c, int d)
+{
+	int x=c%MS_N;
+	int y=c/MS_N;
+	if(d==0)
+	{
+		if(x==MS_N-1)return -1;
+		return c+1;
+	}
+	if(d==1)
+	{
+		if(y==MS_N-1)return -1;
+		return c+MS_N;
+	}
+	if(d==2)
+	{
+		if(x==0)return -1;
+		return c-1;
+	}
+	if(y==0)return -1;
+	return c-MS_N;
+}
+
+void MsBuildStep()
+{
+	int c=msStack[msSp-1];
+	int cand[4];
+	int n=0;
+	for(int d=0;d<4;d++)
+	{
+		int b=MsNext(c,d);
+		if(b>=0)
+			if(msState[b]==0)
+			{
+				cand[n]=b;
+				n++;
+			}
+	}
+	if(n==0)
+	{
+		msState[c]=1;
+		msSp--;
+		if(msSp==0)
+		{
+			// built: the search starts at the top left
+			for(int i=0;i<MS_CELLS;i++)
+				msTried[i]=0;
+			msState[0]=4;
+			msStack[0]=0;
+			msSp=1;
+			msPhase=1;
+		}
+		return;
+	}
+	int b=cand[ToyRandom()%n];
+	if(b==c+1)msOpen[c]=msOpen[c]|1;
+	if(b==c-1)msOpen[b]=msOpen[b]|1;
+	if(b==c+MS_N)msOpen[c]=msOpen[c]|2;
+	if(b==c-MS_N)msOpen[b]=msOpen[b]|2;
+	msState[b]=2;
+	msStack[msSp]=b;
+	msSp++;
+}
+
+void MsSolveStep()
+{
+	int c=msStack[msSp-1];
+	if(c==MS_CELLS-1)
+	{
+		msPhase=2;
+		msHold=MS_HOLD;
+		return;
+	}
+	while(msTried[c]<4)
+	{
+		int d=msTried[c];
+		msTried[c]++;
+		int b=MsNext(c,d);
+		if(b>=0)
+			if((msState[b]==1)&&MsOpenTo(c,b))
+			{
+				msState[b]=4;
+				msStack[msSp]=b;
+				msSp++;
+				return;
+			}
+	}
+	msState[c]=3;
+	msSp--;
+}
+
+void MsFrame()
+{
+	if(msPhase<0)MsNew();
+	for(int k=0;k<MS_STEPS;k++)
+	{
+		if(msPhase==0)MsBuildStep();
+		else if(msPhase==1)MsSolveStep();
+	}
+	if(msPhase==2)
+	{
+		msHold--;
+		if(msHold<=0)MsNew();
+	}
+}
+
+int MsColour(int s)
+{
+	if(s==1)return 0xd0d4dc;
+	if(s==2)return 0x3a7bd5;
+	if(s==3)return 0x8a6a48;
+	if(s==4)return 0x30c860;
+	return 0x181c28;
+}
+
+void MsDraw(int w, int h)
+{
+	if(msPhase<0)MsNew();
+	int g=2*MS_N+1;
+	int z=MS_ZOOM;
+	while((z>1)&&((g*z>w)||(g*z>h)))z--;
+	int ox=(w-g*z)/2;
+	int oy=(h-g*z)/2;
+	int head=-1;
+	if(msPhase<2)head=msStack[msSp-1];
+	for(int y=0;y<h;y++)
+		for(int x=0;x<w;x++)
+		{
+			int col=0;
+			int gx=x-ox;
+			int gy=y-oy;
+			if((gx>=0)&&(gy>=0)&&(gx<g*z)&&(gy<g*z))
+			{
+				gx=gx/z;
+				gy=gy/z;
+				col=0x2a3550;    // the walls
+				int cx=(gx-1)/2;
+				int cy=(gy-1)/2;
+				if((gx&1)&&(gy&1))
+				{
+					int c=cy*MS_N+cx;
+					col=MsColour(msState[c]);
+					if(c==head)
+					{
+						col=0xffd040;
+						if(msPhase==1)col=0xffffff;
+					}
+					else if((msPhase>0)&&(c==0))col=0x40c0ff;
+					else if((msPhase>0)&&(c==MS_CELLS-1))col=0xff4060;
+				}
+				else if((gx&1)&&(gx<g-1)&&(gy>0)&&(gy<g-1))
+				{
+					// between cy and the cell below it
+					int a=((gy-2)/2)*MS_N+cx;
+					if(msOpen[a]&2)
+					{
+						int sa=msState[a];
+						int sb=msState[a+MS_N];
+						if(sa==sb)col=MsColour(sa);
+						else if((sa>=3)&&(sb>=3))col=MsColour(3);
+						else col=MsColour(1);
+					}
+				}
+				else if((gy&1)&&(gx>0)&&(gx<g-1))
+				{
+					int a=cy*MS_N+(gx-2)/2;
+					if(msOpen[a]&1)
+					{
+						int sa=msState[a];
+						int sb=msState[a+1];
+						if(sa==sb)col=MsColour(sa);
+						else if((sa>=3)&&(sb>=3))col=MsColour(3);
+						else col=MsColour(1);
+					}
+				}
+			}
+			svPix[y*PIX_W+x]=col;
+		}
+}
+
 // Whether kind is on screen: full screen or in a window.
 int SvShown(int kind)
 {
@@ -4167,6 +4483,8 @@ void SvStep()
 	if(SvShown(SV_LAND))LmFrame();
 	if(SvShown(SV_MAZE))MzFrame();
 	if(SvShown(SV_OBJ))ObFrame();
+	if(SvShown(SV_PRINT))PrFrame();
+	if(SvShown(SV_SOLVE))MsFrame();
 	for(int i=0;i<SV_NSTARS;i++)
 	{
 		svZ[i]=svZ[i]-0.012;
@@ -4250,6 +4568,11 @@ void SvDraw(int kind, int x0, int y0, int wc, int hc)
 {
 	int w=wc;
 	int h=hc*2;
+	if(kind==SV_PRINT)
+	{
+		PrDraw(x0,y0,wc,hc);
+		return;
+	}
 	if(kind==SV_MATRIX)
 	{
 		for(int r=0;r<hc;r++)
@@ -4271,7 +4594,7 @@ void SvDraw(int kind, int x0, int y0, int wc, int hc)
 			}
 		return;
 	}
-	if((kind==SV_REACT)||(kind==SV_FLUID)||(kind==SV_LAND)||(kind==SV_MAZE)||(kind==SV_OBJ)||(kind==SV_NYAN)||(kind==SV_PLASMA)||(kind==SV_FLAME))
+	if((kind==SV_REACT)||(kind==SV_FLUID)||(kind==SV_LAND)||(kind==SV_MAZE)||(kind==SV_OBJ)||(kind==SV_NYAN)||(kind==SV_PLASMA)||(kind==SV_FLAME)||(kind==SV_SOLVE))
 	{
 		if(kind==SV_PLASMA)PlasmaDraw(w,h);
 		else if(kind==SV_FLAME)FlameDraw(w,h);
@@ -4280,6 +4603,7 @@ void SvDraw(int kind, int x0, int y0, int wc, int hc)
 		else if(kind==SV_MAZE)MzDraw(w,h);
 		else if(kind==SV_OBJ)ObDraw(w,h);
 		else if(kind==SV_NYAN)NyDraw(w,h);
+		else if(kind==SV_SOLVE)MsDraw(w,h);
 		else LmDraw(w,h);
 		ToyShowRgb(&svPix[0],x0,y0,w,h);
 		return;
@@ -4343,6 +4667,8 @@ char* SvName(int kind)
 	if(kind==SV_MAZE)return "Labyrinth";
 	if(kind==SV_OBJ)return "Objects";
 	if(kind==SV_NYAN)return "Nyan cat";
+	if(kind==SV_PRINT)return "10 PRINT";
+	if(kind==SV_SOLVE)return "Maze solver";
 	return "Stars";
 }
 
@@ -4374,7 +4700,8 @@ void SvTitle(int win)
 // landscape the arrows steer and climb, N makes new land. In the labyrinth the
 // arrows walk (the walker takes over again after five seconds), M shows the map,
 // N makes a new maze. Among the objects O shows the next object (and the next
-// molecule), M the next material, N picks both anew.
+// molecule), M the next material, N picks both anew. 10 PRINT and the maze solver
+// start over on N.
 void SvOpenWindow(int kind)
 {
 	if(kind>=SV_KINDS)kind=ToyRandom()%SV_KINDS;
@@ -4440,6 +4767,8 @@ int SvWinKey(int win, int key)
 	}
 	else if((t.a==SV_REACT)&&(k=='r'))RdReset(rdPreset);
 	else if((t.a==SV_FLUID)&&(k=='r'))FdInit();
+	else if((t.a==SV_PRINT)&&(k=='n'))PrReset();
+	else if((t.a==SV_SOLVE)&&(k=='n'))MsNew();
 	else return 0;
 	SvTitle(win);
 	tvDirty=1;

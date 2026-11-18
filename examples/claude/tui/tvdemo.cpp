@@ -651,7 +651,8 @@ int prefScale=0;     // the pixel size of a graphic window, 0 the program's own
 int prefsThemeCtl=-1; // the theme combo box of the open Preferences
 
 // The settings file holds: theme, saver on, saver minutes, saver kind, line numbers,
-// wrap, the saver numbering (3 has Random at 7, 2 had it at 6, none at 4), and the
+// wrap, the saver numbering (8 has Random at 12, 7 had it at 11, 6 at 10, 3 at 7,
+// 2 at 6, none at 4), and the
 // pixel size of a graphic window, the desktop pattern, and the Interface options
 // (tvSnap, tvMoreHandles, tvDlgResize).
 void PrefsLoad()
@@ -690,6 +691,8 @@ void PrefsLoad()
 		if((k>=7)&&(v[6]==3)&&(v[3]==7))svKind=SV_RANDOM;
 		if((k>=7)&&(v[6]==4)&&(v[3]==8))svKind=SV_RANDOM;
 		if((k>=7)&&(v[6]==5)&&(v[3]==9))svKind=SV_RANDOM;
+		if((k>=7)&&(v[6]==6)&&(v[3]==10))svKind=SV_RANDOM;
+		if((k>=7)&&(v[6]==7)&&(v[3]==11))svKind=SV_RANDOM;
 	}
 	if(k>=6)
 	{
@@ -712,7 +715,7 @@ void PrefsSave()
 #ifdef TV_GFX
 	prefScale=GfxScale();
 #endif
-	snprintf(&buf[0],64,"%i %i %i %i %i %i 6 %i %i %i %i %i\n",prefTheme,svOn,svMinutes,svKind,edLineNums,edWrap,prefScale,teDeskPick,tvSnap,tvMoreHandles,tvDlgResize);
+	snprintf(&buf[0],64,"%i %i %i %i %i %i 8 %i %i %i %i %i\n",prefTheme,svOn,svMinutes,svKind,edLineNums,edWrap,prefScale,teDeskPick,tvSnap,tvMoreHandles,tvDlgResize);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -739,7 +742,7 @@ void RunPrefs()
 	int on=TvAdd(win,C_CHECK,2,5,30,1,"~S~creen saver",0);
 	tvCtl[on].val=svOn;
 	TvAdd(win,C_LABEL,3,6,10,1,"~K~ind",0);
-	int kind=TvAdd(win,C_COMBO,14,6,30,1,"Stars|Plasma|Matrix|Flame|Reaction-diffusion|Fluid|Landscape|Labyrinth|Objects|Nyan cat|Random",0);
+	int kind=TvAdd(win,C_COMBO,14,6,30,1,"Stars|Plasma|Matrix|Flame|Reaction-diffusion|Fluid|Landscape|Labyrinth|Objects|Nyan cat|10 PRINT|Maze solver|Random",0);
 	tvCtl[kind].val=svKind;
 	TvAdd(win,C_LABEL,3,8,10,1,"~A~fter",0);
 	prefMinCtl=TvAdd(win,C_SLIDER,14,8,20,1,"",0);
@@ -1384,7 +1387,8 @@ void OpenHelp()
 		"\n"
 		"Screen savers\n"
 		"  Stars, plasma, matrix rain, flame, reaction-diffusion, fluid,\n"
-		"  landscape, labyrinth, objects and a nyan cat,\n"
+		"  landscape, labyrinth, objects, a nyan cat, 10 PRINT and a\n"
+		"  maze solver,\n"
 		"  full screen after the idle time set in Options, Preferences, or\n"
 		"  at once from Options, Start screen saver. Start saver in a window\n"
 		"  (or Saver in a window in the = menu) opens one in a window, where\n"
@@ -1405,6 +1409,11 @@ void OpenHelp()
 		"  plaster or red-hot iron, or a small molecule or a piece of\n"
 		"  diamond or graphene, drawn by its own scanline renderer: O the\n"
 		"  next object, M the next material, N both anew.\n"
+		"  10 PRINT types the one-line maze of the old home computers,\n"
+		"  / or \\ at random, line after line: N starts it over.\n"
+		"  Maze solver carves a maze by a random walk (its path blue),\n"
+		"  then searches it from the top left to the bottom right (the\n"
+		"  path green, dead ends brown): N starts a new maze.\n"
 		"\n"
 		"Options, Preferences sets the colour theme and the screen saver.\n"
 		"Options, Theme editor makes the Custom theme: pick an item on the\n"
@@ -1763,6 +1772,8 @@ void SaverItems(int base)
 	TvMenuItem("La~b~yrinth","",base+SV_MAZE,0);
 	TvMenuItem("~O~bjects","",base+SV_OBJ,0);
 	TvMenuItem("~N~yan cat","",base+SV_NYAN,0);
+	TvMenuItem("~1~0 PRINT","",base+SV_PRINT,0);
+	TvMenuItem("Ma~z~e solver","",base+SV_SOLVE,0);
 	TvMenuLine();
 	TvMenuItem("R~a~ndom","",base+SV_RANDOM,0);
 }

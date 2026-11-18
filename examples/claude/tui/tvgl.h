@@ -221,6 +221,20 @@ int GlShape(int slot, int ch)
 			}
 		return 1;
 	}
+	if((ch==0x2571)||(ch==0x2572))
+	{
+		// corner to corner, 2 px wide, so that they join from cell to cell
+		for(int y=0;y<GL_H;y++)
+		{
+			int x=y*(GL_W-1)/(GL_H-1);
+			if(ch==0x2571)x=GL_W-1-x;
+			int x2=x+1;
+			if(x2>=GL_W)x2=x-1;
+			GlRect(slot,x,y,1,1,255);
+			GlRect(slot,x2,y,1,1,255);
+		}
+		return 1;
+	}
 	// double lines run 2 px either side of the middle
 	if(ch==0x2550)
 	{
