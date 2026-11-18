@@ -5535,6 +5535,7 @@ int FcMouse(int win, int ev, int x, int y)
 int prefScale=0;     // the pixel scale of a graphic window, 0 the program's own
 
 #define PREF_BUF 8000
+char prefThemeName[64];  // the theme t2fc.cfg names, found when the themes are loaded
 
 // The value v as a number: one of the words in "a|b|c" gives its index, digits their
 // number; anything else -1.
@@ -5591,7 +5592,9 @@ void PrefSet(char* key, char* v, char* left, char* right)
 	}
 	else if(StrCmp(key,"theme")==0)
 	{
-		if(x>=0)prefTheme=x;
+		// its name, or (as older files had it) its number
+		if((v[0]>='0')&&(v[0]<='9'))prefTheme=x;
+		else StrCpy(&prefThemeName[0],v,64);
 	}
 	else if((StrCmp(key,"left.sort")==0)||(StrCmp(key,"right.sort")==0))
 	{
@@ -5673,6 +5676,7 @@ void PrefsLoadOld(char* buf, char* left, char* right);
 
 void PrefsLoad(char* left, char* right)
 {
+	prefThemeName[0]=0;
 	char buf[PREF_BUF];
 	int n=fs_load(CFG_FILE,&buf[0],PREF_BUF-1);
 	if(n<=0)return;
@@ -5907,8 +5911,8 @@ void PrefsSave()
 	PrefText(&buf[0],"# how long quick view may count what a folder holds; 0 does not count\n");
 	PrefNum(&buf[0],"quick_view_count_seconds",fcQSecs);
 	PrefYesNo(&buf[0],"tree_from_root",fcTreeAll);
-	PrefText(&buf[0],"\n# appearance (theme: its place in Options > Appearance, from 0)\n");
-	PrefNum(&buf[0],"theme",prefTheme);
+	PrefText(&buf[0],"\n# appearance (theme: its name in Options > Appearance)\n");
+	PrefStr(&buf[0],"theme",TeThNameAt(prefTheme));
 	PrefText(&buf[0],"# 0 as the theme has it, then light, medium, quadrants, checker board,\n# braille, vertical stripes, diagonal stripes\n");
 	PrefNum(&buf[0],"desktop_pattern",teDeskPick);
 	PrefText(&buf[0],"# graphic window pixel size, 0 the program's own\n");
@@ -7220,6 +7224,11 @@ int main(int argc, pchar* argv)
 	if(argc>1)StrCpy(&left[0],argv[1],FC_PATH);
 	if(argc>2)StrCpy(&right[0],argv[2],FC_PATH);
 	TeLoadThemes();
+	if(prefThemeName[0]!=0)
+	{
+		prefTheme=TeThFind(&prefThemeName[0]);
+		if(prefTheme<0)prefTheme=0;
+	}
 	if(prefTheme>=teThN)prefTheme=0;
 	TeUseTheme(prefTheme);
 
