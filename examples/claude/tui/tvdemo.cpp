@@ -654,17 +654,18 @@ int prefsThemeCtl=-1; // the theme combo box of the open Preferences
 // wrap, the saver numbering (8 has Random at 12, 7 had it at 11, 6 at 10, 3 at 7,
 // 2 at 6, none at 4), and the
 // pixel size of a graphic window, the desktop pattern, and the Interface options
-// (tvSnap, tvMoreHandles, tvDlgResize).
+// (tvSnap, tvMoreHandles, tvDlgResize), and the desktop gradient's top and bottom
+// colours (0xRRGGBB in decimal).
 void PrefsLoad()
 {
-	char buf[64];
-	int n=fs_load(CFG_FILE,&buf[0],63);
+	char buf[128];
+	int n=fs_load(CFG_FILE,&buf[0],127);
 	if(n<=0)return;
 	buf[n]=0;
-	int v[12];
+	int v[14];
 	int k=0;
 	int i=0;
-	while((k<12)&&(buf[i]!=0))
+	while((k<14)&&(buf[i]!=0))
 	{
 		if((buf[i]>='0')&&(buf[i]<='9'))
 		{
@@ -707,15 +708,20 @@ void PrefsLoad()
 		tvMoreHandles=(v[10]!=0);
 		tvDlgResize=(v[11]!=0);
 	}
+	if(k>=14)
+	{
+		tvDeskTop=v[12]&0xFFFFFF;
+		tvDeskBottom=v[13]&0xFFFFFF;
+	}
 }
 
 void PrefsSave()
 {
-	char buf[64];
+	char buf[128];
 #ifdef TV_GFX
 	prefScale=GfxScale();
 #endif
-	snprintf(&buf[0],64,"%i %i %i %i %i %i 8 %i %i %i %i %i\n",prefTheme,svOn,svMinutes,svKind,edLineNums,edWrap,prefScale,teDeskPick,tvSnap,tvMoreHandles,tvDlgResize);
+	snprintf(&buf[0],128,"%i %i %i %i %i %i 8 %i %i %i %i %i %i %i\n",prefTheme,svOn,svMinutes,svKind,edLineNums,edWrap,prefScale,teDeskPick,tvSnap,tvMoreHandles,tvDlgResize,tvDeskTop&0xFFFFFF,tvDeskBottom&0xFFFFFF);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -727,7 +733,7 @@ int prefMinCtl=-1;   // the saver delay slider of the open dialog
 
 void RunPrefs()
 {
-	int win=TvNewCentered(W_PREFS,"Preferences",48,19,WF_DIALOG);
+	int win=TvNewCentered(W_PREFS,"Preferences",48,21,WF_DIALOG);
 	if(win<0)return;
 	TvAdd(win,C_LABEL,3,2,10,1,"~T~heme",0);
 	char names[200];
@@ -739,27 +745,49 @@ void RunPrefs()
 	int dk=TvAdd(win,C_COMBO,14,3,30,1,teDeskNames,CM_DESKPICK);
 	tvCtl[dk].val=teDeskPick;
 	int oldDesk=teDeskPick;
-	int on=TvAdd(win,C_CHECK,2,5,30,1,"~S~creen saver",0);
+	int oldTop=tvDeskTop;
+	int oldBottom=tvDeskBottom;
+	// the vertical gradient's colours
+	TvAdd(win,C_BUTTON,14,4,15,2,"T~o~p colour",CM_DESKTOPC);
+	TvAdd(win,C_BUTTON,30,4,16,2,"Botto~m~ colour",CM_DESKBOTC);
+	int on=TvAdd(win,C_CHECK,2,7,30,1,"~S~creen saver",0);
 	tvCtl[on].val=svOn;
-	TvAdd(win,C_LABEL,3,6,10,1,"~K~ind",0);
-	int kind=TvAdd(win,C_COMBO,14,6,30,1,"Stars|Plasma|Matrix|Flame|Reaction-diffusion|Fluid|Landscape|Labyrinth|Objects|Nyan cat|10 PRINT|Maze solver|Random",0);
+	TvAdd(win,C_LABEL,3,8,10,1,"~K~ind",0);
+	int kind=TvAdd(win,C_COMBO,14,8,30,1,"Stars|Plasma|Matrix|Flame|Reaction-diffusion|Fluid|Landscape|Labyrinth|Objects|Nyan cat|10 PRINT|Maze solver|Random",0);
 	tvCtl[kind].val=svKind;
-	TvAdd(win,C_LABEL,3,8,10,1,"~A~fter",0);
-	prefMinCtl=TvAdd(win,C_SLIDER,14,8,20,1,"",0);
+	TvAdd(win,C_LABEL,3,10,10,1,"~A~fter",0);
+	prefMinCtl=TvAdd(win,C_SLIDER,14,10,20,1,"",0);
 	tvCtl[prefMinCtl].count=29;
 	tvCtl[prefMinCtl].val=svMinutes-1;
-	TvAdd(win,C_LABEL,3,10,40,1,"Interface",0);
-	int sn=TvAdd(win,C_CHECK,2,11,44,1,"~H~alf screen on a side, all on the top",0);
+	TvAdd(win,C_LABEL,3,12,40,1,"Interface",0);
+	int sn=TvAdd(win,C_CHECK,2,13,44,1,"~H~alf screen on a side, all on the top",0);
 	tvCtl[sn].val=tvSnap;
-	int mh=TvAdd(win,C_CHECK,2,12,44,1,"~R~esize handles on corners and edges",0);
+	int mh=TvAdd(win,C_CHECK,2,14,44,1,"~R~esize handles on corners and edges",0);
 	tvCtl[mh].val=tvMoreHandles;
-	int dr=TvAdd(win,C_CHECK,2,13,44,1,"Dialogs can be made ~b~igger",0);
+	int dr=TvAdd(win,C_CHECK,2,15,44,1,"Dialogs can be made ~b~igger",0);
 	tvCtl[dr].val=tvDlgResize;
-	int ok=TvAdd(win,C_BUTTON,10,16,12,2,"O~K~",CM_OK);
+	int ok=TvAdd(win,C_BUTTON,10,18,12,2,"O~K~",CM_OK);
 	tvCtl[ok].isDefault=1;
-	TvAdd(win,C_BUTTON,25,16,12,2,"Cancel",CM_CANCEL);
+	TvAdd(win,C_BUTTON,25,18,12,2,"Cancel",CM_CANCEL);
 	tvWin[win].focus=th;
-	int res=TvExec(win);
+	int res=0;
+	while(true)
+	{
+		res=TvExec(win);
+		if(res==CM_DESKTOPC)
+		{
+			TeShowGradient(dk);
+			int c=TeColour("Top colour",tvDeskTop,1);
+			if(c>=0)tvDeskTop=c;
+		}
+		else if(res==CM_DESKBOTC)
+		{
+			TeShowGradient(dk);
+			int c=TeColour("Bottom colour",tvDeskBottom,2);
+			if(c>=0)tvDeskBottom=c;
+		}
+		else break;
+	}
 	if(res==CM_OK)
 	{
 		prefTheme=tvCtl[th].val;
@@ -772,7 +800,12 @@ void RunPrefs()
 		tvDlgResize=tvCtl[dr].val;
 		PrefsSave();
 	}
-	else teDeskPick=oldDesk;
+	else
+	{
+		teDeskPick=oldDesk;
+		tvDeskTop=oldTop;
+		tvDeskBottom=oldBottom;
+	}
 	prefMinCtl=-1;
 	prefsThemeCtl=-1;
 	TvClose(win);
@@ -1415,7 +1448,10 @@ void OpenHelp()
 		"  then searches it from the top left to the bottom right (the\n"
 		"  path green, dead ends brown): N starts a new maze.\n"
 		"\n"
-		"Options, Preferences sets the colour theme and the screen saver.\n"
+		"Options, Preferences sets the colour theme, the desktop's pattern\n"
+		"and the screen saver. The pattern can be a vertical gradient: Top\n"
+		"colour and Bottom colour pick its colours in RGB or HSV (shown\n"
+		"at once); with only 256 colours it is dithered.\n"
 		"Options, Theme editor makes the Custom theme: pick an item on the\n"
 		"left (menus, windows, dialogs, controls, the editor and its syntax\n"
 		"colours, and the palette games and paint use), Text or Background,\n"
@@ -1480,6 +1516,7 @@ void TvAppDraw(int win)
 	else if(type==W_HEX)HxDraw(win);
 	else if(type==W_PAINT)PtDraw(win);
 	else if(type==W_THEME)TeDraw(win);
+	else if(type==W_COLOUR)TeColourDraw(win);
 }
 
 int TvAppKey(int win, int key)
@@ -1498,7 +1535,7 @@ int TvAppKey(int win, int key)
 	if(type==W_SONAR)return SnKey(win,key);
 	if(type==W_HEX)return HxKey(win,key);
 	if(type==W_PAINT)return PtKey(win,key);
-	if(type==W_THEME)return TeKey(win,key);
+	if((type==W_THEME)||(type==W_COLOUR))return TeKey(win,key);
 	if(type==W_CAL)
 	{
 		if((key==K_LEFT)||(key==K_PGUP))
@@ -1520,7 +1557,7 @@ int TvAppMouse(int win, int ev, int x, int y)
 	TWin& t=tvWin[win];
 	int type=t.type;
 	if(type==W_SONAR)return SnMouse(win,ev,x,y);
-	if(type==W_THEME)return TeMouse(win,ev,x,y);
+	if((type==W_THEME)||(type==W_COLOUR))return TeMouse(win,ev,x,y);
 	if(type==W_SAVER)
 		if(ev!=EV_RDOWN)return SvWinMouse(win,ev,x,y);
 	if(ev==EV_RDOWN)

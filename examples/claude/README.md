@@ -145,6 +145,11 @@ terminals: raw mode, reading a key with a timeout, the terminal size, the time,
 directory listing and saving files safely, and for t2fc below copying, moving and
 deleting files step by step and running programs.
 
+The desktop can be a pattern or a vertical gradient of two colours picked in a
+colour dialog (Options > Preferences in tvdemo, Options > Appearance in t2fc):
+exact 24-bit colours a half cell apart, or Floyd-Steinberg dithered over xterm's 256
+when the terminal has no 24-bit colour.
+
 Run `./build_so.sh` once, then `Scinc tvdemo.cpp [file]` from this folder.
 
 | File | What it does |

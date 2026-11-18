@@ -5536,7 +5536,7 @@ int prefScale=0;     // the pixel scale of a graphic window, 0 the program's own
 
 #define PREF_BUF 8000
 // t2fc.cfg's words for the desktop patterns, in teDeskNames' order (tvapps.h)
-#define PREF_DESKS "theme|light|medium|quadrants|checker|braille|vertical_stripes|diagonal_stripes"
+#define PREF_DESKS "theme|light|medium|quadrants|checker|braille|vertical_stripes|diagonal_stripes|gradient"
 char prefThemeName[64];  // the theme t2fc.cfg names, found when the themes are loaded
 
 // The value v as a number: one of the words in "a|b|c" gives its index, digits their
@@ -5633,6 +5633,24 @@ void PrefSet(char* key, char* v, char* left, char* right)
 	{
 		x=PrefPick(v,PREF_DESKS);
 		if((x>=0)&&(x<TE_DESKN))teDeskPick=x;
+	}
+	else if((StrCmp(key,"gradient_top")==0)||(StrCmp(key,"gradient_bottom")==0))
+	{
+		// #rrggbb
+		int c=0;
+		int n=0;
+		int i=0;
+		if(v[0]=='#')i=1;
+		while(TeHexDigit(v[i+n])>=0)
+		{
+			c=c*16+TeHexDigit(v[i+n]);
+			n++;
+		}
+		if(n==6)
+		{
+			if(key[9]=='t')tvDeskTop=c;
+			else tvDeskBottom=c;
+		}
 	}
 	else if(StrCmp(key,"pixel_scale")==0)
 	{
@@ -5916,8 +5934,13 @@ void PrefsSave()
 	PrefYesNo(&buf[0],"tree_from_root",fcTreeAll);
 	PrefText(&buf[0],"\n# appearance (theme: its name in Options > Appearance)\n");
 	PrefStr(&buf[0],"theme",TeThNameAt(prefTheme));
-	PrefText(&buf[0],"# theme (as the theme has it), light, medium, quadrants, checker, braille,\n# vertical_stripes or diagonal_stripes\n");
+	PrefText(&buf[0],"# theme (as the theme has it), light, medium, quadrants, checker, braille,\n# vertical_stripes, diagonal_stripes or gradient (of the two colours below)\n");
 	PrefWord(&buf[0],"desktop_pattern",teDeskPick,PREF_DESKS);
+	char hex[16];
+	snprintf(&hex[0],16,"#%06x",tvDeskTop&0xFFFFFF);
+	PrefStr(&buf[0],"gradient_top",&hex[0]);
+	snprintf(&hex[0],16,"#%06x",tvDeskBottom&0xFFFFFF);
+	PrefStr(&buf[0],"gradient_bottom",&hex[0]);
 	PrefText(&buf[0],"# graphic window pixel size, 0 the program's own\n");
 	PrefNum(&buf[0],"pixel_scale",scale);
 	PrefYesNo(&buf[0],"cell_pictures",tvCellPics);
@@ -5980,9 +6003,9 @@ int prefsThemeCtl=-1;     // the theme combo box of the open Appearance dialog
 // graphic window. The theme and the desktop show at once; Cancel puts them back.
 void RunAppearance()
 {
-	int h=11;
+	int h=13;
 #ifdef TV_GFX
-	h=13;
+	h=15;
 #endif
 	int win=TvNewCentered(W_PREFS,"Appearance",50,h,WF_DIALOG);
 	if(win<0)return;
@@ -5996,9 +6019,14 @@ void RunAppearance()
 	int dk=TvAdd(win,C_COMBO,14,3,30,1,teDeskNames,CM_DESKPICK);
 	tvCtl[dk].val=teDeskPick;
 	int oldDesk=teDeskPick;
-	int by=6;
+	int oldTop=tvDeskTop;
+	int oldBottom=tvDeskBottom;
+	// the vertical gradient's colours
+	TvAdd(win,C_BUTTON,14,5,15,2,"T~o~p colour",CM_DESKTOPC);
+	TvAdd(win,C_BUTTON,30,5,16,2,"~B~ottom colour",CM_DESKBOTC);
+	int by=8;
 #ifdef TV_GFX
-	TvAdd(win,C_LABEL,3,5,12,1,"~P~ixel size",0);
+	TvAdd(win,C_LABEL,3,8,12,1,"~P~ixel size",0);
 	int px[4];
 	char* pxName[4];
 	pxName[0]="1x";
@@ -6007,17 +6035,34 @@ void RunAppearance()
 	pxName[3]="4x";
 	for(int k=0;k<4;k++)
 	{
-		px[k]=TvAdd(win,C_RADIO,15+k*8,5,8,1,pxName[k],0);
+		px[k]=TvAdd(win,C_RADIO,15+k*8,8,8,1,pxName[k],0);
 		tvCtl[px[k]].group=1;
 		tvCtl[px[k]].val=(GfxScale()==k+1);
 	}
-	by=8;
+	by=10;
 #endif
 	int ok=TvAdd(win,C_BUTTON,11,by,12,2,"O~K~",CM_OK);
 	tvCtl[ok].isDefault=1;
 	TvAdd(win,C_BUTTON,26,by,12,2,"Cancel",CM_CANCEL);
 	tvWin[win].focus=th;
-	int res=TvExec(win);
+	int res=0;
+	while(true)
+	{
+		res=TvExec(win);
+		if(res==CM_DESKTOPC)
+		{
+			TeShowGradient(dk);
+			int c=TeColour("Top colour",tvDeskTop,1);
+			if(c>=0)tvDeskTop=c;
+		}
+		else if(res==CM_DESKBOTC)
+		{
+			TeShowGradient(dk);
+			int c=TeColour("Bottom colour",tvDeskBottom,2);
+			if(c>=0)tvDeskBottom=c;
+		}
+		else break;
+	}
 	if(res==CM_OK)
 	{
 		prefTheme=tvCtl[th].val;
@@ -6031,6 +6076,8 @@ void RunAppearance()
 	else
 	{
 		teDeskPick=oldDesk;
+		tvDeskTop=oldTop;
+		tvDeskBottom=oldBottom;
 		TeUseTheme(prefTheme);
 	}
 	prefsThemeCtl=-1;
@@ -6533,6 +6580,7 @@ void TvAppDraw(int win)
 	else if(type==W_TREE)TrDraw(win);
 	else if(type==W_DATA)DtDraw(win);
 	else if(type==W_THEME)TeDraw(win);
+	else if(type==W_COLOUR)TeColourDraw(win);
 	else if(type==W_JOB)DrawJob(win);
 	else if(type==W_ARCWAIT)DrawArcWait(win);
 	else if(type==W_ASK)DrawAsk(win);
@@ -6584,7 +6632,7 @@ int TvAppKey(int win, int key)
 	if(type==W_TREE)return TrKey(win,key);
 	if(type==W_DATA)return DtKey(win,key);
 	if(type==W_HEX)return HxKey(win,key);
-	if(type==W_THEME)return TeKey(win,key);
+	if((type==W_THEME)||(type==W_COLOUR))return TeKey(win,key);
 	return 0;
 }
 
@@ -6606,7 +6654,7 @@ int TvAppMouse(int win, int ev, int x, int y)
 		FcSelect(t.a);
 		return FcMouse(win,ev,x,y);
 	}
-	if(type==W_THEME)return TeMouse(win,ev,x,y);
+	if((type==W_THEME)||(type==W_COLOUR))return TeMouse(win,ev,x,y);
 	if(ev==EV_RDOWN)
 	{
 		if(t.flags&WF_DIALOG)return 0;

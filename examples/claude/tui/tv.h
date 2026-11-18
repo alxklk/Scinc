@@ -172,6 +172,9 @@ int tvDeskCh=G_LIGHT;      // the desktop's pattern, as the theme in use wants i
                            // one of the striped ones below
 #define TV_DESK_VSTRIPES -1   // columns of light and medium shade by turns
 #define TV_DESK_DIAGONAL -2   // diagonal stripes of space, light and medium shade
+#define TV_DESK_GRADIENT -3   // tvDeskTop at the top fading to tvDeskBottom (TvDrawGradient)
+int tvDeskTop=0x3A6EA5;
+int tvDeskBottom=0x0A1A2E;
 int tvFg[16];
 int tvBg[16];
 int tvTrueColor=1;   // the terminal shows 24-bit colours; otherwise themes use xterm's 256
@@ -356,12 +359,15 @@ int tvRgb256[256];
 #define A_ED_MATCH (TV_ROLE|56)
 #define A_ED_SCROLL (TV_ROLE|57)
 int tvRoleDef[58]={0x71,0x70,0x74,0x20,0x24,0x70,0x74,0x20,0x24,0x08,0x1E,0x1F,0x17,0x1A,0x1E,0x70,0x7F,0x78,0x7A,0x7E,0x30,0x3F,0x37,0x3A,0x3E,0x7E,0x20,0x2B,0x2F,0x2E,0x70,0x30,0x3F,0x3E,0x1F,0x1A,0x79,0x78,0x74,0x1F,0x30,0x3E,0x2F,0x31,0x20,0x1E,0x1F,0x17,0x1B,0x1D,0x1A,0x1C,0x17,0x1E,0x30,0x4F,0x2F,0x13};
-int tvRFgI[58];      // the role colours as tvFgI and tvBgI hold them for the depth
-int tvRBgI[58];
-int tvRFg[58];       // 0xFFRRGGBB
-int tvRBg[58];
-int tvRFg256[58];
-int tvRBg256[58];
+// Roles from R_N on are the desktop gradient's rows (R_GRAD+row, TvDrawGradient),
+// a colour for each half of the row; the arrays have room for TV_MAXH of them.
+#define R_GRAD 58
+int tvRFgI[138];     // the role colours as tvFgI and tvBgI hold them for the depth
+int tvRBgI[138];
+int tvRFg[138];      // 0xFFRRGGBB
+int tvRBg[138];
+int tvRFg256[138];
+int tvRBg256[138];
 int tvCustRFg[58];   // the custom theme's roles, as tvCustFg; -1 a clear background
 int tvCustRBg[58];
 
@@ -664,6 +670,27 @@ void OutAttr(int at)
 	int bgC=0;
 	int fg256=0;
 	int bg256=0;
+	if((at&TV_ROLE)&&((at&255)>=R_GRAD))
+	{
+		// a gradient row: 24-bit whatever the theme's depth
+		int r=at&255;
+		if(tvTrueColor)
+		{
+			OutStr("\x1b[38;2;");
+			OutRgb(tvRFg[r]);
+			OutStr(";48;2;");
+			OutRgb(tvRBg[r]);
+		}
+		else
+		{
+			OutStr("\x1b[38;5;");
+			OutInt(tvRFg256[r]);
+			OutStr(";48;5;");
+			OutInt(tvRBg256[r]);
+		}
+		OutByte('m');
+		return;
+	}
 	if(at&TV_ROLE)
 	{
 		int r=at&255;
@@ -3632,8 +3659,128 @@ void TvDrawStatus()
 
 void TvSnapOutline();
 
+// The vertical gradient desktop. Each cell is an upper half block, so a row has two
+// colours, top and bottom. With 24-bit colour (and in graphic windows) each row is
+// one role of its own (R_GRAD+row) holding its two colours exactly. With only xterm's
+// 256 the colours are spread over the half cells by Floyd-Steinberg error diffusion,
+// in serpentine order, worked out again only when the size or the colours change.
+int tvGradKey=0;
+int tvGradDit[19200];      // TV_MAXW*TV_MAXH: (upper<<8)|lower palette numbers
+int tvGradErr[1452];       // two rows of (TV_MAXW+2)*3 errors
+
+// The colour p of n down the gradient, 0xRRGGBB.
+int TvGradAt(int p, int n)
+{
+	int a=tvDeskTop;
+	int b=tvDeskBottom;
+	if(n<2)return a;
+	int c=0;
+	for(int sh=16;sh>=0;sh=sh-8)
+	{
+		int x=(a>>sh)&255;
+		int y=(b>>sh)&255;
+		int v=(x*(n-1-p)+y*p+(n-1)/2)/(n-1);
+		c=c|(v<<sh);
+	}
+	return c;
+}
+
+void TvGradDither(int w, int rows)
+{
+	int n=rows*2;
+	int stride=(TV_MAXW+2)*3;
+	for(int i=0;i<stride*2;i++)
+		tvGradErr[i]=0;
+	for(int p=0;p<n;p++)
+	{
+		int c=TvGradAt(p,n);
+		int cur=(p&1)*stride;
+		int nxt=stride-cur;
+		for(int i=0;i<stride;i++)
+			tvGradErr[nxt+i]=0;
+		int dir=1;
+		int x=0;
+		if(p&1)
+		{
+			dir=-1;
+			x=w-1;
+		}
+		for(int k=0;k<w;k++)
+		{
+			int want[3];
+			int got=0;
+			int e=cur+(x+1)*3;
+			int v=0;
+			for(int ch=0;ch<3;ch++)
+			{
+				// errors are kept times 16
+				int u=((c>>(16-ch*8))&255)+tvGradErr[e+ch]/16;
+				if(u<0)u=0;
+				if(u>255)u=255;
+				want[ch]=u;
+			}
+			int idx=TvTo256((want[0]<<16)|(want[1]<<8)|want[2]);
+			got=tvRgb256[idx];
+			for(int ch=0;ch<3;ch++)
+			{
+				int err=want[ch]-((got>>(16-ch*8))&255);
+				tvGradErr[e+dir*3+ch]=tvGradErr[e+dir*3+ch]+err*7;
+				tvGradErr[nxt+(x+1-dir)*3+ch]=tvGradErr[nxt+(x+1-dir)*3+ch]+err*3;
+				tvGradErr[nxt+(x+1)*3+ch]=tvGradErr[nxt+(x+1)*3+ch]+err*5;
+				tvGradErr[nxt+(x+1+dir)*3+ch]=tvGradErr[nxt+(x+1+dir)*3+ch]+err;
+			}
+			int i=(p/2)*TV_MAXW+x;
+			if(p&1)tvGradDit[i]=tvGradDit[i]|idx;
+			else tvGradDit[i]=idx<<8;
+			x=x+dir;
+		}
+	}
+}
+
+void TvDrawGradient()
+{
+	int rows=tvH-2;
+	if(rows<1)return;
+	int key=((tvDeskTop*31+tvDeskBottom)*31+tvW)*131+rows*2+tvTrueColor;
+	if(key!=tvGradKey)
+	{
+		tvGradKey=key;
+		if(!tvTrueColor)TvGradDither(tvW,rows);
+		else
+			for(int j=0;j<rows;j++)
+			{
+				tvRFg[R_GRAD+j]=0xFF000000|TvGradAt(j*2,rows*2);
+				tvRBg[R_GRAD+j]=0xFF000000|TvGradAt(j*2+1,rows*2);
+				tvRFg256[R_GRAD+j]=TvTo256(tvRFg[R_GRAD+j]);
+				tvRBg256[R_GRAD+j]=TvTo256(tvRBg[R_GRAD+j]);
+			}
+		// the cells may keep their attributes, so all of them are sent again
+		for(int i=0;i<TV_CELLS;i++)
+			tvPrevCh[i]=-1;
+	}
+	for(int j=0;j<rows;j++)
+	{
+		if(tvTrueColor)
+		{
+			TvFill(0,j+1,tvW,1,G_UPHALF,TV_ROLE|(R_GRAD+j));
+			continue;
+		}
+		for(int x=0;x<tvW;x++)
+		{
+			int v=tvGradDit[j*TV_MAXW+x];
+			if((v>>8)==(v&255))TvPut(x,j+1,' ',TV_C256|v);
+			else TvPut(x,j+1,G_UPHALF,TV_C256|v);
+		}
+	}
+}
+
 void TvDrawDesk()
 {
+	if(tvDeskCh==TV_DESK_GRADIENT)
+	{
+		TvDrawGradient();
+		return;
+	}
 	if(tvDeskCh>=0)
 	{
 		TvFill(0,1,tvW,tvH-2,tvDeskCh,A_DESK);

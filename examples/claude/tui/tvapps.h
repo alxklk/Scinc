@@ -1727,9 +1727,9 @@ void TeLoadThemes()
 
 // The desktop's pattern: 0 as the theme has it, or one of these.
 int teDeskPick=0;
-char* teDeskNames="As the theme has it|Light shade \xe2\x96\x91|Medium shade \xe2\x96\x92|Quadrants \xe2\x96\x9a|Checker board \xf0\x9f\xae\x95|Braille dots \xe2\xa2\x95|Vertical stripes \xe2\x96\x91\xe2\x96\x92|Diagonal stripes  \xe2\x96\x91\xe2\x96\x92";
-int teDeskChars[7]={G_LIGHT,G_MEDIUM,G_QUADS,G_CHECKER,G_BRAILLE,TV_DESK_VSTRIPES,TV_DESK_DIAGONAL};
-#define TE_DESKN 8
+char* teDeskNames="As the theme has it|Light shade \xe2\x96\x91|Medium shade \xe2\x96\x92|Quadrants \xe2\x96\x9a|Checker board \xf0\x9f\xae\x95|Braille dots \xe2\xa2\x95|Vertical stripes \xe2\x96\x91\xe2\x96\x92|Diagonal stripes  \xe2\x96\x91\xe2\x96\x92|Vertical gradient";
+int teDeskChars[8]={G_LIGHT,G_MEDIUM,G_QUADS,G_CHECKER,G_BRAILLE,TV_DESK_VSTRIPES,TV_DESK_DIAGONAL,TV_DESK_GRADIENT};
+#define TE_DESKN 9
 
 // Puts theme i in use.
 void TeUseTheme(int i)
@@ -1819,8 +1819,25 @@ int TeConvert(int from, int to, int v)
 }
 
 // The value of the item's part; -1 a clear background.
+// The colour dialog (TeColour) picks one colour of its own instead of a theme's.
+int teOwn=0;           // TeColour is open
+int teOwnColour=0;     // its colour, 0xRRGGBB
+int teOwnWas=0;        // as it was
+int teOwnTarget=0;     // 1, 2: the desktop gradient's top, bottom, shown as it changes
+#define W_COLOUR 49
+#define CM_DESKTOPC 318   // Appearance buttons: the gradient's top and bottom colours
+#define CM_DESKBOTC 319
+
+// The depth the picker works at: the theme's, or 24 bits in the colour dialog.
+int TeDepth()
+{
+	if(teOwn)return 24;
+	return tvCustDepth;
+}
+
 int TeGet()
 {
+	if(teOwn)return teOwnColour;
 	if(teItem>=R_N)
 	{
 		if(tePart==0)return tvCustFg[teItem-R_N];
@@ -1833,6 +1850,7 @@ int TeGet()
 // The value shown: a clear background shows the editor's.
 int TeShown()
 {
+	if(teOwn)return teOwnColour;
 	int v=TeGet();
 	if(v<0)v=tvRBgI[teItem];
 	return v;
@@ -1840,6 +1858,14 @@ int TeShown()
 
 void TeSet(int v)
 {
+	if(teOwn)
+	{
+		teOwnColour=v;
+		if(teOwnTarget==1)tvDeskTop=v;
+		if(teOwnTarget==2)tvDeskBottom=v;
+		tvDirty=1;
+		return;
+	}
 	if(teItem>=R_N)
 	{
 		if(tePart==0)tvCustFg[teItem-R_N]=v;
@@ -1933,7 +1959,7 @@ void TeHexText()
 {
 	if(teHex<0)return;
 	if(tvWin[teWin].focus==teHex)return;
-	snprintf(&tvCtl[teHex].text[0],16,"#%06x",TvCustRgb(tvCustDepth,TeShown())&0xFFFFFF);
+	snprintf(&tvCtl[teHex].text[0],16,"#%06x",TvCustRgb(TeDepth(),TeShown())&0xFFFFFF);
 	tvCtl[teHex].val=7;
 	tvCtl[teHex].top=0;
 }
@@ -1941,7 +1967,7 @@ void TeHexText()
 // teV from the item's colour.
 void TeLoadColour()
 {
-	int c=TvCustRgb(tvCustDepth,TeShown());
+	int c=TvCustRgb(TeDepth(),TeShown());
 	teV[0]=((c>>16)&255)/255.;
 	teV[1]=((c>>8)&255)/255.;
 	teV[2]=(c&255)/255.;
@@ -2183,6 +2209,77 @@ int TeRgbAt(int c)
 	return TV_RGB|(TvTo15(c)<<15)|TvTo15(c);
 }
 
+// The 24-bit picker at px,py of window win: the square, the channel sliders, and the
+// Was (or clear) and Now swatches.
+void TeDraw24(int win, int px, int py, int was, int clear)
+{
+	TWin& t=tvWin[win];
+	int f=t.focus;
+	char s[64];
+	int ax=0;
+	int ay=0;
+	TeAxes(ax,ay);
+	// in a graphic window the square and the sliders are pixels (TePixels),
+	// with the key telling the backend when they change
+	int pix=TvHasPixels();
+	int key=teChan*3+(f==tePick);
+	for(int k=0;k<6;k++)
+		key=key*31+int(teV[k]*65535.);
+	if(pix)TvPixels(TE_PIXID,px,py,TE_SQW,TE_SQH,key);
+	else
+	{
+		for(int j=0;j<TE_SQH;j++)
+			for(int i=0;i<TE_SQW;i++)
+			{
+				float tx=(i+0.5)/TE_SQW;
+				int top=TeColorWith(ax,tx,ay,1-(j*2+0.5)/(TE_SQH*2));
+				int bot=TeColorWith(ax,tx,ay,1-(j*2+1.5)/(TE_SQH*2));
+				TvPixRgb(px+i,py+j,top,bot);
+			}
+		int mx=int(teV[ax]*TE_SQW);
+		if(mx>TE_SQW-1)mx=TE_SQW-1;
+		int my=int((1-teV[ay])*TE_SQH);
+		if(my>TE_SQH-1)my=TE_SQH-1;
+		int ch=0x25CB;
+		if(f==tePick)ch=0x25D8;
+		TeCell(px+mx,py+my,ch,TeColorWith(ax,(mx+0.5)/TE_SQW,ay,1-(my+0.5)/TE_SQH));
+	}
+	for(int k=0;k<6;k++)
+	{
+		TCtl& lc=tvCtl[teSlider[k]];
+		int lx=t.x+lc.x;
+		int ly=t.y+lc.y;
+		if(pix)TvPixels(TE_PIXID+1+k,lx,ly,TE_SLW,1,key);
+		else
+		{
+			for(int i=0;i<TE_SLW;i++)
+				TvPut(lx+i,ly,' ',TeRgbAt(TeColorWith(k,(i+0.5)/TE_SLW,-1,0.)));
+			int th=int(teV[k]*(TE_SLW-1)+0.5);
+			TeCell(lx+th,ly,0x2666,TeColorWith(k,(th+0.5)/TE_SLW,-1,0.));
+		}
+		int val=int(teV[k]*255+0.5);
+		if(k==3)val=int(teV[k]*360+0.5)%360;
+		if(k>3)val=int(teV[k]*100+0.5);
+		snprintf(&s[0],64,"%3i",val);
+		if(k==3)StrCpy(&s[3],"\xc2\xb0",4);
+		if(k>3)StrCpy(&s[3],"%",4);
+		int at=A_DLG;
+		if(f==teSlider[k])at=A_BTN_FOCUS;
+		TvText(lx+TE_SLW+1,ly,&s[0],at);
+	}
+	// what it was when the editor opened, and now
+	TvText(px,py+9,"Was",A_DLG);
+	TvText(px+9,py+9,"Now",A_DLG);
+	// cells hold 15 bits of colour, pixels all 24
+	teWasRgb=was;
+	int now=TePack(teV[0],teV[1],teV[2])&0xFFFFFF;
+	if(clear)TvText(px+4,py+9,"clr",A_DLG_PASSIVE);
+	else if(pix)TvPixels(TE_PIXID+7,px+4,py+9,4,1,was);
+	else TvFill(px+4,py+9,4,1,' ',TeRgbAt(was));
+	if(pix)TvPixels(TE_PIXID+8,px+13,py+9,4,1,now);
+	else TvFill(px+13,py+9,4,1,' ',TeRgbAt(now));
+}
+
 void TeDraw(int win)
 {
 	TWin& t=tvWin[win];
@@ -2255,58 +2352,7 @@ void TeDraw(int win)
 	}
 	else
 	{
-		int ax=0;
-		int ay=0;
-		TeAxes(ax,ay);
-		// in a graphic window the square and the sliders are pixels (TePixels),
-		// with the key telling the backend when they change
-		int pix=TvHasPixels();
-		int key=teChan*3+(f==tePick);
-		for(int k=0;k<6;k++)
-			key=key*31+int(teV[k]*65535.);
-		if(pix)TvPixels(TE_PIXID,px,py,TE_SQW,TE_SQH,key);
-		else
-		{
-			for(int j=0;j<TE_SQH;j++)
-				for(int i=0;i<TE_SQW;i++)
-				{
-					float tx=(i+0.5)/TE_SQW;
-					int top=TeColorWith(ax,tx,ay,1-(j*2+0.5)/(TE_SQH*2));
-					int bot=TeColorWith(ax,tx,ay,1-(j*2+1.5)/(TE_SQH*2));
-					TvPixRgb(px+i,py+j,top,bot);
-				}
-			int mx=int(teV[ax]*TE_SQW);
-			if(mx>TE_SQW-1)mx=TE_SQW-1;
-			int my=int((1-teV[ay])*TE_SQH);
-			if(my>TE_SQH-1)my=TE_SQH-1;
-			int ch=0x25CB;
-			if(f==tePick)ch=0x25D8;
-			TeCell(px+mx,py+my,ch,TeColorWith(ax,(mx+0.5)/TE_SQW,ay,1-(my+0.5)/TE_SQH));
-		}
-		for(int k=0;k<6;k++)
-		{
-			TCtl& lc=tvCtl[teSlider[k]];
-			int lx=t.x+lc.x;
-			int ly=t.y+lc.y;
-			if(pix)TvPixels(TE_PIXID+1+k,lx,ly,TE_SLW,1,key);
-			else
-			{
-				for(int i=0;i<TE_SLW;i++)
-					TvPut(lx+i,ly,' ',TeRgbAt(TeColorWith(k,(i+0.5)/TE_SLW,-1,0.)));
-				int th=int(teV[k]*(TE_SLW-1)+0.5);
-				TeCell(lx+th,ly,0x2666,TeColorWith(k,(th+0.5)/TE_SLW,-1,0.));
-			}
-			int val=int(teV[k]*255+0.5);
-			if(k==3)val=int(teV[k]*360+0.5)%360;
-			if(k>3)val=int(teV[k]*100+0.5);
-			snprintf(&s[0],64,"%3i",val);
-			if(k==3)StrCpy(&s[3],"\xc2\xb0",4);
-			if(k>3)StrCpy(&s[3],"%",4);
-			int at=A_DLG;
-			if(f==teSlider[k])at=A_BTN_FOCUS;
-			TvText(lx+TE_SLW+1,ly,&s[0],at);
-		}
-		// what it was when the editor opened, and now
+		// what it was when the editor opened
 		int old=0;
 		if(teItem>=R_N)
 		{
@@ -2319,18 +2365,9 @@ void TeDraw(int win)
 			if(tePart==0)old=teSaveRFg[teItem];
 			else old=teSaveRBg[teItem];
 		}
-		TvText(px,py+9,"Was",A_DLG);
-		TvText(px+9,py+9,"Now",A_DLG);
-		// cells hold 15 bits of colour, pixels all 24
 		int was=0;
 		if(old>=0)was=TvCustRgb(teSaveDepth,old)&0xFFFFFF;
-		teWasRgb=was;
-		int now=TePack(teV[0],teV[1],teV[2])&0xFFFFFF;
-		if(old<0)TvText(px+4,py+9,"clr",A_DLG_PASSIVE);
-		else if(pix)TvPixels(TE_PIXID+7,px+4,py+9,4,1,was);
-		else TvFill(px+4,py+9,4,1,' ',TeRgbAt(was));
-		if(pix)TvPixels(TE_PIXID+8,px+13,py+9,4,1,now);
-		else TvFill(px+13,py+9,4,1,' ',TeRgbAt(now));
+		TeDraw24(win,px,py,was,old<0);
 	}
 }
 
@@ -2376,7 +2413,7 @@ int TeKey(int win, int key)
 {
 	TWin& t=tvWin[win];
 	int f=t.focus;
-	int d=tvCustDepth;
+	int d=TeDepth();
 	if(f<0)return 0;
 	if(f==teHex)
 	{
@@ -2555,7 +2592,7 @@ int TePixels(int id, int* buf, int fullW, int fullH, int ox, int oy, int w, int 
 int TeMouse(int win, int ev, int x, int y)
 {
 	TWin& t=tvWin[win];
-	int d=tvCustDepth;
+	int d=TeDepth();
 	if(ev==EV_WHEEL)
 	{
 		for(int k=0;k<6;k++)
@@ -2582,7 +2619,7 @@ int TeMouse(int win, int ev, int x, int y)
 				if((x>=vc.x)&&(x<vc.x+vc.w)&&(y>=vc.y)&&(y<vc.y+vc.h))teDrag=i;
 			}
 		// the square and the sliders follow the mouse pixel by pixel
-		tvPixDrag=TvHasPixels()&&(teDrag>=0)&&(tvCustDepth==24);
+		tvPixDrag=TvHasPixels()&&(teDrag>=0)&&(d==24);
 	}
 	if((ev!=EV_MDOWN)&&(ev!=EV_MDRAG))return 0;
 	int v=teDrag;
@@ -2894,6 +2931,87 @@ int TeRun(int cur)
 	}
 	TeUseTheme(cur);
 	return -1;
+}
+
+// ---------------------------------------------------------------- colour dialog
+
+// A colour picked with the theme editor's 24-bit picker (TeDraw24, TeKey, TeMouse,
+// TePixels): returns 0xRRGGBB, or -1 when cancelled. target 1 or 2 shows it at once
+// as the desktop gradient's top or bottom colour, and puts that back on Cancel. The
+// program's TvAppDraw calls TeColourDraw for W_COLOUR windows, and its key, mouse and
+// button hooks go to TeKey, TeMouse and TeButton as for W_THEME.
+void TeColourDraw(int win)
+{
+	TWin& t=tvWin[win];
+	TeDraw24(win,t.x+3,t.y+2,teOwnWas,0);
+}
+
+// The desktop pattern combo box combo of an open Appearance dialog, and the desktop,
+// go to the gradient, so that its colours can be seen as they are picked.
+void TeShowGradient(int combo)
+{
+	teDeskPick=TE_DESKN-1;
+	tvCtl[combo].val=TE_DESKN-1;
+	tvDeskCh=TV_DESK_GRADIENT;
+	tvDirty=1;
+}
+
+int TeColour(char* title, int rgb, int target)
+{
+	int win=TvNewCentered(W_COLOUR,title,52,16,WF_DIALOG);
+	if(win<0)return -1;
+	teOwn=1;
+	teOwnColour=rgb&0xFFFFFF;
+	teOwnWas=teOwnColour;
+	teOwnTarget=target;
+	teWin=win;
+	teDrag=-1;
+	teList=-1;
+	teClear=-1;
+	teThemeCtl=-1;
+	tePartR[0]=-1;
+	tePartR[1]=-1;
+	for(int k=0;k<3;k++)
+		teDepthR[k]=-1;
+	tePick=TvAdd(win,C_VIEW,3,2,TE_SQW,TE_SQH,"",0);
+	char* lab="R|G|B|H|S|V";
+	char item[8];
+	for(int k=0;k<6;k++)
+	{
+		TvItemAt(lab,k,&item[0],8);
+		teChanR[k]=TvAdd(win,C_RADIO,20,2+k,7,1,&item[0],CM_TECHAN);
+		tvCtl[teChanR[k]].group=2;
+		tvCtl[teChanR[k]].val=(k==teChan);
+		teSlider[k]=TvAdd(win,C_VIEW,27,2+k,TE_SLW,1,"",0);
+	}
+	TvAdd(win,C_LABEL,21,11,5,1,"He~x~",0);
+	teHex=TvAdd(win,C_INPUT,27,11,10,1,"",0);
+	int bx=(52-26)/2;
+	int ok=TvAdd(win,C_BUTTON,bx,13,12,2,"O~K~",CM_OK);
+	tvCtl[ok].isDefault=1;
+	TvAdd(win,C_BUTTON,bx+14,13,12,2,"Cancel",CM_CANCEL);
+	tvWin[win].focus=tePick;
+	TeLoadColour();
+	int res=TvExec(win);
+	TvClose(win);
+	int c=teOwnColour;
+	if(res!=CM_OK)
+	{
+		c=-1;
+		if(target==1)tvDeskTop=teOwnWas;
+		if(target==2)tvDeskBottom=teOwnWas;
+	}
+	teOwn=0;
+	teWin=-1;
+	teHex=-1;
+	tePick=-1;
+	for(int k=0;k<6;k++)
+	{
+		teChanR[k]=-1;
+		teSlider[k]=-1;
+	}
+	tvDirty=1;
+	return c;
 }
 
 #endif // TVAPPS_H
