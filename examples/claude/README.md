@@ -148,7 +148,7 @@ deleting files step by step and running programs.
 The desktop can be a pattern or a vertical gradient of two colours picked in a
 colour dialog (Options > Preferences in tvdemo, Options > Appearance in t2fc):
 exact 24-bit colours a half cell apart, or Floyd-Steinberg dithered over xterm's 256
-when the terminal has no 24-bit colour.
+when the terminal has no 24-bit colour (or over its 16 with `TV_COLORS=16`).
 
 Run `./build_so.sh` once, then `Scinc tvdemo.cpp [file]` from this folder.
 
@@ -298,7 +298,9 @@ unless it knows the terminal around it has them, so there tui asks tmux for its
 client's features instead and looks for `RGB`. tmux 3.4 does not add `RGB` for
 VTE terminals by itself, even with `COLORTERM` set: put
 `set -as terminal-features ',xterm*:RGB'` in `~/.tmux.conf` and attach again.
-`TV_COLORS=24` or `TV_COLORS=256` overrides the guess.
+`TV_COLORS=24` or `TV_COLORS=256` overrides the guess; `TV_COLORS=16` sends only the
+terminal's own 16 colours (taken to be the VGA ones): other colours go to the nearest
+of them, and the gradient desktop is dithered over them.
 
 **Running programs.** In a terminal, t2fc gives the terminal to the program, as MC
 does: the desktop steps aside, the program runs with the real screen and keyboard

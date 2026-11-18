@@ -228,6 +228,43 @@ int TvTo256(int c)
 #define TV_C256 0x10000
 int tvRgb256[256];
 
+// TV_COLORS=16: the terminal is taken to show only its own 16 colours. Everything is
+// sent as the nearest of them (taken to be the VGA colours, tvRgb256[0..15]), and the
+// desktop gradient is dithered over them.
+int tvColors16=0;
+
+// The nearest of the 16 to 0xRRGGBB, in ANSI order (0 black, 1 red ... 15 white).
+int TvTo16(int c)
+{
+	int r=(c>>16)&255;
+	int g=(c>>8)&255;
+	int b=c&255;
+	int best=0;
+	int bestD=0x7FFFFFFF;
+	for(int i=0;i<16;i++)
+	{
+		int p=tvRgb256[i];
+		int dr=r-((p>>16)&255);
+		int dg=g-((p>>8)&255);
+		int db=b-(p&255);
+		// weighted a little as the eye sees
+		int d=dr*dr*3+dg*dg*4+db*db*2;
+		if(d<bestD)
+		{
+			bestD=d;
+			best=i;
+		}
+	}
+	return best;
+}
+
+// The palette entry to draw 0xRRGGBB with in a cell of TV_C256: of the 16 or the 256.
+int TvToPal(int c)
+{
+	if(tvColors16)return TvTo16(c);
+	return TvTo256(c);
+}
+
 // An attribute with TV_RGB set holds two colours of 15 bits, 5 per channel,
 // (fg<<15)|bg: 32 levels a channel where the 256 palette has 6. Sent as 24-bit colour,
 // or as the nearest of the 256 when the terminal has no 24-bit colour. Test it before
@@ -651,8 +688,47 @@ void OutRgb(int c)
 	OutInt(c&255);
 }
 
+// Two of the terminal's 16 colours, in ANSI order.
+void OutAnsi16(int fg, int bg)
+{
+	int f=30+fg;
+	if(fg>7)f=90+fg-8;
+	int b=40+bg;
+	if(bg>7)b=100+bg-8;
+	OutByte(27);
+	OutByte('[');
+	OutInt(f);
+	OutByte(';');
+	OutInt(b);
+	OutByte('m');
+}
+
 void OutAttr(int at)
 {
+	if(tvColors16)
+	{
+		// colours of their own go to the nearest of the 16; theme colours below,
+		// where 4-bit themes send their own
+		if(at&TV_RGB)
+		{
+			OutAnsi16(TvTo16(TvAtFg(at)),TvTo16(TvAtBg(at)));
+			return;
+		}
+		if((at&TV_ROLE)&&((at&255)>=R_GRAD))
+		{
+			OutAnsi16(TvTo16(tvRFg[at&255]),TvTo16(tvRBg[at&255]));
+			return;
+		}
+		if(!(at&TV_ROLE)&&(at&TV_C256))
+		{
+			int f=(at>>8)&255;
+			int b=at&255;
+			if(f>15)f=TvTo16(tvRgb256[f]);
+			if(b>15)b=TvTo16(tvRgb256[b]);
+			OutAnsi16(f,b);
+			return;
+		}
+	}
 	if(at&TV_RGB)
 	{
 		int f=TvAtFg(at);
@@ -730,6 +806,11 @@ void OutAttr(int at)
 		bgC=tvBg[bi];
 		fg256=tvFg256[fi];
 		bg256=tvBg256[bi];
+	}
+	if(tvColors16&&(tvDepth!=4))
+	{
+		OutAnsi16(TvTo16(fgC),TvTo16(bgC));
+		return;
 	}
 	if(tvDepth==8)
 	{
@@ -1495,8 +1576,8 @@ void TvShadowSet(int i, int at)
 	}
 	else if(at&TV_C256)
 	{
-		int f=TvTo256(TvShade(tvRgb256[(at>>8)&255]));
-		int b=TvTo256(TvShade(tvRgb256[at&255]));
+		int f=TvToPal(TvShade(tvRgb256[(at>>8)&255]));
+		int b=TvToPal(TvShade(tvRgb256[at&255]));
 		tvAt[i]=TV_C256|(f<<8)|b;
 		return;
 	}
@@ -3769,7 +3850,7 @@ void TvGradDither(int w, int rows)
 				if(u>255)u=255;
 				want[ch]=u;
 			}
-			int idx=TvTo256((want[0]<<16)|(want[1]<<8)|want[2]);
+			int idx=TvToPal((want[0]<<16)|(want[1]<<8)|want[2]);
 			got=tvRgb256[idx];
 			for(int ch=0;ch<3;ch++)
 			{
@@ -3791,7 +3872,7 @@ void TvDrawGradient()
 {
 	int rows=tvH-2;
 	if(rows<1)return;
-	int key=((tvDeskTop*31+tvDeskBottom)*31+tvW)*131+rows*2+tvTrueColor;
+	int key=(((tvDeskTop*31+tvDeskBottom)*31+tvW)*131+rows*2+tvTrueColor)*3+tvColors16;
 	if(key!=tvGradKey)
 	{
 		tvGradKey=key;
@@ -6245,6 +6326,12 @@ void TvInit()
 	return;
 #endif
 	tvTrueColor=term_truecolor();
+	char colors[8];
+	if(run_env("TV_COLORS",&colors[0],8)&&(colors[0]=='1')&&(colors[1]=='6')&&(colors[2]==0))
+	{
+		tvColors16=1;
+		tvTrueColor=0;
+	}
 	tvW=term_cols();
 	tvH=term_rows();
 	if(tvW>TV_MAXW)tvW=TV_MAXW;
