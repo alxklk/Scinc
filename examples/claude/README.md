@@ -327,5 +327,8 @@ Down go through it, as in a shell; the ▼ at the line's end, Ctrl+Down, Alt+Dow
 down the list of it; and `t2fc.hist` keeps it between runs.
 
 Settings, including the directories of the panel window in front at exit, are kept
-in `t2fc.cfg`; colour themes are shared with tvdemo (`../tui/tvthemes.cfg`).
+in `t2fc.cfg` as commented `key = value` lines that can be edited by hand while t2fc
+is not running (yes/no options take yes or no; a key left out keeps its default; the
+old one-line-of-numbers file is still read and rewritten in the new form); colour
+themes are shared with tvdemo (`../tui/tvthemes.cfg`).
 

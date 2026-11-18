@@ -5527,16 +5527,209 @@ int FcMouse(int win, int ev, int x, int y)
 
 // ---------------------------------------------------------------- settings
 
-// t2fc.cfg: a line of numbers (theme, hidden, the panels' sort and brief modes, the
-// active panel, line numbers, wrap) and then the two directories.
+// t2fc.cfg holds "key = value" lines, which can be edited by hand: a line starting
+// with # is a comment (a # later on belongs to the value, as paths may hold one), unknown keys are passed over and missing ones keep their defaults. Yes/no
+// options take yes or no (or on/off, true/false, 1/0); choices take their words or
+// their numbers. Older t2fc wrote a line of numbers and then the two directories
+// and the terminal command (PrefsLoadOld), which is still read.
 int prefScale=0;     // the pixel scale of a graphic window, 0 the program's own
+
+#define PREF_BUF 8000
+
+// The value v as a number: one of the words in "a|b|c" gives its index, digits their
+// number; anything else -1.
+int PrefPick(char* v, char* words)
+{
+	if((v[0]>='0')&&(v[0]<='9'))
+	{
+		int x=0;
+		int i=0;
+		while((v[i]>='0')&&(v[i]<='9'))
+		{
+			x=x*10+v[i]-'0';
+			i++;
+		}
+		return x;
+	}
+	int idx=0;
+	int w=0;
+	while(true)
+	{
+		int i=0;
+		while((words[w+i]!=0)&&(words[w+i]!='|')&&(v[i]==words[w+i]))i++;
+		if((v[i]==0)&&((words[w+i]==0)||(words[w+i]=='|')))return idx;
+		while((words[w]!=0)&&(words[w]!='|'))w++;
+		if(words[w]==0)return -1;
+		w++;
+		idx++;
+	}
+	return -1;
+}
+
+// A yes/no value: 1, 0, or -1 for neither.
+int PrefYes(char* v)
+{
+	int x=PrefPick(v,"no|yes");
+	if(x<0)x=PrefPick(v,"off|on");
+	if(x<0)x=PrefPick(v,"false|true");
+	if(x>1)x=1;
+	return x;
+}
+
+// Sets what key names to value v (yes/no keys only to yes or no).
+void PrefSet(char* key, char* v, char* left, char* right)
+{
+	int y=PrefYes(v);
+	int x=PrefPick(v,"");
+	if(StrCmp(key,"left.folder")==0)StrCpy(left,v,FC_PATH);
+	else if(StrCmp(key,"right.folder")==0)StrCpy(right,v,FC_PATH);
+	else if(StrCmp(key,"terminal")==0)StrCpy(&fcTermCmd[0],v,200);
+	else if(StrCmp(key,"active")==0)
+	{
+		x=PrefPick(v,"left|right");
+		if(x>=0)FcSetActive(x&1);
+	}
+	else if(StrCmp(key,"theme")==0)
+	{
+		if(x>=0)prefTheme=x;
+	}
+	else if((StrCmp(key,"left.sort")==0)||(StrCmp(key,"right.sort")==0))
+	{
+		int p=1;
+		if(key[0]=='l')p=0;
+		x=PrefPick(v,"name|extension|size|time");
+		if((x>=0)&&(x<=3))fcSort[p]=(fcSort[p]&4)|x;
+	}
+	else if((StrCmp(key,"left.reverse")==0)||(StrCmp(key,"right.reverse")==0))
+	{
+		int p=1;
+		if(key[0]=='l')p=0;
+		if(y>=0)fcSort[p]=(fcSort[p]&3)|(y*4);
+	}
+	else if((StrCmp(key,"left.brief")==0)||(StrCmp(key,"right.brief")==0))
+	{
+		int p=1;
+		if(key[0]=='l')p=0;
+		if(y>=0)fcBrief[p]=y;
+	}
+	else if((StrCmp(key,"left.scroll_bar")==0)||(StrCmp(key,"right.scroll_bar")==0))
+	{
+		int p=1;
+		if(key[0]=='l')p=0;
+		x=PrefPick(v,"left|right|none");
+		if((x>=0)&&(x<=2))fcBarPos[p]=x;
+	}
+	else if(StrCmp(key,"quick_view_count_seconds")==0)
+	{
+		if(x>=0)fcQSecs=x;
+		if(fcQSecs>600)fcQSecs=600;
+	}
+	else if(StrCmp(key,"desktop_pattern")==0)
+	{
+		if((x>=0)&&(x<TE_DESKN))teDeskPick=x;
+	}
+	else if(StrCmp(key,"pixel_scale")==0)
+	{
+		if(x>=0)prefScale=x;
+	}
+	else if(StrCmp(key,"tab_size")==0)
+	{
+		if((x>=1)&&(x<=16))edTab=x;
+	}
+	else if(StrCmp(key,"delete")==0)
+	{
+		x=PrefPick(v,"for_good|to_trash|ask");
+		if((x>=0)&&(x<=2))fcTrash=x;
+	}
+	else if(StrCmp(key,"run.leave_window_open")==0)
+	{
+		if(StrCmp(v,"as_options")==0)fcRunKeep=-1;
+		else if(y>=0)fcRunKeep=y;
+	}
+	else if(y>=0)
+	{
+		if(StrCmp(key,"hidden_files")==0)fcHidden=y;
+		else if(StrCmp(key,"line_numbers")==0)edLineNums=y;
+		else if(StrCmp(key,"word_wrap")==0)edWrap=y;
+		else if(StrCmp(key,"show_tabs_and_spaces")==0)edInvis=y;
+		else if(StrCmp(key,"lynx_motion")==0)fcLynx=y;
+		else if(StrCmp(key,"quick_search_case")==0)fcQSCase=y;
+		else if(StrCmp(key,"lanczos")==0)pvLanczos=y;
+		else if(StrCmp(key,"cell_pictures")==0)tvCellPics=y;
+		else if(StrCmp(key,"ask_before_quit")==0)fcConfExit=y;
+		else if(StrCmp(key,"ask_before_run")==0)fcConfRun=y;
+		else if(StrCmp(key,"wait_after_command")==0)fcConfPause=y;
+		else if(StrCmp(key,"type_aware_view")==0)fcTypeView=y;
+		else if(StrCmp(key,"tree_from_root")==0)fcTreeAll=y;
+		else if(StrCmp(key,"cd_on_exit")==0)fcCdExit=y;
+		else if(StrCmp(key,"snap_windows")==0)tvSnap=y;
+		else if(StrCmp(key,"more_handles")==0)tvMoreHandles=y;
+		else if(StrCmp(key,"resizable_dialogs")==0)tvDlgResize=y;
+		else if(StrCmp(key,"run.new_window")==0)fcRunWin=y;
+	}
+}
+
+void PrefsLoadOld(char* buf, char* left, char* right);
 
 void PrefsLoad(char* left, char* right)
 {
-	char buf[2200];
-	int n=fs_load(CFG_FILE,&buf[0],2199);
+	char buf[PREF_BUF];
+	int n=fs_load(CFG_FILE,&buf[0],PREF_BUF-1);
 	if(n<=0)return;
 	buf[n]=0;
+	if((buf[0]>='0')&&(buf[0]<='9'))
+	{
+		PrefsLoadOld(&buf[0],left,right);
+		return;
+	}
+	char key[64];
+	char val[FC_PATH];
+	int i=0;
+	while(buf[i]!=0)
+	{
+		// one line: key, =, value, each trimmed
+		while((buf[i]==' ')||(buf[i]==9))i++;
+		int k=0;
+		while((buf[i]!=0)&&(buf[i]!=10)&&(buf[i]!='=')&&(buf[i]!='#'))
+		{
+			if(k<63)
+			{
+				key[k]=buf[i];
+				k++;
+			}
+			i++;
+		}
+		while((k>0)&&((key[k-1]==' ')||(key[k-1]==9)||(key[k-1]==13)))k--;
+		key[k]=0;
+		int o=0;
+		if(buf[i]=='=')
+		{
+			i++;
+			while((buf[i]==' ')||(buf[i]==9))i++;
+			while((buf[i]!=0)&&(buf[i]!=10))
+			{
+				if(o<FC_PATH-1)
+				{
+					val[o]=buf[i];
+					o++;
+				}
+				i++;
+			}
+			while((o>0)&&((val[o-1]==' ')||(val[o-1]==9)||(val[o-1]==13)))o--;
+			val[o]=0;
+			if(k>0)PrefSet(&key[0],&val[0],left,right);
+		}
+		while((buf[i]!=0)&&(buf[i]!=10))i++;
+		if(buf[i]==10)i++;
+	}
+	PvSetAspect();
+	img_filter(pvLanczos);
+}
+
+// The old t2fc.cfg: a line of numbers, then the two directories and the terminal
+// command.
+void PrefsLoadOld(char* buf, char* left, char* right)
+{
 	int v[40];
 	int k=0;
 	int i=0;
@@ -5629,17 +5822,120 @@ void PrefsLoad(char* left, char* right)
 	}
 }
 
+// PrefsSave's lines: text as it is, a number, a yes/no, one of "a|b|c".
+void PrefText(char* buf, char* s)
+{
+	int n=StrLen(buf);
+	StrCpy(&buf[n],s,PREF_BUF-n);
+}
+
+void PrefNum(char* buf, char* key, int x)
+{
+	char line[100];
+	snprintf(&line[0],100,"%s = %i\n",key,x);
+	PrefText(buf,&line[0]);
+}
+
+void PrefStr(char* buf, char* key, char* v)
+{
+	char line[1104];
+	snprintf(&line[0],1104,"%s = %s\n",key,v);
+	PrefText(buf,&line[0]);
+}
+
+void PrefWord(char* buf, char* key, int x, char* words)
+{
+	char w[40];
+	int i=0;
+	int idx=0;
+	while((idx<x)&&(words[i]!=0))
+	{
+		if(words[i]=='|')idx++;
+		i++;
+	}
+	int o=0;
+	while((words[i]!=0)&&(words[i]!='|')&&(o<39))
+	{
+		w[o]=words[i];
+		o++;
+		i++;
+	}
+	w[o]=0;
+	PrefStr(buf,key,&w[0]);
+}
+
+void PrefYesNo(char* buf, char* key, int y)
+{
+	if(y)PrefStr(buf,key,"yes");
+	else PrefStr(buf,key,"no");
+}
+
 void PrefsSave()
 {
-	char buf[2200];
+	char buf[PREF_BUF];
 	int scale=prefScale;
 #ifdef TV_GFX
 	scale=GfxScale();
 #endif
-	int keep=fcRunKeep;
-	if(keep<0)keep=2;
-	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
-		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,pvLanczos,fcBarPos[0],fcBarPos[1],edTab,edInvis,tvCellPics,fcTrash,fcConfExit,fcConfRun,fcConfPause,fcTypeView,fcTreeAll,fcCdExit,tvSnap,tvMoreHandles,tvDlgResize,fcRunWin,keep,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
+	buf[0]=0;
+	PrefText(&buf[0],"# t2fc settings, written by t2fc when it quits or an option changes.\n");
+	PrefText(&buf[0],"# One \"key = value\" a line; lines starting with # are comments (a # after\n");
+	PrefText(&buf[0],"# a value is part of it). Yes/no options take yes or no; a key left out\n");
+	PrefText(&buf[0],"# keeps its default. Edit it while t2fc is not running.\n");
+	PrefText(&buf[0],"\n# panels\n");
+	PrefStr(&buf[0],"left.folder",FcDirOf(fcBase));
+	PrefStr(&buf[0],"right.folder",FcDirOf(fcBase+1));
+	PrefWord(&buf[0],"active",fcActive&1,"left|right");
+	PrefText(&buf[0],"# sort: name, extension, size or time; scroll_bar: left, right or none\n");
+	for(int side=0;side<2;side++)
+	{
+		char* pre="left.";
+		if(side==1)pre="right.";
+		char key[40];
+		snprintf(&key[0],40,"%ssort",pre);
+		PrefWord(&buf[0],&key[0],fcSort[fcBase+side]&3,"name|extension|size|time");
+		snprintf(&key[0],40,"%sreverse",pre);
+		PrefYesNo(&buf[0],&key[0],(fcSort[fcBase+side]&4)!=0);
+		snprintf(&key[0],40,"%sbrief",pre);
+		PrefYesNo(&buf[0],&key[0],fcBrief[fcBase+side]);
+		snprintf(&key[0],40,"%sscroll_bar",pre);
+		PrefWord(&buf[0],&key[0],fcBarPos[side],"left|right|none");
+	}
+	PrefYesNo(&buf[0],"hidden_files",fcHidden);
+	PrefYesNo(&buf[0],"lynx_motion",fcLynx);
+	PrefYesNo(&buf[0],"quick_search_case",fcQSCase);
+	PrefText(&buf[0],"# how long quick view may count what a folder holds; 0 does not count\n");
+	PrefNum(&buf[0],"quick_view_count_seconds",fcQSecs);
+	PrefYesNo(&buf[0],"tree_from_root",fcTreeAll);
+	PrefText(&buf[0],"\n# appearance (theme: its place in Options > Appearance, from 0)\n");
+	PrefNum(&buf[0],"theme",prefTheme);
+	PrefText(&buf[0],"# 0 as the theme has it, then light, medium, quadrants, checker board,\n# braille, vertical stripes, diagonal stripes\n");
+	PrefNum(&buf[0],"desktop_pattern",teDeskPick);
+	PrefText(&buf[0],"# graphic window pixel size, 0 the program's own\n");
+	PrefNum(&buf[0],"pixel_scale",scale);
+	PrefYesNo(&buf[0],"cell_pictures",tvCellPics);
+	PrefYesNo(&buf[0],"lanczos",pvLanczos);
+	PrefYesNo(&buf[0],"snap_windows",tvSnap);
+	PrefYesNo(&buf[0],"more_handles",tvMoreHandles);
+	PrefYesNo(&buf[0],"resizable_dialogs",tvDlgResize);
+	PrefText(&buf[0],"\n# edit and view\n");
+	PrefYesNo(&buf[0],"line_numbers",edLineNums);
+	PrefYesNo(&buf[0],"word_wrap",edWrap);
+	PrefNum(&buf[0],"tab_size",edTab);
+	PrefYesNo(&buf[0],"show_tabs_and_spaces",edInvis);
+	PrefYesNo(&buf[0],"type_aware_view",fcTypeView);
+	PrefText(&buf[0],"\n# system (delete: for_good, to_trash or ask)\n");
+	PrefWord(&buf[0],"delete",fcTrash,"for_good|to_trash|ask");
+	PrefYesNo(&buf[0],"ask_before_quit",fcConfExit);
+	PrefYesNo(&buf[0],"ask_before_run",fcConfRun);
+	PrefYesNo(&buf[0],"wait_after_command",fcConfPause);
+	PrefYesNo(&buf[0],"cd_on_exit",fcCdExit);
+	PrefText(&buf[0],"# the terminal program for new windows, as \"xterm -e\"; empty finds one\n");
+	PrefStr(&buf[0],"terminal",&fcTermCmd[0]);
+	PrefText(&buf[0],"\n# the Run dialog's check boxes (leave_window_open may be as_options:\n# as wait_after_command says)\n");
+	PrefYesNo(&buf[0],"run.new_window",fcRunWin);
+	if(fcRunKeep<0)PrefStr(&buf[0],"run.leave_window_open","as_options");
+	else PrefYesNo(&buf[0],"run.leave_window_open",fcRunKeep);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
