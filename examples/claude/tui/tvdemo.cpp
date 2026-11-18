@@ -654,18 +654,18 @@ int prefsThemeCtl=-1; // the theme combo box of the open Preferences
 // wrap, the saver numbering (8 has Random at 12, 7 had it at 11, 6 at 10, 3 at 7,
 // 2 at 6, none at 4), and the
 // pixel size of a graphic window, the desktop pattern, and the Interface options
-// (tvSnap, tvMoreHandles, tvDlgResize), and the desktop gradient's top and bottom
-// colours (0xRRGGBB in decimal).
+// (tvSnap, tvMoreHandles, tvDlgResize), the desktop gradient's top and bottom
+// colours (0xRRGGBB in decimal), and its dither (tvDither).
 void PrefsLoad()
 {
 	char buf[128];
 	int n=fs_load(CFG_FILE,&buf[0],127);
 	if(n<=0)return;
 	buf[n]=0;
-	int v[14];
+	int v[15];
 	int k=0;
 	int i=0;
-	while((k<14)&&(buf[i]!=0))
+	while((k<15)&&(buf[i]!=0))
 	{
 		if((buf[i]>='0')&&(buf[i]<='9'))
 		{
@@ -713,6 +713,7 @@ void PrefsLoad()
 		tvDeskTop=v[12]&0xFFFFFF;
 		tvDeskBottom=v[13]&0xFFFFFF;
 	}
+	if((k>=15)&&(v[14]<=2))tvDither=v[14];
 }
 
 void PrefsSave()
@@ -721,7 +722,7 @@ void PrefsSave()
 #ifdef TV_GFX
 	prefScale=GfxScale();
 #endif
-	snprintf(&buf[0],128,"%i %i %i %i %i %i 8 %i %i %i %i %i %i %i\n",prefTheme,svOn,svMinutes,svKind,edLineNums,edWrap,prefScale,teDeskPick,tvSnap,tvMoreHandles,tvDlgResize,tvDeskTop&0xFFFFFF,tvDeskBottom&0xFFFFFF);
+	snprintf(&buf[0],128,"%i %i %i %i %i %i 8 %i %i %i %i %i %i %i %i\n",prefTheme,svOn,svMinutes,svKind,edLineNums,edWrap,prefScale,teDeskPick,tvSnap,tvMoreHandles,tvDlgResize,tvDeskTop&0xFFFFFF,tvDeskBottom&0xFFFFFF,tvDither);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
@@ -733,7 +734,7 @@ int prefMinCtl=-1;   // the saver delay slider of the open dialog
 
 void RunPrefs()
 {
-	int win=TvNewCentered(W_PREFS,"Preferences",48,21,WF_DIALOG);
+	int win=TvNewCentered(W_PREFS,"Preferences",48,22,WF_DIALOG);
 	if(win<0)return;
 	TvAdd(win,C_LABEL,3,2,10,1,"~T~heme",0);
 	char names[200];
@@ -747,28 +748,32 @@ void RunPrefs()
 	int oldDesk=teDeskPick;
 	int oldTop=tvDeskTop;
 	int oldBottom=tvDeskBottom;
-	// the vertical gradient's colours
+	int oldDither=tvDither;
+	// the vertical gradient's colours, and how it is dithered without 24-bit colour
 	TvAdd(win,C_BUTTON,14,4,15,2,"T~o~p colour",CM_DESKTOPC);
 	TvAdd(win,C_BUTTON,30,4,16,2,"Botto~m~ colour",CM_DESKBOTC);
-	int on=TvAdd(win,C_CHECK,2,7,30,1,"~S~creen saver",0);
+	TvAdd(win,C_LABEL,3,6,10,1,"D~i~ther",0);
+	int di=TvAdd(win,C_COMBO,14,6,30,1,teDitherNames,CM_DITHERPICK);
+	tvCtl[di].val=tvDither;
+	int on=TvAdd(win,C_CHECK,2,8,30,1,"~S~creen saver",0);
 	tvCtl[on].val=svOn;
-	TvAdd(win,C_LABEL,3,8,10,1,"~K~ind",0);
-	int kind=TvAdd(win,C_COMBO,14,8,30,1,"Stars|Plasma|Matrix|Flame|Reaction-diffusion|Fluid|Landscape|Labyrinth|Objects|Nyan cat|10 PRINT|Maze solver|Random",0);
+	TvAdd(win,C_LABEL,3,9,10,1,"~K~ind",0);
+	int kind=TvAdd(win,C_COMBO,14,9,30,1,"Stars|Plasma|Matrix|Flame|Reaction-diffusion|Fluid|Landscape|Labyrinth|Objects|Nyan cat|10 PRINT|Maze solver|Random",0);
 	tvCtl[kind].val=svKind;
-	TvAdd(win,C_LABEL,3,10,10,1,"~A~fter",0);
-	prefMinCtl=TvAdd(win,C_SLIDER,14,10,20,1,"",0);
+	TvAdd(win,C_LABEL,3,11,10,1,"~A~fter",0);
+	prefMinCtl=TvAdd(win,C_SLIDER,14,11,20,1,"",0);
 	tvCtl[prefMinCtl].count=29;
 	tvCtl[prefMinCtl].val=svMinutes-1;
-	TvAdd(win,C_LABEL,3,12,40,1,"Interface",0);
-	int sn=TvAdd(win,C_CHECK,2,13,44,1,"~H~alf screen on a side, all on the top",0);
+	TvAdd(win,C_LABEL,3,13,40,1,"Interface",0);
+	int sn=TvAdd(win,C_CHECK,2,14,44,1,"~H~alf screen on a side, all on the top",0);
 	tvCtl[sn].val=tvSnap;
-	int mh=TvAdd(win,C_CHECK,2,14,44,1,"~R~esize handles on corners and edges",0);
+	int mh=TvAdd(win,C_CHECK,2,15,44,1,"~R~esize handles on corners and edges",0);
 	tvCtl[mh].val=tvMoreHandles;
-	int dr=TvAdd(win,C_CHECK,2,15,44,1,"Dialogs can be made ~b~igger",0);
+	int dr=TvAdd(win,C_CHECK,2,16,44,1,"Dialogs can be made ~b~igger",0);
 	tvCtl[dr].val=tvDlgResize;
-	int ok=TvAdd(win,C_BUTTON,10,18,12,2,"O~K~",CM_OK);
+	int ok=TvAdd(win,C_BUTTON,10,19,12,2,"O~K~",CM_OK);
 	tvCtl[ok].isDefault=1;
-	TvAdd(win,C_BUTTON,25,18,12,2,"Cancel",CM_CANCEL);
+	TvAdd(win,C_BUTTON,25,19,12,2,"Cancel",CM_CANCEL);
 	tvWin[win].focus=th;
 	int res=0;
 	while(true)
@@ -805,6 +810,7 @@ void RunPrefs()
 		teDeskPick=oldDesk;
 		tvDeskTop=oldTop;
 		tvDeskBottom=oldBottom;
+		tvDither=oldDither;
 	}
 	prefMinCtl=-1;
 	prefsThemeCtl=-1;
@@ -1451,7 +1457,8 @@ void OpenHelp()
 		"Options, Preferences sets the colour theme, the desktop's pattern\n"
 		"and the screen saver. The pattern can be a vertical gradient: Top\n"
 		"colour and Bottom colour pick its colours in RGB or HSV (shown\n"
-		"at once); with only 256 colours it is dithered.\n"
+		"at once); without 24-bit colour Dither picks none, error\n"
+		"diffusion or ordered (Bayer).\n"
 		"Options, Theme editor makes the Custom theme: pick an item on the\n"
 		"left (menus, windows, dialogs, controls, the editor and its syntax\n"
 		"colours, and the palette games and paint use), Text or Background,\n"
@@ -1605,6 +1612,12 @@ void TvAppButton(int win, int ctl, int cmd)
 	if(cmd==CM_THEMEPICK)
 	{
 		TeUseTheme(tvCtl[ctl].val);
+		return;
+	}
+	if(cmd==CM_DITHERPICK)
+	{
+		tvDither=tvCtl[ctl].val;
+		tvDirty=1;
 		return;
 	}
 	if(cmd==CM_DESKPICK)

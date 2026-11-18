@@ -147,8 +147,9 @@ deleting files step by step and running programs.
 
 The desktop can be a pattern or a vertical gradient of two colours picked in a
 colour dialog (Options > Preferences in tvdemo, Options > Appearance in t2fc):
-exact 24-bit colours a half cell apart, or Floyd-Steinberg dithered over xterm's 256
-when the terminal has no 24-bit colour (or over its 16 with `TV_COLORS=16`).
+exact 24-bit colours a half cell apart, or, when the terminal has no 24-bit colour,
+xterm's 256 (or its 16 with `TV_COLORS=16`) with a dither picked there: none,
+Floyd-Steinberg error diffusion or ordered (an 8x8 Bayer matrix).
 
 Run `./build_so.sh` once, then `Scinc tvdemo.cpp [file]` from this folder.
 

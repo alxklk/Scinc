@@ -3795,6 +3795,10 @@ void TvSnapOutline();
 // one role of its own (R_GRAD+row) holding its two colours exactly. With only xterm's
 // 256 the colours are spread over the half cells by Floyd-Steinberg error diffusion,
 // in serpentine order, worked out again only when the size or the colours change.
+#define TV_DITHER_NONE 0      // tvDither: the nearest colour, in bands
+#define TV_DITHER_DIFFUSE 1   // Floyd-Steinberg error diffusion
+#define TV_DITHER_ORDERED 2   // an 8x8 Bayer matrix
+int tvDither=TV_DITHER_DIFFUSE;
 int tvGradKey=0;
 int tvGradDit[19200];      // TV_MAXW*TV_MAXH: (upper<<8)|lower palette numbers
 int tvGradErr[1452];       // two rows of (TV_MAXW+2)*3 errors
@@ -3816,8 +3820,56 @@ int TvGradAt(int p, int n)
 	return c;
 }
 
+// The 8x8 Bayer matrix at x,y: 0..63, the bits of x^y and y interleaved, reversed.
+int TvBayer(int x, int y)
+{
+	int a=x^y;
+	int v=0;
+	for(int b=0;b<3;b++)
+		v=(v<<2)|(((a>>b)&1)<<1)|((y>>b)&1);
+	return v;
+}
+
+// tvGradDit without error diffusion: the nearest colour, or with the Bayer matrix's
+// offset added, about as wide as the palette's steps.
+void TvGradPlain(int w, int rows)
+{
+	int n=rows*2;
+	int spread=0;
+	if(tvDither==TV_DITHER_ORDERED)
+	{
+		spread=56;
+		if(tvColors16)spread=96;
+	}
+	for(int p=0;p<n;p++)
+	{
+		int c=TvGradAt(p,n);
+		for(int x=0;x<w;x++)
+		{
+			int off=((TvBayer(x&7,p&7)*2+1)*spread)/128-spread/2;
+			int v=0;
+			for(int sh=16;sh>=0;sh=sh-8)
+			{
+				int u=((c>>sh)&255)+off;
+				if(u<0)u=0;
+				if(u>255)u=255;
+				v=v|(u<<sh);
+			}
+			int idx=TvToPal(v);
+			int i=(p/2)*TV_MAXW+x;
+			if(p&1)tvGradDit[i]=tvGradDit[i]|idx;
+			else tvGradDit[i]=idx<<8;
+		}
+	}
+}
+
 void TvGradDither(int w, int rows)
 {
+	if(tvDither!=TV_DITHER_DIFFUSE)
+	{
+		TvGradPlain(w,rows);
+		return;
+	}
 	int n=rows*2;
 	int stride=(TV_MAXW+2)*3;
 	for(int i=0;i<stride*2;i++)
@@ -3872,7 +3924,7 @@ void TvDrawGradient()
 {
 	int rows=tvH-2;
 	if(rows<1)return;
-	int key=(((tvDeskTop*31+tvDeskBottom)*31+tvW)*131+rows*2+tvTrueColor)*3+tvColors16;
+	int key=((((tvDeskTop*31+tvDeskBottom)*31+tvW)*131+rows*2+tvTrueColor)*3+tvColors16)*5+tvDither;
 	if(key!=tvGradKey)
 	{
 		tvGradKey=key;

@@ -5652,6 +5652,11 @@ void PrefSet(char* key, char* v, char* left, char* right)
 			else tvDeskBottom=c;
 		}
 	}
+	else if(StrCmp(key,"dither")==0)
+	{
+		x=PrefPick(v,"none|diffusion|ordered");
+		if((x>=0)&&(x<=2))tvDither=x;
+	}
 	else if(StrCmp(key,"pixel_scale")==0)
 	{
 		if(x>=0)prefScale=x;
@@ -5941,6 +5946,8 @@ void PrefsSave()
 	PrefStr(&buf[0],"gradient_top",&hex[0]);
 	snprintf(&hex[0],16,"#%06x",tvDeskBottom&0xFFFFFF);
 	PrefStr(&buf[0],"gradient_bottom",&hex[0]);
+	PrefText(&buf[0],"# without 24-bit colour: none, diffusion (Floyd-Steinberg) or ordered (Bayer)\n");
+	PrefWord(&buf[0],"dither",tvDither,"none|diffusion|ordered");
 	PrefText(&buf[0],"# graphic window pixel size, 0 the program's own\n");
 	PrefNum(&buf[0],"pixel_scale",scale);
 	PrefYesNo(&buf[0],"cell_pictures",tvCellPics);
@@ -6003,9 +6010,9 @@ int prefsThemeCtl=-1;     // the theme combo box of the open Appearance dialog
 // graphic window. The theme and the desktop show at once; Cancel puts them back.
 void RunAppearance()
 {
-	int h=13;
+	int h=14;
 #ifdef TV_GFX
-	h=15;
+	h=16;
 #endif
 	int win=TvNewCentered(W_PREFS,"Appearance",50,h,WF_DIALOG);
 	if(win<0)return;
@@ -6021,12 +6028,16 @@ void RunAppearance()
 	int oldDesk=teDeskPick;
 	int oldTop=tvDeskTop;
 	int oldBottom=tvDeskBottom;
-	// the vertical gradient's colours
-	TvAdd(win,C_BUTTON,14,5,15,2,"T~o~p colour",CM_DESKTOPC);
-	TvAdd(win,C_BUTTON,30,5,16,2,"~B~ottom colour",CM_DESKBOTC);
-	int by=8;
+	int oldDither=tvDither;
+	// the vertical gradient's colours, and how it is dithered without 24-bit colour
+	TvAdd(win,C_LABEL,3,4,10,1,"D~i~ther",0);
+	int di=TvAdd(win,C_COMBO,14,4,30,1,teDitherNames,CM_DITHERPICK);
+	tvCtl[di].val=tvDither;
+	TvAdd(win,C_BUTTON,14,6,15,2,"T~o~p colour",CM_DESKTOPC);
+	TvAdd(win,C_BUTTON,30,6,16,2,"~B~ottom colour",CM_DESKBOTC);
+	int by=9;
 #ifdef TV_GFX
-	TvAdd(win,C_LABEL,3,8,12,1,"~P~ixel size",0);
+	TvAdd(win,C_LABEL,3,9,12,1,"~P~ixel size",0);
 	int px[4];
 	char* pxName[4];
 	pxName[0]="1x";
@@ -6035,11 +6046,11 @@ void RunAppearance()
 	pxName[3]="4x";
 	for(int k=0;k<4;k++)
 	{
-		px[k]=TvAdd(win,C_RADIO,15+k*8,8,8,1,pxName[k],0);
+		px[k]=TvAdd(win,C_RADIO,15+k*8,9,8,1,pxName[k],0);
 		tvCtl[px[k]].group=1;
 		tvCtl[px[k]].val=(GfxScale()==k+1);
 	}
-	by=10;
+	by=11;
 #endif
 	int ok=TvAdd(win,C_BUTTON,11,by,12,2,"O~K~",CM_OK);
 	tvCtl[ok].isDefault=1;
@@ -6078,6 +6089,7 @@ void RunAppearance()
 		teDeskPick=oldDesk;
 		tvDeskTop=oldTop;
 		tvDeskBottom=oldBottom;
+		tvDither=oldDither;
 		TeUseTheme(prefTheme);
 	}
 	prefsThemeCtl=-1;
@@ -6677,6 +6689,12 @@ void TvAppButton(int win, int ctl, int cmd)
 	if(cmd==CM_THEMEPICK)
 	{
 		TeUseTheme(tvCtl[ctl].val);
+		return;
+	}
+	if(cmd==CM_DITHERPICK)
+	{
+		tvDither=tvCtl[ctl].val;
+		tvDirty=1;
 		return;
 	}
 	if(cmd==CM_DESKPICK)

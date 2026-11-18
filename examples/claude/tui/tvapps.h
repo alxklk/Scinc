@@ -1827,6 +1827,8 @@ int teOwnTarget=0;     // 1, 2: the desktop gradient's top, bottom, shown as it 
 #define W_COLOUR 49
 #define CM_DESKTOPC 318   // Appearance buttons: the gradient's top and bottom colours
 #define CM_DESKBOTC 319
+#define CM_DITHERPICK 320   // the dither combo box, shown at once
+char* teDitherNames="None|Error diffusion|Ordered (Bayer)";
 
 // The depth the picker works at: the theme's, or 24 bits in the colour dialog.
 int TeDepth()
