@@ -360,14 +360,15 @@ int tvRgb256[256];
 #define A_ED_SCROLL (TV_ROLE|57)
 int tvRoleDef[58]={0x71,0x70,0x74,0x20,0x24,0x70,0x74,0x20,0x24,0x08,0x1E,0x1F,0x17,0x1A,0x1E,0x70,0x7F,0x78,0x7A,0x7E,0x30,0x3F,0x37,0x3A,0x3E,0x7E,0x20,0x2B,0x2F,0x2E,0x70,0x30,0x3F,0x3E,0x1F,0x1A,0x79,0x78,0x74,0x1F,0x30,0x3E,0x2F,0x31,0x20,0x1E,0x1F,0x17,0x1B,0x1D,0x1A,0x1C,0x17,0x1E,0x30,0x4F,0x2F,0x13};
 // Roles from R_N on are the desktop gradient's rows (R_GRAD+row, TvDrawGradient),
-// a colour for each half of the row; the arrays have room for TV_MAXH of them.
+// a colour for each half of the row, then the same rows darker under a window's
+// shadow (R_GRAD+TV_MAXH+row); the arrays have room for TV_MAXH of each.
 #define R_GRAD 58
-int tvRFgI[138];     // the role colours as tvFgI and tvBgI hold them for the depth
-int tvRBgI[138];
-int tvRFg[138];      // 0xFFRRGGBB
-int tvRBg[138];
-int tvRFg256[138];
-int tvRBg256[138];
+int tvRFgI[218];     // the role colours as tvFgI and tvBgI hold them for the depth
+int tvRBgI[218];
+int tvRFg[218];      // 0xFFRRGGBB
+int tvRBg[218];
+int tvRFg256[218];
+int tvRBg256[218];
 int tvCustRFg[58];   // the custom theme's roles, as tvCustFg; -1 a clear background
 int tvCustRBg[58];
 
@@ -392,6 +393,15 @@ int TvFrom15(int v)
 	g=(g<<3)|(g>>2);
 	b=(b<<3)|(b>>2);
 	return 0xFF000000|(r<<16)|(g<<8)|b;
+}
+
+// Colour c (0xRRGGBB) darkened, as under a window's shadow.
+int TvShade(int c)
+{
+	int r=((c>>16)&255)*2/5;
+	int g=((c>>8)&255)*2/5;
+	int b=(c&255)*2/5;
+	return (r<<16)|(g<<8)|b;
 }
 
 // The 0xFFRRGGBB colours of a cell attribute.
@@ -1441,25 +1451,48 @@ void TvFrame(int x, int y, int w, int h, int dbl, int at)
 }
 
 // Darkens what is under the shadow and keeps the characters visible.
+// A cell under a window's shadow. Cells of the theme's colours take the shadow's;
+// cells of colours of their own (the desktop gradient, pictures) keep their pattern
+// and get darker, since the shadow's two colours would turn their half blocks into
+// stripes.
+void TvShadowCell(int px, int py)
+{
+	if((px<clipX0)||(px>=clipX1)||(py<clipY0)||(py>=clipY1))return;
+	int i=py*TV_MAXW+px;
+	int at=tvAt[i];
+	if(at&TV_RGB)
+	{
+		int f=TvTo15(TvShade(TvAtFg(at)));
+		int b=TvTo15(TvShade(TvAtBg(at)));
+		tvAt[i]=TV_RGB|(f<<15)|b;
+		return;
+	}
+	if(at&TV_ROLE)
+	{
+		int r=at&255;
+		if((r>=R_GRAD)&&(r<R_GRAD+TV_MAXH))
+		{
+			tvAt[i]=TV_ROLE|(r+TV_MAXH);
+			return;
+		}
+	}
+	else if(at&TV_C256)
+	{
+		int f=TvTo256(TvShade(tvRgb256[(at>>8)&255]));
+		int b=TvTo256(TvShade(tvRgb256[at&255]));
+		tvAt[i]=TV_C256|(f<<8)|b;
+		return;
+	}
+	tvAt[i]=A_SHADOW;
+}
+
 void TvShadow(int x, int y, int w, int h)
 {
 	for(int j=1;j<=h;j++)
-	{
 		for(int i=0;i<2;i++)
-		{
-			int px=x+w+i;
-			int py=y+j;
-			if((px>=clipX0)&&(px<clipX1)&&(py>=clipY0)&&(py<clipY1))
-				tvAt[py*TV_MAXW+px]=A_SHADOW;
-		}
-	}
+			TvShadowCell(x+w+i,y+j);
 	for(int i=2;i<w;i++)
-	{
-		int px=x+i;
-		int py=y+h;
-		if((px>=clipX0)&&(px<clipX1)&&(py>=clipY0)&&(py<clipY1))
-			tvAt[py*TV_MAXW+px]=A_SHADOW;
-	}
+		TvShadowCell(x+i,y+h);
 }
 
 // A vertical scroll bar with arrows and a thumb.
@@ -3749,10 +3782,16 @@ void TvDrawGradient()
 		else
 			for(int j=0;j<rows;j++)
 			{
-				tvRFg[R_GRAD+j]=0xFF000000|TvGradAt(j*2,rows*2);
-				tvRBg[R_GRAD+j]=0xFF000000|TvGradAt(j*2+1,rows*2);
-				tvRFg256[R_GRAD+j]=TvTo256(tvRFg[R_GRAD+j]);
-				tvRBg256[R_GRAD+j]=TvTo256(tvRBg[R_GRAD+j]);
+				int r=R_GRAD+j;
+				int sh=r+TV_MAXH;
+				tvRFg[r]=0xFF000000|TvGradAt(j*2,rows*2);
+				tvRBg[r]=0xFF000000|TvGradAt(j*2+1,rows*2);
+				tvRFg[sh]=TvShade(tvRFg[r]);
+				tvRBg[sh]=TvShade(tvRBg[r]);
+				tvRFg256[r]=TvTo256(tvRFg[r]);
+				tvRBg256[r]=TvTo256(tvRBg[r]);
+				tvRFg256[sh]=TvTo256(tvRFg[sh]);
+				tvRBg256[sh]=TvTo256(tvRBg[sh]);
 			}
 		// the cells may keep their attributes, so all of them are sent again
 		for(int i=0;i<TV_CELLS;i++)
