@@ -5597,6 +5597,10 @@ void PrefsLoad(char* left, char* right)
 	if(k>=29)tvSnap=(v[28]!=0);
 	if(k>=30)tvMoreHandles=(v[29]!=0);
 	if(k>=31)tvDlgResize=(v[30]!=0);
+	// the Run dialog's check boxes; 2 for Leave the window open: not chosen yet, so
+	// as Options > System says
+	if(k>=32)fcRunWin=(v[31]!=0);
+	if((k>=33)&&(v[32]<=1))fcRunKeep=v[32];
 	PvSetAspect();
 	img_filter(pvLanczos);
 	if(fcQSecs>600)fcQSecs=600;
@@ -5632,8 +5636,10 @@ void PrefsSave()
 #ifdef TV_GFX
 	scale=GfxScale();
 #endif
-	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
-		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,pvLanczos,fcBarPos[0],fcBarPos[1],edTab,edInvis,tvCellPics,fcTrash,fcConfExit,fcConfRun,fcConfPause,fcTypeView,fcTreeAll,fcCdExit,tvSnap,tvMoreHandles,tvDlgResize,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
+	int keep=fcRunKeep;
+	if(keep<0)keep=2;
+	snprintf(&buf[0],2200,"%i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i %i\n%s\n%s\n%s\n",prefTheme,fcHidden,fcSort[fcBase],fcSort[fcBase+1],
+		fcBrief[fcBase],fcBrief[fcBase+1],fcActive&1,edLineNums,edWrap,fcLynx,fcQSecs>0,fcQSecs,fcQSCase,teDeskPick,scale,pvLanczos,fcBarPos[0],fcBarPos[1],edTab,edInvis,tvCellPics,fcTrash,fcConfExit,fcConfRun,fcConfPause,fcTypeView,fcTreeAll,fcCdExit,tvSnap,tvMoreHandles,tvDlgResize,fcRunWin,keep,FcDirOf(fcBase),FcDirOf(fcBase+1),&fcTermCmd[0]);
 	if(fs_save_begin(CFG_FILE))
 	{
 		int ok=fs_save_write(&buf[0],StrLen(&buf[0]));
