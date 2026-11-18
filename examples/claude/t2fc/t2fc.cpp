@@ -5535,6 +5535,8 @@ int FcMouse(int win, int ev, int x, int y)
 int prefScale=0;     // the pixel scale of a graphic window, 0 the program's own
 
 #define PREF_BUF 8000
+// t2fc.cfg's words for the desktop patterns, in teDeskNames' order (tvapps.h)
+#define PREF_DESKS "theme|light|medium|quadrants|checker|braille|vertical_stripes|diagonal_stripes"
 char prefThemeName[64];  // the theme t2fc.cfg names, found when the themes are loaded
 
 // The value v as a number: one of the words in "a|b|c" gives its index, digits their
@@ -5629,6 +5631,7 @@ void PrefSet(char* key, char* v, char* left, char* right)
 	}
 	else if(StrCmp(key,"desktop_pattern")==0)
 	{
+		x=PrefPick(v,PREF_DESKS);
 		if((x>=0)&&(x<TE_DESKN))teDeskPick=x;
 	}
 	else if(StrCmp(key,"pixel_scale")==0)
@@ -5913,8 +5916,8 @@ void PrefsSave()
 	PrefYesNo(&buf[0],"tree_from_root",fcTreeAll);
 	PrefText(&buf[0],"\n# appearance (theme: its name in Options > Appearance)\n");
 	PrefStr(&buf[0],"theme",TeThNameAt(prefTheme));
-	PrefText(&buf[0],"# 0 as the theme has it, then light, medium, quadrants, checker board,\n# braille, vertical stripes, diagonal stripes\n");
-	PrefNum(&buf[0],"desktop_pattern",teDeskPick);
+	PrefText(&buf[0],"# theme (as the theme has it), light, medium, quadrants, checker, braille,\n# vertical_stripes or diagonal_stripes\n");
+	PrefWord(&buf[0],"desktop_pattern",teDeskPick,PREF_DESKS);
 	PrefText(&buf[0],"# graphic window pixel size, 0 the program's own\n");
 	PrefNum(&buf[0],"pixel_scale",scale);
 	PrefYesNo(&buf[0],"cell_pictures",tvCellPics);
