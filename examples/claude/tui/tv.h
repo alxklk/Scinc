@@ -6064,12 +6064,9 @@ void TvSuspend()
 	TvDone();
 }
 
-void TvResume()
+// Takes the alternate screen again and has everything drawn anew.
+void TvRetake()
 {
-#ifdef TV_GFX
-	return;
-#endif
-	term_open();
 	OutStr("\x1b[?1049h\x1b[?7l\x1b[?25l\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?2004h\x1b=\x1b[0m\x1b[2J");
 	OutFlush();
 	for(int i=0;i<TV_CELLS;i++)
@@ -6080,6 +6077,34 @@ void TvResume()
 	tvCurShown=0;
 	tvDirty=1;
 	TvCheckSize();
+}
+
+void TvResume()
+{
+#ifdef TV_GFX
+	return;
+#endif
+	term_open();
+	TvRetake();
+}
+
+// Shows the terminal's own screen (what was there before the program started, and
+// what programs run meanwhile wrote) until a key is pressed, then the desktop again.
+// The terminal keeps that screen behind the alternate one, so nothing has to be
+// recorded; the mouse is let go so that its wheel can scroll the terminal. Does
+// nothing in a graphic window.
+void TvPeekScreen()
+{
+#ifdef TV_GFX
+	return;
+#endif
+	OutStr("\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?7h\x1b[0m\x1b[?1049l\x1b[?25h");
+	OutFlush();
+	int c=-1;
+	while(c<0)c=term_read(1000);
+	// the rest of a key's sequence (arrows, F keys) goes too
+	while(c>=0)c=term_read(30);
+	TvRetake();
 }
 
 #endif // TV_H

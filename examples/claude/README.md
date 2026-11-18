@@ -177,6 +177,7 @@ files of those names do. F1 shows every key.
 | Ctrl+Q, Alt+Q | Quick view in the other panel: the picture, text or hex dump of the file under the cursor; for a folder, how many files and folders it holds and their size, counted in the background for up to 5 s (Options > Preferences sets the seconds; 0 turns it off) |
 | F5, Shift+F5, F6, Shift+F6, F7, F8 | Copy, copy in the same directory under a new name, move, rename, make a directory, delete; with progress, Cancel, and questions before replacing |
 | F2, Alt+Enter, Enter on an executable | Run a program (see below) |
+| Ctrl+O | Terminal build: hide the desktop and show the terminal's own screen (earlier shell output and what run commands wrote); any key comes back |
 | Ctrl+N | Another panel window (up to six), each with its own directories and modes |
 | Alt+1..9, Alt+N, Alt+0 | Go to a window by number, from the Windows menu, or from the window list. Up to 12 windows are open besides dialogs, numbered 1..9, a, b, c; click a number on the menu bar to bring that window to the front |
 | Ctrl+U, Alt+I, Ctrl+R, Alt+. | Swap panels, other panel here, reread, hidden files |

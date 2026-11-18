@@ -2660,6 +2660,7 @@ void FcEditorTitle(int win)
 #define CM_PICFWD 669         // 10 s on
 #define CM_PIC1 669
 #define CM_PICBACK 673        // 10 s back
+#define CM_PEEK 674           // the terminal's own screen until a key (Ctrl+O)
 #define CM_VIEWEDIT 670
 
 int pvPanel[TV_MAXWIN];      // the panel a picture window came from
@@ -6042,6 +6043,10 @@ void OpenHelp()
 		"  after a command.\n"
 		"  Command > Open with the desktop: the desktop's own program\n"
 		"  for the file (xdg-open)\n"
+		"  Ctrl+O               (in a terminal) hide the desktop and\n"
+		"                       show the terminal's own screen: what\n"
+		"                       was there before t2fc started and what\n"
+		"                       commands wrote since; a key comes back\n"
 		"\n"
 		"Windows\n"
 		"  Drag a title bar to move a window, and the handles on its\n"
@@ -6642,6 +6647,7 @@ void TvAppCommand(int cmd)
 	}
 	if(cmd==CM_QUIT)FcQuit();
 	else if(cmd==CM_HELP)OpenHelp();
+	else if(cmd==CM_PEEK)TvPeekScreen();
 	else if(cmd==CM_PREFS)RunAppearance();
 	else if(cmd==CM_PREFPANELS)RunPanelPrefs();
 	else if(cmd==CM_PREFEDIT)RunEditPrefs();
@@ -6715,6 +6721,9 @@ void FcKeys()
 	TvKeyCmd(TV_ST_ALL,CM_NEWPANELS,"New panels",14,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_CLOSE,"Close the window",23,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_WINLIST,"Window list",K_ALT+'0',0,0);
+#ifndef TV_GFX
+	TvKeyCmd(TV_ST_ALL,CM_PEEK,"Show the terminal",15,0,0);
+#endif
 	TvKeyCmd(TV_ST_ALL,CM_NEXT,"Next window",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_PREV,"Previous window",0,0,0);
 	TvKeyCmd(TV_ST_ALL,CM_ZOOM,"Zoom the window",0,0,0);
@@ -6889,6 +6898,9 @@ int main(int argc, pchar* argv)
 	TvMenuAdd("~C~ommand");
 	TvMenuItem("~R~un...","",CM_RUN,0);
 	TvMenuItem("Open ~w~ith the desktop","",CM_OPENSYS,0);
+#ifndef TV_GFX
+	TvMenuItem("Show the ~t~erminal","",CM_PEEK,0);
+#endif
 	TvMenuLine();
 	TvMenuItem("~S~wap panels","",CM_SWAP,0);
 	TvMenuItem("~O~ther panel here","",CM_SAMEDIR,0);
