@@ -4681,8 +4681,8 @@ void FcRunIn(char* cmd, char* dir)
 
 // A graphic window has no terminal of its own, so the command runs in a new terminal
 // window, which stays open until Enter is pressed so that its output can be read.
-#ifdef TV_GFX
-void FcRunIn(char* cmd, char* dir)
+// The terminal build does the same when the Run dialog asks for it.
+void FcRunWindow(char* cmd, char* dir)
 {
 	if(!run_has_display())
 	{
@@ -4712,6 +4712,12 @@ void FcRunIn(char* cmd, char* dir)
 		TvMessage("Run",&err[0],0);
 	}
 	FcReloadAll();
+}
+
+#ifdef TV_GFX
+void FcRunIn(char* cmd, char* dir)
+{
+	FcRunWindow(cmd,dir);
 }
 #endif
 
@@ -4793,12 +4799,19 @@ void FcCapCheck()
 // The run dialog: FcAsk with two check boxes for capturing the output.
 int fcRunOut=0;
 int fcRunErr=0;
+int fcRunWin=0;    // the terminal build: in a new terminal window (kept for the next run)
+int fcRunNewWin=0; // and this run goes there
 
 int FcRunAsk(char* prompt, char* init, char* out)
 {
 	int w=64;
 	if(w>tvW-2)w=tvW-2;
-	int win=TvNewCentered(W_ASK,"Run",w,11,WF_DIALOG);
+	// the terminal build can also run it in a new terminal window, given a desktop
+	int canWin=0;
+#ifndef TV_GFX
+	canWin=run_has_display();
+#endif
+	int win=TvNewCentered(W_ASK,"Run",w,11+canWin,WF_DIALOG);
 	if(win<0)return 0;
 	StrCpy(&fcPrompt[0],prompt,300);
 	fcAskIn=TvAdd(win,C_INPUT,3,3,w-6,1,"",0);
@@ -4812,16 +4825,29 @@ int FcRunAsk(char* prompt, char* init, char* out)
 	int ce=TvAdd(win,C_CHECK,3,6,w-6,1,"Capture program std~e~rr to a new file",0);
 	tvCtl[co].val=0;
 	tvCtl[ce].val=0;
+	int cw=-1;
+	if(canWin)
+	{
+		cw=TvAdd(win,C_CHECK,3,7,w-6,1,"Run in a new ~t~erminal window",0);
+		tvCtl[cw].val=fcRunWin;
+	}
 	int bx=(w-26)/2;
-	int b=TvAdd(win,C_BUTTON,bx,8,12,2,"O~K~",CM_OK);
+	int b=TvAdd(win,C_BUTTON,bx,8+canWin,12,2,"O~K~",CM_OK);
 	tvCtl[b].isDefault=1;
-	TvAdd(win,C_BUTTON,bx+14,8,12,2,"Cancel",CM_CANCEL);
+	TvAdd(win,C_BUTTON,bx+14,8+canWin,12,2,"Cancel",CM_CANCEL);
 	tvWin[win].focus=fcAskIn;
 	int res=TvExec(win);
 	StrCpy(out,&tvCtl[fcAskIn].text[0],FC_PATH);
 	fcRunOut=tvCtl[co].val;
 	fcRunErr=tvCtl[ce].val;
+	int inWin=0;
+	if(cw>=0)
+	{
+		inWin=tvCtl[cw].val;
+		if(res==CM_OK)fcRunWin=inWin;
+	}
 	TvClose(win);
+	fcRunNewWin=inWin;
 	if(res!=CM_OK)return 0;
 	if(out[0]==0)return 0;
 	return 1;
@@ -4903,7 +4929,8 @@ void FcRunDialog()
 	if(!FcRunAsk(&prompt[0],&init[0],&typed[0]))return;
 	if(!fcRunOut&&!fcRunErr)
 	{
-		FcRunIn(&typed[0],FcDirOf(p));
+		if(fcRunNewWin)FcRunWindow(&typed[0],FcDirOf(p));
+		else FcRunIn(&typed[0],FcDirOf(p));
 		return;
 	}
 	// the output goes to temporary files, which open as new, unsaved editor windows
@@ -4947,7 +4974,8 @@ void FcRunDialog()
 	else if(fcRunOut)snprintf(&redir[0],4300,"exec >%s",&qo[0]);
 	else snprintf(&redir[0],4300,"exec 2>%s",&qe[0]);
 	snprintf(&full[0],7400,"set -C; %s; %s\ns=$?; : >%s; exit $s",&redir[0],&typed[0],&qm[0]);
-	FcRunIn(&full[0],FcDirOf(p));
+	if(fcRunNewWin)FcRunWindow(&full[0],FcDirOf(p));
+	else FcRunIn(&full[0],FcDirOf(p));
 	FcCapCheck();
 }
 
@@ -5717,7 +5745,7 @@ void RunPanelPrefs()
 			tvCtl[c].val=(fcBarPos[side]==k);
 			bar[side*3+k]=c;
 		}
-	TvAdd(win,C_LABEL,3,12,40,1,"Te~r~minal for F2 in a graphic window",0);
+	TvAdd(win,C_LABEL,3,12,40,1,"Te~r~minal program for F2 windows",0);
 	int term=TvAdd(win,C_INPUT,3,13,44,1,"",0);
 	TvInputHistory(term,H_TERM);
 	StrCpy(&tvCtl[term].text[0],&fcTermCmd[0],200);
@@ -6037,6 +6065,8 @@ void OpenHelp()
 		"  In a terminal the command gets the whole terminal, and a\n"
 		"  key brings t2fc back afterwards. In a graphic window it runs\n"
 		"  in a new terminal window, which stays open until Enter;\n"
+		"  in a terminal the Run dialog can ask for that too (Run in a\n"
+		"  new terminal window, when there is a graphic desktop);\n"
 		"  Options > Panels can name the terminal program.\n"
 		"  Options > System: whether to ask before Enter runs a\n"
 		"  program and before quitting, and whether to wait for a key\n"

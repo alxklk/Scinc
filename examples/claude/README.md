@@ -301,7 +301,9 @@ does: the desktop steps aside, the program runs with the real screen and keyboar
 window has no terminal of its own, so there the program runs in a new terminal
 window that stays open until Enter: `$TERMINAL`, then `x-terminal-emulator`,
 `gnome-terminal`, `konsole`, `xfce4-terminal` and others are tried, or Options >
-Preferences names one (as `xterm -e`). Command > Open with the desktop hands the
+Preferences names one (as `xterm -e`). In a terminal with a graphic desktop, the
+Run dialog's "Run in a new terminal window" check box does the same, so that t2fc
+stays usable meanwhile (it is kept for the next run). Command > Open with the desktop hands the
 file to `xdg-open`. File names are quoted for the shell, and the panels are read
 again afterwards. The Run dialog's check boxes capture the program's stdout, stderr or
 both: when it ends they open as new editor windows named after it (`make.stdout`,
