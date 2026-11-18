@@ -4682,7 +4682,7 @@ void FcRunIn(char* cmd, char* dir)
 // A graphic window has no terminal of its own, so the command runs in a new terminal
 // window, which stays open until Enter is pressed so that its output can be read.
 // The terminal build does the same when the Run dialog asks for it.
-void FcRunWindow(char* cmd, char* dir)
+void FcRunWindow(char* cmd, char* dir, int keep)
 {
 	if(!run_has_display())
 	{
@@ -4701,7 +4701,7 @@ void FcRunWindow(char* cmd, char* dir)
 	char quoted[8000];
 	char full[8300];
 	run_quote(dir,&qdir[0],2100);
-	if(fcConfPause)snprintf(&script[0],6000,"cd %s || exit; (%s\n); s=$?; echo; echo \"[exit code $s] Press Enter to close this window\"; read x",&qdir[0],cmd);
+	if(keep)snprintf(&script[0],6000,"cd %s || exit; (%s\n); s=$?; echo; echo \"[exit code $s] Press Enter to close this window\"; read x",&qdir[0],cmd);
 	else snprintf(&script[0],6000,"cd %s || exit; %s\n",&qdir[0],cmd);
 	run_quote(&script[0],&quoted[0],8000);
 	snprintf(&full[0],8300,"%s sh -c %s",&term[0],&quoted[0]);
@@ -4717,7 +4717,7 @@ void FcRunWindow(char* cmd, char* dir)
 #ifdef TV_GFX
 void FcRunIn(char* cmd, char* dir)
 {
-	FcRunWindow(cmd,dir);
+	FcRunWindow(cmd,dir,fcConfPause);
 }
 #endif
 
@@ -4801,17 +4801,25 @@ int fcRunOut=0;
 int fcRunErr=0;
 int fcRunWin=0;    // the terminal build: in a new terminal window (kept for the next run)
 int fcRunNewWin=0; // and this run goes there
+int fcRunKeep=-1;  // a new terminal window stays open until Enter; -1 as Options > System
 
 int FcRunAsk(char* prompt, char* init, char* out)
 {
 	int w=64;
 	if(w>tvW-2)w=tvW-2;
-	// the terminal build can also run it in a new terminal window, given a desktop
+	// the terminal build can also run it in a new terminal window, given a desktop;
+	// graphic builds always do, and both may leave that window open afterwards
 	int canWin=0;
+	int extra=0;
 #ifndef TV_GFX
 	canWin=run_has_display();
+	extra=2*canWin;
 #endif
-	int win=TvNewCentered(W_ASK,"Run",w,11+canWin,WF_DIALOG);
+#ifdef TV_GFX
+	canWin=1;
+	extra=1;
+#endif
+	int win=TvNewCentered(W_ASK,"Run",w,11+extra,WF_DIALOG);
 	if(win<0)return 0;
 	StrCpy(&fcPrompt[0],prompt,300);
 	fcAskIn=TvAdd(win,C_INPUT,3,3,w-6,1,"",0);
@@ -4826,15 +4834,26 @@ int FcRunAsk(char* prompt, char* init, char* out)
 	tvCtl[co].val=0;
 	tvCtl[ce].val=0;
 	int cw=-1;
+	int ck=-1;
+	int row=7;
+#ifndef TV_GFX
 	if(canWin)
 	{
 		cw=TvAdd(win,C_CHECK,3,7,w-6,1,"Run in a new ~t~erminal window",0);
 		tvCtl[cw].val=fcRunWin;
+		row=8;
+	}
+#endif
+	if(fcRunKeep<0)fcRunKeep=fcConfPause;
+	if(canWin)
+	{
+		ck=TvAdd(win,C_CHECK,3,row,w-6,1,"~L~eave the window open when the program ends",0);
+		tvCtl[ck].val=fcRunKeep;
 	}
 	int bx=(w-26)/2;
-	int b=TvAdd(win,C_BUTTON,bx,8+canWin,12,2,"O~K~",CM_OK);
+	int b=TvAdd(win,C_BUTTON,bx,8+extra,12,2,"O~K~",CM_OK);
 	tvCtl[b].isDefault=1;
-	TvAdd(win,C_BUTTON,bx+14,8+canWin,12,2,"Cancel",CM_CANCEL);
+	TvAdd(win,C_BUTTON,bx+14,8+extra,12,2,"Cancel",CM_CANCEL);
 	tvWin[win].focus=fcAskIn;
 	int res=TvExec(win);
 	StrCpy(out,&tvCtl[fcAskIn].text[0],FC_PATH);
@@ -4846,6 +4865,10 @@ int FcRunAsk(char* prompt, char* init, char* out)
 		inWin=tvCtl[cw].val;
 		if(res==CM_OK)fcRunWin=inWin;
 	}
+#ifdef TV_GFX
+	inWin=1;
+#endif
+	if((ck>=0)&&(res==CM_OK))fcRunKeep=tvCtl[ck].val;
 	TvClose(win);
 	fcRunNewWin=inWin;
 	if(res!=CM_OK)return 0;
@@ -4929,7 +4952,7 @@ void FcRunDialog()
 	if(!FcRunAsk(&prompt[0],&init[0],&typed[0]))return;
 	if(!fcRunOut&&!fcRunErr)
 	{
-		if(fcRunNewWin)FcRunWindow(&typed[0],FcDirOf(p));
+		if(fcRunNewWin)FcRunWindow(&typed[0],FcDirOf(p),fcRunKeep);
 		else FcRunIn(&typed[0],FcDirOf(p));
 		return;
 	}
@@ -4974,7 +4997,7 @@ void FcRunDialog()
 	else if(fcRunOut)snprintf(&redir[0],4300,"exec >%s",&qo[0]);
 	else snprintf(&redir[0],4300,"exec 2>%s",&qe[0]);
 	snprintf(&full[0],7400,"set -C; %s; %s\ns=$?; : >%s; exit $s",&redir[0],&typed[0],&qm[0]);
-	if(fcRunNewWin)FcRunWindow(&full[0],FcDirOf(p));
+	if(fcRunNewWin)FcRunWindow(&full[0],FcDirOf(p),fcRunKeep);
 	else FcRunIn(&full[0],FcDirOf(p));
 	FcCapCheck();
 }
@@ -6067,6 +6090,8 @@ void OpenHelp()
 		"  in a new terminal window, which stays open until Enter;\n"
 		"  in a terminal the Run dialog can ask for that too (Run in a\n"
 		"  new terminal window, when there is a graphic desktop);\n"
+		"  its Leave the window open says whether such a window\n"
+		"  waits for Enter when the program ends;\n"
 		"  Options > Panels can name the terminal program.\n"
 		"  Options > System: whether to ask before Enter runs a\n"
 		"  program and before quitting, and whether to wait for a key\n"
