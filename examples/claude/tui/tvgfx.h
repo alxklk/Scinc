@@ -726,10 +726,18 @@ void GfxFlush()
 	}
 	GfxPixels();
 	gfxN=0;
-	for(int y=0;y<tvH;y++)
+	// no further than the render target: right after a new window (a new pixel
+	// scale) the grid is its old size until TvCheckSize, and the interpreter's
+	// rasterizer does not clip strokes to the target, so a glyph past its edge
+	// writes outside the pixels
+	int rows=tvH;
+	int cols=tvW;
+	if(rows>gfxRtRows)rows=gfxRtRows;
+	if(cols>gfxRtCols)cols=gfxRtCols;
+	for(int y=0;y<rows;y++)
 	{
 		int row=y*TV_MAXW;
-		for(int x=0;x<tvW;x++)
+		for(int x=0;x<cols;x++)
 		{
 			int i=row+x;
 			int ch=tvCh[i];
