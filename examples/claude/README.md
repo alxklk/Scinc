@@ -225,7 +225,13 @@ EXIF orientation), GIF and WebP (both animated), BMP, TGA, PSD, HDR and PNM, wit
 and libwebp when it is installed. Shrinking averages all the pixels a cell
 covers; clear parts show a checkerboard. In the window, `+` `-` or the wheel
 zoom, `0` fits, `1` shows pixels 1:1, arrows or dragging move, Space and
-Backspace go to the next and previous picture of the panel, and `r` turns it.
+Backspace go to the next and previous picture of the panel, Home and End to its
+first and last, and `r` turns it.
+The bottom line shows which of the panel's pictures it is, as `3/17`; they are
+known by their extensions (any case). Options > Edit and view > Scan every file
+also finds pictures and videos with other names by reading the start of each
+file, a few at a time so that a big folder doesn't hold anything up; a turning
+dash stands for the number until it is done.
 
 **Videos.** When `ffmpeg` or else GStreamer (`gst-launch-1.0` and
 `gst-discoverer-1.0`) is installed, MP4, MOV, MKV, WebM, AVI, FLV, WMV, MPEG and
@@ -242,7 +248,7 @@ them smaller (320×240) and over again; it stops when the
 cursor moves on. In the picture window `p`, Enter or Space pauses and plays (PgDn and PgUp still
 go to the next and previous picture or video), Left and
 Right go 5 s back and on while the video fits the window, Down and Up a minute,
-`,` and `.` 10 s, `<` and `>` a frame (pausing), Home and End to the start and end; the frame line shows the
+`,` and `.` 10 s, `<` and `>` a frame (pausing), Ctrl+Home and Ctrl+End to the start and end; the frame line shows the
 time and length. A bar along the bottom of the video (to the start, 10 s back, a frame
 back, play/pause, a frame on, 10 s on, the time, a slider to click or drag anywhere in the video,
 the length) shows while the mouse is over it and for 3 s after a key; for that the

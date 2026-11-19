@@ -1259,6 +1259,25 @@ int img_is(char* path)
 	return 1;
 }
 
+// 1 if the name ends in the extension of a picture or video img_open can decode,
+// any case; the file itself is not read.
+int img_ext(char* name)
+{
+	static const char* pics[]={".png",".jpg",".jpeg",".jpe",".jfif",".gif",".bmp",
+		".psd",".hdr",".pic",".pnm",".pgm",".ppm",".tga",nullptr};
+	static const char* vids[]={".mp4",".m4v",".mov",".3gp",".mkv",".webm",".avi",".flv",
+		".wmv",".asf",".mpg",".mpeg",".ts",".m2ts",".mts",".ogv",nullptr};
+	for(int k=0;pics[k];k++)
+		if(hasExt(name,pics[k]))return 1;
+#ifdef HAVE_WEBP
+	if(hasExt(name,".webp"))return 1;
+#endif
+	if(hasExt(name,".svg")||hasExt(name,".svgz"))return svgLoad()?1:0;
+	for(int k=0;vids[k];k++)
+		if(hasExt(name,vids[k]))return (videoEngine()!=ENG_NONE)?1:0;
+	return 0;
+}
+
 // As img_is, for the first bytes of a file read some other way (from an archive);
 // name gives the extension TGA is known by.
 int img_sniff(char* head, int n, char* name)
@@ -1840,6 +1859,7 @@ int img_pixels(int s, int f, double cx, double cy, double scale, int fullW, int 
 extern "C" int img_pixels_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_pixels);return 0;}
 extern "C" int img_is_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_is);return 0;}
 extern "C" int img_sniff_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_sniff);return 0;}
+extern "C" int img_ext_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_ext);return 0;}
 extern "C" int img_open_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_open);return 0;}
 extern "C" int img_free_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_free);return 0;}
 extern "C" int img_state_wrapper(ScincVM* s, void*){ScincBoundCall(s,img_state);return 0;}

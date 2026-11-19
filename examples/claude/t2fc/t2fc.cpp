@@ -204,6 +204,8 @@ int fcConfExit=1;           // asks before quitting
 int fcConfRun=0;            // asks before Enter runs a program
 int fcConfPause=1;          // waits for a key (Enter in a terminal window) after a command
 int fcTypeView=1;           // F3 and quick view know pictures, archives and programs
+int fcScanPics=0;           // a picture window counts the folder's pictures by looking
+                            // into every file (gradually), not by their extensions
 int fcTreeAll=0;            // F3's folder tree starts at /, not at the folder
 int fcCdExit=0;             // on exit, the shell goes to the active panel's folder
 int fcAskAtStart=0;         // FcAsk puts the cursor at the start of the text
@@ -939,6 +941,7 @@ int FcBinRun(char* cmd, char* dir, char* dest, int ms, char* err)
 int StrCmp(char* a, char* b);
 [[scinc::dynlink(IMG_DL,"img_is_wrapper")]]int img_is(char* path);
 [[scinc::dynlink(IMG_DL,"img_sniff_wrapper")]]int img_sniff(char* head, int n, char* name);
+[[scinc::dynlink(IMG_DL,"img_ext_wrapper")]]int img_ext(char* name);
 [[scinc::dynlink(IMG_DL,"img_open_wrapper")]]int img_open(int s, char* path);
 [[scinc::dynlink(IMG_DL,"img_free_wrapper")]]void img_free(int s);
 [[scinc::dynlink(IMG_DL,"img_state_wrapper")]]int img_state(int s);
@@ -2198,11 +2201,14 @@ int fcJobTotal=-1;
 int fcJobFile=-1;
 int fcJobDone=0;           // 1 finished, 2 aborted
 
+int PicScanBusy();
+
 void FcTickRate()
 {
 	int ms=1000;      // watch the directories for changes
 	if(PvBusy())ms=40;  // pictures being decoded, or animations
 	if(FcQScanBusy())ms=100;   // a directory being counted
+	if(PicScanBusy())ms=30;    // a picture window's pictures being counted
 	if(fcJobWin>=0)ms=15;
 	if(fcArcWin>=0)ms=100;      // an archive being read
 	if(fcQArcWait)if(ms>200)ms=200;
@@ -2668,11 +2674,19 @@ void FcEditorTitle(int win)
 #define CM_PICEND 676         // to the end
 #define CM_PICFRAMEB 677      // a frame back (and paused)
 #define CM_PICFRAMEF 678      // a frame on
+#define CM_PICFIRST 679       // the panel's first picture
+#define CM_PICLAST 680        // and its last
 #define CM_VIEWEDIT 670
 
 int pvPanel[TV_MAXWIN];      // the panel a picture window came from
 int pvIdx[TV_MAXWIN];        // which of the panel's pictures it shows, from 1 (0 not known)
 int pvTot[TV_MAXWIN];        // and how many the panel has
+int pvScanK[TV_MAXWIN];      // with fcScanPics: the next of the panel's files to look into
+                             // for the count, -1 when counted
+int pvScanSpin[TV_MAXWIN];   // the turn of the dash that stands for the count meanwhile
+#define PV_SCANN 10          // files looked into at a time,
+#define PV_SCANMS 8          // for this long a tick
+#define PV_SPINMS 120        // the dash turns this often
 int pvDragX=0;
 int pvDragY=0;
 int pvClickMs=0;
@@ -2704,23 +2718,86 @@ int PicFind(char* path)
 	return -1;
 }
 
-// Counts the pictures and videos of panel p for window win, and finds its own.
-void PicCount(int win, int p)
+// 1 when file name (path in full) of a panel is among the pictures a picture window
+// steps through: by its extension, or with fcScanPics by what is in it.
+int PicListed(char* path, char* name)
 {
-	pvIdx[win]=0;
-	pvTot[win]=0;
+	if(fcScanPics)return FcIsPicture(path);
+	return img_ext(name);
+}
+
+// Counts files k0..k1-1 of panel p for window win's count of pictures and videos,
+// and finds its own.
+void PicCountSome(int win, int p, int k0, int k1)
+{
 	char name[256];
 	char path[FC_PATH];
-	for(int k=0;k<fcCount[p];k++)
+	if(k1>fcCount[p])k1=fcCount[p];
+	for(int k=k0;k<k1;k++)
 		if(!FcName(p,k,&name[0]))
 		{
 			FcJoin(&path[0],FcDirOf(p),&name[0]);
-			if(FcIsPicture(&path[0]))
+			if(PicListed(&path[0],&name[0]))
 			{
 				pvTot[win]++;
 				if(StrCmp(&path[0],PvPathOf(win))==0)pvIdx[win]=pvTot[win];
 			}
 		}
+}
+
+// Counts the pictures and videos of panel p for window win: at once by extensions;
+// looking into every file takes a while in a big folder, so then a few files a tick
+// (PicScanTick), and a turning dash stands for the count meanwhile.
+void PicCount(int win, int p)
+{
+	pvIdx[win]=0;
+	pvTot[win]=0;
+	pvScanK[win]=-1;
+	if(fcScanPics)
+	{
+		pvScanK[win]=0;
+		pvScanSpin[win]=-1;
+		FcTickRate();
+		return;
+	}
+	PicCountSome(win,p,0,fcCount[p]);
+}
+
+// 1 while a picture window counts its pictures.
+int PicScanBusy()
+{
+	for(int w=0;w<TV_MAXWIN;w++)
+		if(tvWin[w].used&&(tvWin[w].type==W_PIC)&&(pvScanK[w]>=0))return 1;
+	return 0;
+}
+
+void PicScanTick()
+{
+	int any=0;
+	for(int w=0;w<TV_MAXWIN;w++)
+		if(tvWin[w].used&&(tvWin[w].type==W_PIC)&&(pvScanK[w]>=0))
+		{
+			int p=pvPanel[w];
+			int k=pvScanK[w];
+			// some files at a time, as many as go in a few ms
+			int t0=term_ms();
+			while((k<fcCount[p])&&(term_ms()-t0<PV_SCANMS))
+			{
+				PicCountSome(w,p,k,k+PV_SCANN);
+				k=k+PV_SCANN;
+			}
+			any=1;
+			if(k>=fcCount[p])
+			{
+				pvScanK[w]=-1;
+				tvDirty=1;
+			}
+			else pvScanK[w]=k;
+			if((pvScanK[w]>=0)&&((term_ms()/PV_SPINMS)%4!=pvScanSpin[w]))tvDirty=1;
+		}
+	if(!any)return;
+	FcUse(fcActive);
+	FcTickRate();
 }
 
 // Opens a picture window for a file of panel p.
@@ -2744,6 +2821,7 @@ int PicOpen(char* path, int p)
 	pvPanel[win]=p;
 	pvBarUntil[win]=0;
 	pvBarShown[win]=0;
+	pvScanK[win]=-1;
 	PvOpen(win,path);
 	FcSetTitle(win,"Picture: ",path);
 	PicCount(win,p);
@@ -2761,11 +2839,25 @@ void PicDraw(int win)
 	if(PicBarVisible(win)&&(t.h>=4))PicBarDraw(win);
 	// which of the panel's pictures, on the right of the bottom line
 	int right=t.x+t.w-2;
-	if(pvTot[win]>0)
+	if((pvTot[win]>0)||(pvScanK[win]>=0))
 	{
 		TvClip(t.x,t.y,t.x+t.w-2,t.y+t.h);
 		char n[40];
-		if(pvIdx[win]>0)snprintf(&n[0],40," %i/%i ",pvIdx[win],pvTot[win]);
+		if(pvScanK[win]>=0)
+		{
+			// still counting: a turning dash for the number
+			int ph=(term_ms()/PV_SPINMS)%4;
+			pvScanSpin[win]=ph;
+			char dash[2];
+			dash[0]='-';
+			if(ph==1)dash[0]=92;     // a backslash
+			else if(ph==2)dash[0]='|';
+			else if(ph==3)dash[0]='/';
+			dash[1]=0;
+			if(pvIdx[win]>0)snprintf(&n[0],40," %i/%s ",pvIdx[win],&dash[0]);
+			else snprintf(&n[0],40," %s ",&dash[0]);
+		}
+		else if(pvIdx[win]>0)snprintf(&n[0],40," %i/%i ",pvIdx[win],pvTot[win]);
 		else snprintf(&n[0],40," %i ",pvTot[win]);
 		int sx=t.x+t.w-3-StrLen(&n[0]);
 		if(sx>t.x+t.w/2)
@@ -2975,8 +3067,8 @@ void PicBarTick()
 }
 
 // Space and Backspace: the next or previous picture of the panel, whose cursor
-// follows.
-void PicStep(int win, int dir)
+// follows; with from>=0 (Home, End) the first one from file from on, in that way.
+void PicGo(int win, int dir, int from)
 {
 	int p=pvPanel[win];
 	int c=p/2;
@@ -2986,6 +3078,7 @@ void PicStep(int win, int dir)
 	char name[256];
 	char path[FC_PATH];
 	int k=fcCur[p];
+	if(from>=0)k=from-dir;
 	int found=-1;
 	while(found<0)
 	{
@@ -2994,7 +3087,7 @@ void PicStep(int win, int dir)
 		if(!FcName(p,k,&name[0]))
 		{
 			FcJoin(&path[0],FcDirOf(p),&name[0]);
-			if(FcIsPicture(&path[0]))found=k;
+			if(PicListed(&path[0],&name[0]))found=k;
 		}
 	}
 	if(found>=0)
@@ -3003,9 +3096,20 @@ void PicStep(int win, int dir)
 		FcClamp(p);
 		PvOpen(win,&path[0]);
 		FcSetTitle(win,"Picture: ",&path[0]);
-		if(pvIdx[win]>0)pvIdx[win]=pvIdx[win]+dir;
+		if(from<0)
+		{
+			if(pvIdx[win]>0)pvIdx[win]=pvIdx[win]+dir;
+		}
+		else if(dir>0)pvIdx[win]=1;
+		else if(pvScanK[win]<0)pvIdx[win]=pvTot[win];
+		else pvIdx[win]=0;    // the count does not know it yet
 	}
 	FcSelect(keep);
+}
+
+void PicStep(int win, int dir)
+{
+	PicGo(win,dir,-1);
 }
 
 int PicKey(int win, int key)
@@ -3074,6 +3178,8 @@ void PicCommand(int win, int cmd)
 	}
 	else if(cmd==CM_PICNEXT)PicStep(win,1);
 	else if(cmd==CM_PICPREV)PicStep(win,-1);
+	else if(cmd==CM_PICFIRST)PicGo(win,1,0);
+	else if(cmd==CM_PICLAST)PicGo(win,-1,fcCount[pvPanel[win]]-1);
 }
 
 int PicMouse(int win, int ev, int x, int y)
@@ -5960,6 +6066,7 @@ void PrefSet(char* key, char* v, char* left, char* right)
 		else if(StrCmp(key,"ask_before_run")==0)fcConfRun=y;
 		else if(StrCmp(key,"wait_after_command")==0)fcConfPause=y;
 		else if(StrCmp(key,"type_aware_view")==0)fcTypeView=y;
+		else if(StrCmp(key,"look_into_files_for_pictures")==0)fcScanPics=y;
 		else if(StrCmp(key,"tree_from_root")==0)fcTreeAll=y;
 		else if(StrCmp(key,"cd_on_exit")==0)fcCdExit=y;
 		else if(StrCmp(key,"snap_windows")==0)tvSnap=y;
@@ -6242,6 +6349,7 @@ void PrefsSave()
 	PrefNum(&buf[0],"tab_size",edTab);
 	PrefYesNo(&buf[0],"show_tabs_and_spaces",edInvis);
 	PrefYesNo(&buf[0],"type_aware_view",fcTypeView);
+	PrefYesNo(&buf[0],"look_into_files_for_pictures",fcScanPics);
 	PrefText(&buf[0],"\n# system (delete: for_good, to_trash or ask)\n");
 	PrefWord(&buf[0],"delete",fcTrash,"for_good|to_trash|ask");
 	PrefYesNo(&buf[0],"ask_before_quit",fcConfExit);
@@ -6521,9 +6629,9 @@ void RunEditPrefs()
 	FcRemoteNote(&note[0],64);
 	int extra=0;
 	if(note[0])extra=1;
-	int by=17+extra;
+	int by=18+extra;
 #ifdef TV_GFX
-	by=19+extra;
+	by=20+extra;
 #endif
 	int win=TvNewCentered(W_PREFS,"Edit and view",56,by+4,WF_DIALOG);
 	if(win<0)return;
@@ -6545,18 +6653,21 @@ void RunEditPrefs()
 	TvAdd(win,C_LABEL,3,12,30,1,"Pictures and videos",0);
 	int lz=TvAdd(win,C_CHECK,2,13,46,1,"Lan~c~zos scaling down (smoother, slower)",0);
 	tvCtl[lz].val=pvLanczos;
-	TvAdd(win,C_LABEL,3,14,48,1,"Video frames a second, at most",0);
-	TvAdd(win,C_LABEL,6,15,13,1,"~V~iew window",0);
-	int fw=TvAdd(win,C_COMBO,19,15,8,1,PV_FPS,0);
+	int sc=TvAdd(win,C_CHECK,2,14,52,1,"~S~can every file for pictures and videos",0);
+	tvCtl[sc].val=fcScanPics;
+	TvAdd(win,C_LABEL,6,15,48,1,"(off: by extension, which is instant)",0);
+	TvAdd(win,C_LABEL,3,16,48,1,"Video frames a second, at most",0);
+	TvAdd(win,C_LABEL,6,17,13,1,"~V~iew window",0);
+	int fw=TvAdd(win,C_COMBO,19,17,8,1,PV_FPS,0);
 	tvCtl[fw].val=FcFpsIndex(pvFpsWin);
-	TvAdd(win,C_LABEL,31,15,12,1,"~Q~uick view",0);
-	int fq=TvAdd(win,C_COMBO,43,15,8,1,PV_FPS,0);
+	TvAdd(win,C_LABEL,31,17,12,1,"~Q~uick view",0);
+	int fq=TvAdd(win,C_COMBO,43,17,8,1,PV_FPS,0);
 	tvCtl[fq].val=FcFpsIndex(pvFpsQuick);
-	if(note[0])TvAdd(win,C_LABEL,6,16,48,1,&note[0],0);
+	if(note[0])TvAdd(win,C_LABEL,6,18,48,1,&note[0],0);
 #ifdef TV_GFX
-	TvAdd(win,C_LABEL,3,17+extra,10,1,"Draw in",0);
-	int pp=TvAdd(win,C_RADIO,13,17+extra,12,1,"~P~ixels",0);
-	int pc=TvAdd(win,C_RADIO,26,17+extra,22,1,"Character c~e~lls",0);
+	TvAdd(win,C_LABEL,3,19+extra,10,1,"Draw in",0);
+	int pp=TvAdd(win,C_RADIO,13,19+extra,12,1,"~P~ixels",0);
+	int pc=TvAdd(win,C_RADIO,26,19+extra,22,1,"Character c~e~lls",0);
 	tvCtl[pp].group=1;
 	tvCtl[pc].group=1;
 	tvCtl[pp].val=!tvCellPics;
@@ -6584,6 +6695,7 @@ void RunEditPrefs()
 			else if(tx[k]!=' ')tab=-1000;
 		}
 		if((tab>=1)&&(tab<=16))edTab=tab;
+		fcScanPics=tvCtl[sc].val;
 		if(tvCtl[tv].val!=fcTypeView)
 		{
 			fcTypeView=tvCtl[tv].val;
@@ -6843,8 +6955,12 @@ void OpenHelp()
 		"  pictures and videos where they are shown smaller (slower)\n"
 		"  Options > Edit and view > Draw in character cells: in a\n"
 		"  graphic window, half blocks as in a terminal, not pixels\n"
+		"  Options > Edit and view > Scan every file: count the folder's\n"
+		"  pictures by what is in each file, not by extension (slower;\n"
+		"  a turning dash until it is done)\n"
 		"  Space, Backspace     the next, previous picture of the panel\n"
 		"  PgDn, PgUp           the same (Space pauses a video)\n"
+		"  Home, End            the first, last picture of the panel\n"
 		"  r                    turn a quarter clockwise\n"
 		"  F3, Esc              close\n"
 		"  PNG, JPEG, GIF (animated), WebP (animated), BMP, TGA, PSD,\n"
@@ -6858,7 +6974,7 @@ void OpenHelp()
 		"  Down, Up             a minute back, on\n"
 		"  , .                  10 s back, on\n"
 		"  < >                  a frame back, on (and paused)\n"
-		"  Home, End            to the start, to the end\n"
+		"  Ctrl+Home, Ctrl+End  to the start, to the end\n"
 		"  A bar with buttons, the time and a slider to go anywhere in\n"
 		"  the video shows at the bottom while the mouse is over it,\n"
 		"  and for a few seconds after a key.\n"
@@ -7109,6 +7225,7 @@ void TvAppTick()
 	if(fcQArcWait)tvDirty=1;    // quick view shows how far the reading got
 	PvTick();
 	PicBarTick();
+	PicScanTick();
 	FcCapCheck();
 	if(fcJobWin>=0)
 	{
@@ -7383,7 +7500,7 @@ void TvAppCommand(int cmd)
 	// a command ends a quick search
 	if(fcQS>=0)FcQSEnd();
 	int top=TvTop();
-	if(((cmd>=CM_PIC0)&&(cmd<=CM_PIC1))||(cmd==CM_PICBACK)||(cmd==CM_PICSTART)||(cmd==CM_PICEND)||(cmd==CM_PICFRAMEB)||(cmd==CM_PICFRAMEF))
+	if(((cmd>=CM_PIC0)&&(cmd<=CM_PIC1))||(cmd==CM_PICBACK)||(cmd==CM_PICSTART)||(cmd==CM_PICEND)||(cmd==CM_PICFRAMEB)||(cmd==CM_PICFRAMEF)||(cmd==CM_PICFIRST)||(cmd==CM_PICLAST))
 	{
 		if(top>=0)
 			if(tvWin[top].type==W_PIC)PicCommand(top,cmd);
@@ -7596,8 +7713,10 @@ void FcKeys()
 	TvKeyCmd(W_PIC,CM_PICBACK,"Video: 10 s back",',',0,0);
 	TvKeyCmd(W_PIC,CM_PICFRAMEB,"Video: a frame back",'<',0,0);
 	TvKeyCmd(W_PIC,CM_PICFRAMEF,"Video: a frame on",'>',0,0);
-	TvKeyCmd(W_PIC,CM_PICSTART,"Video: to the start",K_HOME,0,0);
-	TvKeyCmd(W_PIC,CM_PICEND,"Video: to the end",K_END,0,0);
+	TvKeyCmd(W_PIC,CM_PICFIRST,"First picture",K_HOME,0,0);
+	TvKeyCmd(W_PIC,CM_PICLAST,"Last picture",K_END,0,0);
+	TvKeyCmd(W_PIC,CM_PICSTART,"Video: to the start",K_HOME+TV_KCTRL,0,0);
+	TvKeyCmd(W_PIC,CM_PICEND,"Video: to the end",K_END+TV_KCTRL,0,0);
 	TvKeyCmd(W_PIC,CM_CLOSE,"Close",K_F3,0,0);
 
 	TvKeyCmd(W_HEX,CM_GOTO,"Go to offset",'g',7,0);
