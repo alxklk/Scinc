@@ -961,6 +961,9 @@ int pvSeen[PV_SLOTS];        // the state of the slot when it was last drawn
 float pvCX[PV_SLOTS];        // the picture point in the middle of the view
 float pvCY[PV_SLOTS];
 int pvLanczos=0;             // pictures shown smaller go through a Lanczos filter
+int pvFpsWin=12;             // videos play at most this many frames a second in a
+int pvFpsQuick=8;            // picture window and in quick view; 0 at their own rate
+#define PV_FPS "off|8|12|24|30"   // the choices in Options > Edit and view
 float pvScale[PV_SLOTS];     // picture pixels per screen pixel; 0 fits the view
 int pvFrame[PV_SLOTS];       // the animation frame shown
 int pvNext[PV_SLOTS];        // and when the next one is due
@@ -1047,9 +1050,9 @@ void PvOpen(int s, char* path)
 	FcLocal(path,&local[0]);
 	// videos: smaller and slower in quick view, which loops them; real pixels in a
 	// graphic window
-	if(s>=PV_QUICK)img_video_opts(s,320,240,8,1);
-	else if(TvHasPixels())img_video_opts(s,960,540,20,0);
-	else img_video_opts(s,480,360,12,0);
+	if(s>=PV_QUICK)img_video_opts(s,320,240,pvFpsQuick,1);
+	else if(TvHasPixels())img_video_opts(s,960,540,pvFpsWin,0);
+	else img_video_opts(s,480,360,pvFpsWin,0);
 	img_open(s,&local[0]);
 	pvUsed[s]=1;
 	pvSeen[s]=-2;
@@ -2661,6 +2664,10 @@ void FcEditorTitle(int win)
 #define CM_PIC1 669
 #define CM_PICBACK 673        // 10 s back
 #define CM_PEEK 674           // the terminal's own screen until a key (Ctrl+O)
+#define CM_PICSTART 675       // videos: to the start
+#define CM_PICEND 676         // to the end
+#define CM_PICFRAMEB 677      // a frame back (and paused)
+#define CM_PICFRAMEF 678      // a frame on
 #define CM_VIEWEDIT 670
 
 int pvPanel[TV_MAXWIN];      // the panel a picture window came from
@@ -2670,6 +2677,23 @@ int pvDragX=0;
 int pvDragY=0;
 int pvClickMs=0;
 int pvClickWin=-1;
+// a video's bar along the bottom of its window: buttons, the time and a slider to go
+// anywhere in it. It shows while the pointer is over it, for a while after a key,
+// and while its slider is dragged.
+int pvBarUntil[TV_MAXWIN];   // shown until then (term_ms)
+int pvBarShown[TV_MAXWIN];   // 1 + the button under the pointer when last drawn, 0 hidden
+int pvSeekWin=-1;            // the window whose slider is being dragged
+int pbY=0;                   // PicBarLayout: the bar's row on the screen,
+int pbX0=0;                  // its cells x0..x1-1,
+int pbX1=0;
+int pbBtn=0;                 // the first of the PB_NBTN buttons, 4 cells each (-1 none),
+int pbS0=0;                  // the slider's cells s0..s1-1 (none when s1<=s0),
+int pbS1=0;
+int pbT0=0;                  // and where the times go
+int pbT1=0;
+#define PB_NBTN 6            // to the start, 10 s back, a frame back, play, a frame on, 10 s on
+#define PB_KEYMS 3000        // a key shows the bar this long
+#define PB_HOVERMS 600       // and it stays this long after the pointer leaves it
 
 // The picture window showing this file, or -1.
 int PicFind(char* path)
@@ -2718,16 +2742,23 @@ int PicOpen(char* path, int p)
 		return -1;
 	}
 	pvPanel[win]=p;
+	pvBarUntil[win]=0;
+	pvBarShown[win]=0;
 	PvOpen(win,path);
 	FcSetTitle(win,"Picture: ",path);
 	PicCount(win,p);
 	return win;
 }
 
+int PicBarVisible(int win);
+void PicBarDraw(int win);
+
 void PicDraw(int win)
 {
 	TWin& t=tvWin[win];
 	PvDraw(win,t.x+1,t.y+1,t.w-2,t.h-2);
+	pvBarShown[win]=0;
+	if(PicBarVisible(win)&&(t.h>=4))PicBarDraw(win);
 	// which of the panel's pictures, on the right of the bottom line
 	int right=t.x+t.w-2;
 	if(pvTot[win]>0)
@@ -2757,6 +2788,190 @@ void PicDraw(int win)
 	else snprintf(&s[0],160," %s  %i%% ",&info[0],pct);
 	TvClip(t.x,t.y,right,t.y+t.h);
 	TvText(t.x+2,t.y+t.h-1,&s[0],A_WIN_FRAME);
+}
+
+// 1 when window win shows a video that plays.
+int PicIsVideo(int win)
+{
+	if(img_state(win)!=2)return 0;
+	return img_info(win,4);
+}
+
+// Where the parts of window win's video bar are (pb*).
+void PicBarLayout(int win)
+{
+	TWin& t=tvWin[win];
+	pbY=t.y+t.h-2;
+	pbX0=t.x+1;
+	pbX1=t.x+t.w-1;
+	int x=pbX0+1;
+	pbBtn=-1;
+	if(pbX1-pbX0>=PB_NBTN*4+2)
+	{
+		pbBtn=x;
+		x=x+PB_NBTN*4+1;
+	}
+	char cl[16];
+	PvClock(img_info(win,6),&cl[0],16);
+	int tw=StrLen(&cl[0]);
+	if(img_info(win,6)<=0)tw=4;
+	pbT0=x;
+	pbT1=pbX1-1-tw;
+	pbS0=x+tw+1;
+	pbS1=pbT1-1;
+	if(pbS1-pbS0<4)
+	{
+		// too narrow for the times: the slider alone
+		pbT0=-1;
+		pbS0=x;
+		pbS1=pbX1-1;
+	}
+}
+
+// The button of the bar at screen cell x (0 start, 1 10 s back, 2 a frame back,
+// 3 play, 4 a frame on, 5 10 s on), or -1.
+int PicBarButton(int x)
+{
+	if((pbBtn<0)||(x<pbBtn)||(x>=pbBtn+PB_NBTN*4))return -1;
+	return (x-pbBtn)/4;
+}
+
+// 1 when the pointer is over window win's bar (and nothing in front of it).
+int PicBarHover(int win)
+{
+	if(TvWinAt(evX,evY)!=win)return 0;
+	PicBarLayout(win);
+	return (evY==pbY)&&(evX>=pbX0)&&(evX<pbX1);
+}
+
+int PicBarVisible(int win)
+{
+	if(!PicIsVideo(win))return 0;
+	if(pvSeekWin==win)return 1;
+	return term_ms()<pvBarUntil[win];
+}
+
+// The time in ms at slider cell x.
+int PicBarTime(int win, int x)
+{
+	int dur=img_info(win,6);
+	int n=pbS1-pbS0;
+	if((dur<=0)||(n<2))return -1;
+	if(x<pbS0)x=pbS0;
+	if(x>=pbS1)x=pbS1-1;
+	return (int)(1.*(x-pbS0)*dur/(n-1));
+}
+
+void PicBarDraw(int win)
+{
+	int hot=-1;
+	if(PicBarHover(win))hot=PicBarButton(evX);
+	pvBarShown[win]=hot+2;
+	PicBarLayout(win);
+	TvFill(pbX0,pbY,pbX1-pbX0,1,' ',A_STATUS);
+	int playing=!img_info(win,7)&&!img_info(win,11);
+	if(pbBtn>=0)
+		for(int b=0;b<PB_NBTN;b++)
+		{
+			int at=A_STATUS;
+			if(b==hot)at=A_STATUS_SEL;
+			int x=pbBtn+b*4;
+			TvFill(x,pbY,3,1,' ',at);
+			if(b==0)
+			{
+				TvPut(x,pbY,'|',at);
+				TvPut(x+1,pbY,G_LEFT,at);
+				TvPut(x+2,pbY,G_LEFT,at);
+			}
+			else if(b==1)
+			{
+				TvPut(x+1,pbY,G_LEFT,at);
+				TvPut(x+2,pbY,G_LEFT,at);
+			}
+			else if(b==2)
+			{
+				TvPut(x+1,pbY,G_LEFT,at);
+				TvPut(x+2,pbY,'|',at);
+			}
+			else if((b==3)&&playing)
+			{
+				TvPut(x+1,pbY,'|',at);
+				TvPut(x+2,pbY,'|',at);
+			}
+			else if(b==3)TvPut(x+1,pbY,G_RIGHT,at);
+			else if(b==4)
+			{
+				TvPut(x,pbY,'|',at);
+				TvPut(x+1,pbY,G_RIGHT,at);
+			}
+			else
+			{
+				TvPut(x+1,pbY,G_RIGHT,at);
+				TvPut(x+2,pbY,G_RIGHT,at);
+			}
+		}
+	int pos=img_info(win,5);
+	int dur=img_info(win,6);
+	char cl[16];
+	if(pbT0>=0)
+	{
+		PvClock(pos,&cl[0],16);
+		TvText(pbS0-1-StrLen(&cl[0]),pbY,&cl[0],A_STATUS);
+		if(dur>0)PvClock(dur,&cl[0],16);
+		else StrCpy(&cl[0],"?",16);
+		TvText(pbT1,pbY,&cl[0],A_STATUS);
+	}
+	int n=pbS1-pbS0;
+	if(n<1)return;
+	int p=-1;
+	if((dur>0)&&(n>1))
+	{
+		p=(int)(1.*pos*(n-1)/dur+0.5);
+		if(p>n-1)p=n-1;
+	}
+	for(int i=0;i<n;i++)
+	{
+		if(i<p)TvPut(pbS0+i,pbY,G_DHORZ,A_STATUS_HOT);
+		else TvPut(pbS0+i,pbY,G_HORZ,A_STATUS);
+	}
+	if(p>=0)TvPut(pbS0+p,pbY,G_FULL,A_STATUS_HOT);
+}
+
+// Shows the bar of window win for a while: a key was pressed in it.
+void PicBarKey(int win)
+{
+	if(!PicIsVideo(win))return;
+	pvBarUntil[win]=term_ms()+PB_KEYMS;
+	tvDirty=1;
+}
+
+// Keeps the bars of the video windows as the pointer and the time want them, and has
+// the terminal tell where the pointer is while a video window is open.
+void PicBarTick()
+{
+	int now=term_ms();
+	int any=0;
+	if(dragMode==0)pvSeekWin=-1;
+	for(int w=0;w<TV_MAXWIN;w++)
+		if(tvWin[w].used&&(tvWin[w].type==W_PIC))
+		{
+			if(!PicIsVideo(w))
+			{
+				if(pvBarShown[w])tvDirty=1;
+				continue;
+			}
+			any=1;
+			int hot=-1;
+			if(PicBarHover(w))
+			{
+				hot=PicBarButton(evX);
+				if(pvBarUntil[w]<now+PB_HOVERMS)pvBarUntil[w]=now+PB_HOVERMS;
+			}
+			int want=0;
+			if(PicBarVisible(w))want=hot+2;
+			if(want!=pvBarShown[w])tvDirty=1;
+		}
+	TvHover(any);
 }
 
 // Space and Backspace: the next or previous picture of the panel, whose cursor
@@ -2800,7 +3015,9 @@ int PicKey(int win, int key)
 	int ph=(t.h-2)*TvCellPxH();
 	int step=pw/8;
 	if(step<2)step=2;
-	// the other keys are commands of the keyboard map (PicCommand)
+	// any key shows a video's bar for a while; the other keys are commands of the
+	// keyboard map (PicCommand)
+	PicBarKey(win);
 	if(img_info(win,4)&&((pvScale[win]==0.)||(pvScale[win]>=PvFit(win,pw,ph)*0.999)))
 	{
 		// a video that fits the window: the arrows go back and on in it
@@ -2825,6 +3042,9 @@ void PicCommand(int win, int cmd)
 	TWin& t=tvWin[win];
 	int pw=(t.w-2)*TvCellPxW();
 	int ph=(t.h-2)*TvCellPxH();
+	// Space pauses and plays a video; for a picture it is the next one (as PgDn
+	// is for both)
+	if((cmd==CM_PICNEXT)&&(evType==EV_KEY)&&(evKey==' ')&&PicIsVideo(win))cmd=CM_PICPLAY;
 	if(cmd==CM_PICIN)PvZoom(win,1,pw/2,ph/2,pw,ph);
 	else if(cmd==CM_PICOUT)PvZoom(win,-1,pw/2,ph/2,pw,ph);
 	else if(cmd==CM_PICFIT)
@@ -2834,9 +3054,17 @@ void PicCommand(int win, int cmd)
 	}
 	else if(cmd==CM_PIC1X)PvSetScale(win,PvOwn(win),pw/2,ph/2,pw,ph);
 	else if(cmd==CM_PIC2X)PvSetScale(win,PvOwn(win)/2.,pw/2,ph/2,pw,ph);
-	else if(cmd==CM_PICPLAY)img_video_ctl(win,1,0);
-	else if(cmd==CM_PICFWD)img_video_ctl(win,3,10000);
-	else if(cmd==CM_PICBACK)img_video_ctl(win,3,-10000);
+	else if((cmd==CM_PICPLAY)||(cmd==CM_PICFWD)||(cmd==CM_PICBACK)||(cmd==CM_PICSTART)||(cmd==CM_PICEND)||(cmd==CM_PICFRAMEB)||(cmd==CM_PICFRAMEF))
+	{
+		PicBarKey(win);
+		if(cmd==CM_PICPLAY)img_video_ctl(win,1,0);
+		else if(cmd==CM_PICFRAMEB)img_video_ctl(win,4,-1);
+		else if(cmd==CM_PICFRAMEF)img_video_ctl(win,4,1);
+		else if(cmd==CM_PICFWD)img_video_ctl(win,3,10000);
+		else if(cmd==CM_PICBACK)img_video_ctl(win,3,-10000);
+		else if(cmd==CM_PICSTART)img_video_ctl(win,2,0);
+		else if(img_info(win,6)>0)img_video_ctl(win,2,img_info(win,6));
+	}
 	else if((cmd==CM_PICTURN)&&!img_info(win,4))
 	{
 		img_rotate(win);
@@ -2861,6 +3089,40 @@ int PicMouse(int win, int ev, int x, int y)
 	{
 		if(evWheel>0)PvZoom(win,1,px,py,pw,ph);
 		else PvZoom(win,-1,px,py,pw,ph);
+		return 1;
+	}
+	if((ev==EV_MDOWN)&&PicBarVisible(win)&&(t.h>=4))
+	{
+		PicBarLayout(win);
+		int ax=t.x+x;
+		if((t.y+y==pbY)&&(ax>=pbX0)&&(ax<pbX1))
+		{
+			// the bar: a button, or the slider, which goes on following the pointer
+			pvClickWin=-1;
+			pvBarUntil[win]=term_ms()+PB_HOVERMS;
+			int b=PicBarButton(ax);
+			if(b==0)img_video_ctl(win,2,0);
+			else if(b==1)img_video_ctl(win,3,-10000);
+			else if(b==2)img_video_ctl(win,4,-1);
+			else if(b==3)img_video_ctl(win,1,0);
+			else if(b==4)img_video_ctl(win,4,1);
+			else if(b==5)img_video_ctl(win,3,10000);
+			else if((ax>=pbS0)&&(ax<pbS1)&&(PicBarTime(win,ax)>=0))
+			{
+				img_video_ctl(win,2,PicBarTime(win,ax));
+				pvSeekWin=win;
+				TvCaptureMouse(win);
+			}
+			tvDirty=1;
+			return 1;
+		}
+	}
+	if((ev==EV_MDRAG)&&(pvSeekWin==win))
+	{
+		PicBarLayout(win);
+		int ms=PicBarTime(win,t.x+x);
+		if(ms>=0)img_video_ctl(win,2,ms);
+		tvDirty=1;
 		return 1;
 	}
 	if(ev==EV_MDOWN)
@@ -5670,6 +5932,15 @@ void PrefSet(char* key, char* v, char* left, char* right)
 		x=PrefPick(v,"for_good|to_trash|ask");
 		if((x>=0)&&(x<=2))fcTrash=x;
 	}
+	else if((StrCmp(key,"video_fps")==0)||(StrCmp(key,"quick_view_video_fps")==0))
+	{
+		x=PrefPick(v,"off");
+		if((x>=0)&&(x<=60))
+		{
+			if(key[0]=='v')pvFpsWin=x;
+			else pvFpsQuick=x;
+		}
+	}
 	else if(StrCmp(key,"run.leave_window_open")==0)
 	{
 		if(StrCmp(v,"as_options")==0)fcRunKeep=-1;
@@ -5894,6 +6165,13 @@ void PrefWord(char* buf, char* key, int x, char* words)
 	PrefStr(buf,key,&w[0]);
 }
 
+// A frame rate cap: a number, or off for 0.
+void PrefFps(char* buf, char* key, int fps)
+{
+	if(fps<=0)PrefWord(buf,key,0,"off");
+	else PrefNum(buf,key,fps);
+}
+
 void PrefYesNo(char* buf, char* key, int y)
 {
 	if(y)PrefStr(buf,key,"yes");
@@ -5952,6 +6230,9 @@ void PrefsSave()
 	PrefNum(&buf[0],"pixel_scale",scale);
 	PrefYesNo(&buf[0],"cell_pictures",tvCellPics);
 	PrefYesNo(&buf[0],"lanczos",pvLanczos);
+	PrefText(&buf[0],"# videos: at most so many frames a second, or off (their own rate, up to 60)\n");
+	PrefFps(&buf[0],"video_fps",pvFpsWin);
+	PrefFps(&buf[0],"quick_view_video_fps",pvFpsQuick);
 	PrefYesNo(&buf[0],"snap_windows",tvSnap);
 	PrefYesNo(&buf[0],"more_handles",tvMoreHandles);
 	PrefYesNo(&buf[0],"resizable_dialogs",tvDlgResize);
@@ -6188,14 +6469,61 @@ void RunPanelPrefs()
 	TvClose(win);
 }
 
+// PV_FPS's choices: off, 8, 12, 24, 30 frames a second.
+int FcFpsOf(int idx)
+{
+	if(idx==1)return 8;
+	if(idx==2)return 12;
+	if(idx==3)return 24;
+	if(idx==4)return 30;
+	return 0;
+}
+
+// The choice for a cap: the nearest of PV_FPS (a hand-written 20 shows as 24).
+int FcFpsIndex(int fps)
+{
+	if(fps<=0)return 0;
+	int best=1;
+	for(int k=2;k<=4;k++)
+	{
+		int d=FcFpsOf(k)-fps;
+		int bd=FcFpsOf(best)-fps;
+		if(d<0)d=-d;
+		if(bd<0)bd=-bd;
+		if(d<bd)best=k;
+	}
+	return best;
+}
+
+// "This session runs over ssh, inside tmux.", or "" when it does neither: from the
+// environment t2fc started with (SSH_CONNECTION/SSH_TTY/SSH_CLIENT, TMUX, STY for screen).
+void FcRemoteNote(char* out, int max)
+{
+	char v[256];
+	int ssh=run_env("SSH_CONNECTION",&v[0],256)||run_env("SSH_TTY",&v[0],256)||run_env("SSH_CLIENT",&v[0],256);
+	char* mux="";
+	if(run_env("TMUX",&v[0],256))mux="tmux";
+	else if(run_env("STY",&v[0],256))mux="screen";
+	out[0]=0;
+	if(ssh&&mux[0])snprintf(out,max,"This session runs over ssh, inside %s.",mux);
+	else if(ssh)snprintf(out,max,"This session runs over ssh.");
+	else if(mux[0])snprintf(out,max,"This session runs inside %s.",mux);
+}
+
 // Options > Edit and view: the editor's line numbers, wrap, tab size and marks for
 // invisible characters, and how pictures and videos are scaled down and, in a graphic
 // window, whether they are drawn in pixels or in character cells as in a terminal.
 void RunEditPrefs()
 {
-	int by=15;
+	// a note when the screen goes through ssh or a terminal multiplexer, which make
+	// fast video costly
+	char note[64];
+	FcRemoteNote(&note[0],64);
+	int extra=0;
+	if(note[0])extra=1;
+	int by=17+extra;
 #ifdef TV_GFX
-	by=17;
+	by=19+extra;
 #endif
 	int win=TvNewCentered(W_PREFS,"Edit and view",56,by+4,WF_DIALOG);
 	if(win<0)return;
@@ -6217,10 +6545,18 @@ void RunEditPrefs()
 	TvAdd(win,C_LABEL,3,12,30,1,"Pictures and videos",0);
 	int lz=TvAdd(win,C_CHECK,2,13,46,1,"Lan~c~zos scaling down (smoother, slower)",0);
 	tvCtl[lz].val=pvLanczos;
+	TvAdd(win,C_LABEL,3,14,48,1,"Video frames a second, at most",0);
+	TvAdd(win,C_LABEL,6,15,13,1,"~V~iew window",0);
+	int fw=TvAdd(win,C_COMBO,19,15,8,1,PV_FPS,0);
+	tvCtl[fw].val=FcFpsIndex(pvFpsWin);
+	TvAdd(win,C_LABEL,31,15,12,1,"~Q~uick view",0);
+	int fq=TvAdd(win,C_COMBO,43,15,8,1,PV_FPS,0);
+	tvCtl[fq].val=FcFpsIndex(pvFpsQuick);
+	if(note[0])TvAdd(win,C_LABEL,6,16,48,1,&note[0],0);
 #ifdef TV_GFX
-	TvAdd(win,C_LABEL,3,14,10,1,"Draw in",0);
-	int pp=TvAdd(win,C_RADIO,13,14,12,1,"~P~ixels",0);
-	int pc=TvAdd(win,C_RADIO,26,14,22,1,"Character c~e~lls",0);
+	TvAdd(win,C_LABEL,3,17+extra,10,1,"Draw in",0);
+	int pp=TvAdd(win,C_RADIO,13,17+extra,12,1,"~P~ixels",0);
+	int pc=TvAdd(win,C_RADIO,26,17+extra,22,1,"Character c~e~lls",0);
 	tvCtl[pp].group=1;
 	tvCtl[pc].group=1;
 	tvCtl[pp].val=!tvCellPics;
@@ -6252,6 +6588,19 @@ void RunEditPrefs()
 		{
 			fcTypeView=tvCtl[tv].val;
 			// quick views work out again what to show
+			for(int p=0;p<FC_MAXP;p++)
+				if(fcQuick[p])
+				{
+					fcQPath[p*FC_PATH]=0;
+					PvFree(PV_QUICK+p);
+				}
+		}
+		// new rates for the videos opened from now on; quick views open theirs again
+		pvFpsWin=FcFpsOf(tvCtl[fw].val);
+		int q=FcFpsOf(tvCtl[fq].val);
+		if(q!=pvFpsQuick)
+		{
+			pvFpsQuick=q;
 			for(int p=0;p<FC_MAXP;p++)
 				if(fcQuick[p])
 				{
@@ -6495,6 +6844,7 @@ void OpenHelp()
 		"  Options > Edit and view > Draw in character cells: in a\n"
 		"  graphic window, half blocks as in a terminal, not pixels\n"
 		"  Space, Backspace     the next, previous picture of the panel\n"
+		"  PgDn, PgUp           the same (Space pauses a video)\n"
 		"  r                    turn a quarter clockwise\n"
 		"  F3, Esc              close\n"
 		"  PNG, JPEG, GIF (animated), WebP (animated), BMP, TGA, PSD,\n"
@@ -6503,11 +6853,18 @@ void OpenHelp()
 		"  their EXIF data.\n"
 		"  Videos (MP4, MKV, WebM, AVI, MOV, ...) play through ffmpeg,\n"
 		"  or else GStreamer, when installed, without sound:\n"
-		"  p, Enter             pause, play (at the end: again)\n"
+		"  p, Enter, Space      pause, play (at the end: again)\n"
 		"  Left, Right          5 s back, on (when the video fits)\n"
 		"  Down, Up             a minute back, on\n"
 		"  , .                  10 s back, on\n"
+		"  < >                  a frame back, on (and paused)\n"
+		"  Home, End            to the start, to the end\n"
+		"  A bar with buttons, the time and a slider to go anywhere in\n"
+		"  the video shows at the bottom while the mouse is over it,\n"
+		"  and for a few seconds after a key.\n"
 		"  Quick view plays them smaller, again and again.\n"
+		"  Options > Edit and view caps the frames a second (off: the\n"
+		"  video's own rate) for both; over ssh lower is smoother.\n"
 		"\n"
 		"View and edit windows\n"
 		"  F3, Esc              close a view window\n"
@@ -6751,6 +7108,7 @@ void TvAppTick()
 	}
 	if(fcQArcWait)tvDirty=1;    // quick view shows how far the reading got
 	PvTick();
+	PicBarTick();
 	FcCapCheck();
 	if(fcJobWin>=0)
 	{
@@ -7025,7 +7383,7 @@ void TvAppCommand(int cmd)
 	// a command ends a quick search
 	if(fcQS>=0)FcQSEnd();
 	int top=TvTop();
-	if(((cmd>=CM_PIC0)&&(cmd<=CM_PIC1))||(cmd==CM_PICBACK))
+	if(((cmd>=CM_PIC0)&&(cmd<=CM_PIC1))||(cmd==CM_PICBACK)||(cmd==CM_PICSTART)||(cmd==CM_PICEND)||(cmd==CM_PICFRAMEB)||(cmd==CM_PICFRAMEF))
 	{
 		if(top>=0)
 			if(tvWin[top].type==W_PIC)PicCommand(top,cmd);
@@ -7234,8 +7592,12 @@ void FcKeys()
 	TvKeyCmd(W_PIC,CM_PICPREV,"Previous picture",K_BACKSPACE,K_PGUP,0);
 	TvKeyCmd(W_PIC,CM_PICTURN,"Turn clockwise",'r',0,0);
 	TvKeyCmd(W_PIC,CM_PICPLAY,"Video: pause, play",'p',K_ENTER,0);
-	TvKeyCmd(W_PIC,CM_PICFWD,"Video: 10 s on",'.','>',0);
-	TvKeyCmd(W_PIC,CM_PICBACK,"Video: 10 s back",',','<',0);
+	TvKeyCmd(W_PIC,CM_PICFWD,"Video: 10 s on",'.',0,0);
+	TvKeyCmd(W_PIC,CM_PICBACK,"Video: 10 s back",',',0,0);
+	TvKeyCmd(W_PIC,CM_PICFRAMEB,"Video: a frame back",'<',0,0);
+	TvKeyCmd(W_PIC,CM_PICFRAMEF,"Video: a frame on",'>',0,0);
+	TvKeyCmd(W_PIC,CM_PICSTART,"Video: to the start",K_HOME,0,0);
+	TvKeyCmd(W_PIC,CM_PICEND,"Video: to the end",K_END,0,0);
 	TvKeyCmd(W_PIC,CM_CLOSE,"Close",K_F3,0,0);
 
 	TvKeyCmd(W_HEX,CM_GOTO,"Go to offset",'g',7,0);

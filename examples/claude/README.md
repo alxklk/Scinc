@@ -233,10 +233,21 @@ MPEG-TS files are pictures too, without sound: `img_dl` runs it to decode the
 video scaled down to raw RGBA frames on a pipe (480×360 at 12 frames a second
 in the terminal, 960×540 at 20 in the graphic versions), and a thread of its own
 reads them at the video's pace, each frame becoming the slot's picture in turn.
-Quick view plays them smaller (320×240 at 8) and over again; it stops when the
-cursor moves on. In the picture window `p` or Enter pauses and plays, Left and
+Videos play at their own frame rate (ffprobe finds it) but no faster than a cap
+set in Options > Edit and view, separately for picture windows (12 by default)
+and quick view (8): off, 8, 12, 24 or 30, kept as `video_fps` and
+`quick_view_video_fps` in t2fc.cfg; the dialog notes when the session runs over
+ssh or inside tmux/screen, where lower caps draw more smoothly. Quick view plays
+them smaller (320×240) and over again; it stops when the
+cursor moves on. In the picture window `p`, Enter or Space pauses and plays (PgDn and PgUp still
+go to the next and previous picture or video), Left and
 Right go 5 s back and on while the video fits the window, Down and Up a minute,
-`,` and `.` 10 s; the frame line shows the time and length. Seeking starts ffmpeg
+`,` and `.` 10 s, `<` and `>` a frame (pausing), Home and End to the start and end; the frame line shows the
+time and length. A bar along the bottom of the video (to the start, 10 s back, a frame
+back, play/pause, a frame on, 10 s on, the time, a slider to click or drag anywhere in the video,
+the length) shows while the mouse is over it and for 3 s after a key; for that the
+terminal reports pointer moves (tv.h `TvHover`, `EV_MMOVE`) while a video window is
+open. Seeking starts ffmpeg
 anew from that point. gst-launch cannot start in the middle, so with GStreamer the
 frames up to that point are decoded and skipped (going back starts from the
 beginning); its frames are the whole 480×360 with borders, gst-discoverer finds

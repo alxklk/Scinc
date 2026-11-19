@@ -610,13 +610,15 @@ struct Video
 	bool paused=false;
 	bool atEnd=false;
 	long long seek=-1;         // ms to go to, or -1
+	int stepFwd=0;             // frames to show on while paused
 	pid_t pid=0;
 	pid_t probePid=0;          // gst-discoverer, while it runs
 	int probed=0;              // GStreamer: 0 being looked at, 1 a video, -1 none
 	std::string path;
 	int maxW=480;
 	int maxH=360;
-	int fps=12;
+	int fps=12;                // at most this many frames a second, 0 the video's own
+	double rate=12;            // frames a second as played: the video's own, or fps
 	bool loop=true;
 	// what is known about it
 	long long pos=0;           // ms of the frame shown
@@ -824,9 +826,9 @@ static pid_t startFfmpeg(Video& v, long long start, int& out, int& err, int& w, 
 	snprintf(ss,sizeof ss,"%.3f",start/1000.0);
 	char vf[256];
 	// square pixels, the frame rate, then no bigger than maxW*maxH
-	snprintf(vf,sizeof vf,"scale=trunc(iw*sar/2)*2:ih,setsar=1,fps=%d,"
+	snprintf(vf,sizeof vf,"scale=trunc(iw*sar/2)*2:ih,setsar=1,fps=%.4f,"
 		"scale=w=min(%d\\,iw):h=min(%d\\,ih):force_original_aspect_ratio=decrease:flags=area",
-		v.fps,v.maxW,v.maxH);
+		v.rate,v.maxW,v.maxH);
 	std::vector<std::string> args={"ffmpeg","-hide_banner","-nostdin","-nostats","-loglevel","info",
 		"-ss",ss,"-i",v.path,"-an","-sn","-dn","-vf",vf,"-pix_fmt","rgba","-f","rawvideo","pipe:1"};
 	pid_t pid=spawnProg(args,out,err);
@@ -937,6 +939,48 @@ static bool gstDiscover(Video& v)
 }
 
 // gst-discoverer is slow to start (seconds), so it runs beside the playing.
+// The video's own frame rate, from ffprobe ("30000/1001"), or 0 when not known.
+static double probeRate(const std::string& path)
+{
+	if(!onPath("ffprobe"))return 0;
+	std::vector<std::string> args={"ffprobe","-v","error","-select_streams","v:0",
+		"-show_entries","stream=avg_frame_rate,r_frame_rate","-of","default=nw=1",path};
+	int out=-1,err=-1;
+	pid_t pid=spawnProg(args,out,err);
+	if(!pid)return 0;
+	close(err);
+	double avg=0,r=0;
+	std::string line;
+	while(readLine(out,line))
+	{
+		size_t eq=line.find('=');
+		if(eq==std::string::npos)continue;
+		double a=0,b=1;
+		if(sscanf(line.c_str()+eq+1,"%lf/%lf",&a,&b)<1)continue;
+		double x=(b>0)?a/b:0;
+		if(!line.compare(0,eq,"avg_frame_rate"))avg=x;
+		else if(!line.compare(0,eq,"r_frame_rate"))r=x;
+	}
+	close(out);
+	waitpid(pid,nullptr,0);
+	// the average, unless it is missing or odd (variable rate files)
+	if((avg>=1)&&(avg<=240))return avg;
+	if((r>=1)&&(r<=240))return r;
+	return 0;
+}
+
+// The rate the video plays at: its own, no more than its cap (fps, 0 none) and 60.
+static void videoRate(Video& v)
+{
+	double own=probeRate(v.path);
+	double cap=v.fps>0?v.fps:60;
+	if(cap>60)cap=60;
+	double r=own>0?own:(v.fps>0?v.fps:30);
+	if(r>cap)r=cap;
+	std::lock_guard<std::mutex> lk(v.m);
+	v.rate=r;
+}
+
 static void gstProbe(std::shared_ptr<Video> v)
 {
 	gstDiscover(*v);
@@ -957,7 +1001,7 @@ static pid_t startGst(Video& v, int w, int h, int& out, int& err)
 	}
 	loc+='"';
 	char caps[200];
-	snprintf(caps,sizeof caps,"video/x-raw,format=RGBA,width=%d,height=%d,framerate=%d/1,pixel-aspect-ratio=1/1",w,h,v.fps);
+	snprintf(caps,sizeof caps,"video/x-raw,format=RGBA,width=%d,height=%d,framerate=%d/1000,pixel-aspect-ratio=1/1",w,h,(int)(v.rate*1000+0.5));
 	std::vector<std::string> args={"gst-launch-1.0","-q","filesrc",loc,"!","decodebin","!",
 		"videoconvert","!","videoscale","!","videorate","!",caps,"!","fdsink","fd=1"};
 	pid_t pid=spawnProg(args,out,err);
@@ -1013,7 +1057,9 @@ static void videoRun(int s, std::shared_ptr<Video> v)
 	int gw=v->maxW&~1;
 	int gh=v->maxH&~1;
 	if(engine==ENG_GST)std::thread(gstProbe,v).detach();
-	int frameMs=1000/v->fps;
+	videoRate(*v);
+	double rate=v->rate;
+	int frameMs=(int)(1000/rate);
 	while(true)
 	{
 		int out=-1,err=-1,w=0,h=0;
@@ -1045,7 +1091,7 @@ static void videoRun(int s, std::shared_ptr<Video> v)
 			std::vector<uint8_t> skip;
 			while(true)
 			{
-				long long t=t0+(long long)n*1000/v->fps;
+				long long t=t0+(long long)(n*1000/rate);
 				bool show=t+frameMs/2>=target;
 				std::shared_ptr<Picture> pic;
 				uint8_t* buf;
@@ -1097,7 +1143,7 @@ static void videoRun(int s, std::shared_ptr<Video> v)
 					wall0=nowMs();
 				}
 				// wait for the next frame's time, or a pause, seek or stop
-				long long next=t+frameMs;
+				long long next=t0+(long long)(n*1000/rate);   // n counts this one
 				std::unique_lock<std::mutex> lk(v->m);
 				while(true)
 				{
@@ -1112,6 +1158,12 @@ static void videoRun(int s, std::shared_ptr<Video> v)
 							v->seek=-1;
 							tw0=-1;
 						}
+						break;
+					}
+					if(v->paused&&(v->stepFwd>0))
+					{
+						// one frame on, then paused again
+						v->stepFwd--;
 						break;
 					}
 					if(v->paused)
@@ -1375,8 +1427,9 @@ void img_rotate(int s)
 	sl.version++;
 }
 
-// How the next video opened in slot s plays: frames no bigger than maxW*maxH, fps
-// of them a second, and again from the start at the end (loop 1) or not.
+// How the next video opened in slot s plays: frames no bigger than maxW*maxH, at its
+// own frame rate but no more than fps a second (0: no cap but 60), and again from
+// the start at the end (loop 1) or not.
 void img_video_opts(int s, int maxW, int maxH, int fps, int loop)
 {
 	if(!validSlot(s))return;
@@ -1384,12 +1437,13 @@ void img_video_opts(int s, int maxW, int maxH, int fps, int loop)
 	std::lock_guard<std::mutex> lk(sl.m);
 	sl.vMaxW=std::max(16,maxW);
 	sl.vMaxH=std::max(16,maxH);
-	sl.vFps=std::min(60,std::max(1,fps));
+	sl.vFps=std::min(60,std::max(0,fps));
 	sl.vLoop=loop!=0;
 }
 
 // Controls the video of slot s: op 0 pauses (arg 1) or plays (0), 1 toggles that,
-// 2 goes to arg ms, 3 goes arg ms on (back when negative).
+// 2 goes to arg ms, 3 goes arg ms on (back when negative), 4 pauses and goes arg
+// frames on (as played, at its rate; back when negative).
 void img_video_ctl(int s, int op, int arg)
 {
 	if(!validSlot(s))return;
@@ -1400,6 +1454,22 @@ void img_video_ctl(int s, int op, int arg)
 	std::lock_guard<std::mutex> vl(v->m);
 	if(op==0)v->paused=arg!=0;
 	else if(op==1)v->paused=!v->paused;
+	else if((op==4)&&(arg>0))
+	{
+		// the frames come on from the decoder as they are
+		v->paused=true;
+		if(!v->atEnd&&(v->seek<0))v->stepFwd+=arg;
+	}
+	else if(op==4)
+	{
+		// back: from the frame before, decoded anew; paused there
+		v->paused=true;
+		v->stepFwd=0;
+		long long t=(v->seek>=0?v->seek:v->pos)+(long long)(arg*1000/v->rate);
+		if(t<0)t=0;
+		v->seek=t;
+		v->pos=t;
+	}
 	else if((op==2)||(op==3))
 	{
 		long long t=arg;
@@ -1408,6 +1478,7 @@ void img_video_ctl(int s, int op, int arg)
 		if(t<0)t=0;
 		v->seek=t;
 		v->pos=t;
+		v->stepFwd=0;
 	}
 	v->cv.notify_all();
 }
