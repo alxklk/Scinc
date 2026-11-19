@@ -859,6 +859,7 @@ void GlEvent()
 				evBtn=glBtn;
 				evType=EV_MDRAG;
 			}
+		if((glBtn<0)&&((evX!=ox)||(evY!=oy)))evType=EV_MMOVE;
 		return;
 	}
 	if(t==GLW_EV_WHEEL)

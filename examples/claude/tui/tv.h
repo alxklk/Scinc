@@ -75,6 +75,8 @@ int  TvAppStatus(int win);                           // the status line context 
 #define EV_WHEEL 5
 #define EV_PASTE 6
 #define EV_RDOWN 7   // TvAppMouse: a right click, or Shift+F10 with x,y at -1
+#define EV_MMOVE 8   // the pointer moved to another cell, no button held (evX, evY);
+                     // terminals report it only after TvHover(1)
 
 #define MOD_SHIFT 1
 #define MOD_ALT 2
@@ -83,6 +85,7 @@ int  TvAppStatus(int win);                           // the status line context 
 int evType=0;
 int evKey=0;
 int evX=0;
+int tvHover=0;   // the terminal reports pointer moves (TvHover)
 int evY=0;
 int evBtn=0;
 int evWheel=0;
@@ -4049,6 +4052,8 @@ void DecodeMouse()
 	}
 	if(c=='m')
 		evType=EV_MUP;
+	else if((b&32)&&((b&3)==3))
+		evType=EV_MMOVE;
 	else if(b&32)
 		evType=EV_MDRAG;
 	else
@@ -5392,6 +5397,8 @@ int TvStatusAt(int x)
 void TvMouse()
 {
 	int ev=evType;
+	// a move with no button only tells where the pointer is now (evX, evY)
+	if(ev==EV_MMOVE)return;
 	if(comboCtl>=0)
 	{
 		TvComboMouse(ev);
@@ -5906,7 +5913,7 @@ int TvRun(int stopWin)
 			if(left<wait)wait=left;
 		}
 		TvReadEvent(wait);
-		if((evType!=EV_NONE)&&(evType!=EV_MUP)&&(evType!=EV_MDRAG))
+		if((evType!=EV_NONE)&&(evType!=EV_MUP)&&(evType!=EV_MDRAG)&&(evType!=EV_MMOVE))
 		{
 			tvLastInput=term_ms();
 			if(tvScreenTaken)
@@ -6390,6 +6397,24 @@ void TvInit()
 	if(tvH>TV_MAXH)tvH=TV_MAXH;
 	// alternate screen, no autowrap, hidden cursor, mouse buttons and drags in SGR form, bracketed paste
 	OutStr("\x1b[?1049h\x1b[?7l\x1b[?25l\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?2004h\x1b=\x1b[0m\x1b[2J");
+	if(tvHover)OutStr("\x1b[?1003h");
+	OutFlush();
+}
+
+// Has the terminal report every move of the pointer as well (EV_MMOVE: evX, evY
+// follow it), for a program that shows things while the pointer is over them; 0
+// goes back to buttons and drags. A graphic window always knows where the pointer is.
+
+void TvHover(int on)
+{
+	if(on)on=1;
+	if(on==tvHover)return;
+	tvHover=on;
+#ifdef TV_GFX
+	return;
+#endif
+	if(on)OutStr("\x1b[?1003h");
+	else OutStr("\x1b[?1003l\x1b[?1002h");
 	OutFlush();
 }
 
@@ -6398,7 +6423,7 @@ void TvDone()
 #ifdef TV_GFX
 	return;
 #endif
-	OutStr("\x1b>\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?7h\x1b[?25h\x1b[0m\x1b[?1049l");
+	OutStr("\x1b>\x1b[?2004l\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l\x1b[?7h\x1b[?25h\x1b[0m\x1b[?1049l");
 	OutFlush();
 	term_close();
 }
@@ -6415,6 +6440,7 @@ void TvSuspend()
 void TvRetake()
 {
 	OutStr("\x1b[?1049h\x1b[?7l\x1b[?25l\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?2004h\x1b=\x1b[0m\x1b[2J");
+	if(tvHover)OutStr("\x1b[?1003h");
 	OutFlush();
 	for(int i=0;i<TV_CELLS;i++)
 	{
@@ -6445,7 +6471,7 @@ void TvPeekScreen()
 #ifdef TV_GFX
 	return;
 #endif
-	OutStr("\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?7h\x1b[0m\x1b[?1049l\x1b[?25h");
+	OutStr("\x1b[?2004l\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l\x1b[?7h\x1b[0m\x1b[?1049l\x1b[?25h");
 	OutFlush();
 	int c=-1;
 	while(c<0)c=term_read(1000);

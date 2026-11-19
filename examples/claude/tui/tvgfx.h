@@ -1014,6 +1014,7 @@ void GfxEvent(SScincEvent& e)
 				evBtn=gfxBtn;
 				evType=EV_MDRAG;
 			}
+		if((gfxBtn<0)&&((evX!=ox)||(evY!=oy)))evType=EV_MMOVE;
 		return;
 	}
 	if((t=='MWUP')||(t=='MWDN'))
